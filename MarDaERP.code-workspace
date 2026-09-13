@@ -1,0 +1,22 @@
+{
+	"folders": [
+		{
+			"path": "MarDaFE"
+		},
+		{
+			"path": "MarDaBE"
+		},
+		{
+			"path": "MardaApp/MardaMApp"
+		},
+		{
+			"path": "MardaArif/MardaArifBack"
+		},
+		{
+			"path": "MardaArif/MardaArifFront"
+		}
+	],
+	"settings": {
+		"java.compile.nullAnalysis.mode": "automatic"
+	}
+}

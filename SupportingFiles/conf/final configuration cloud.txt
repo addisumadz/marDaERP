@@ -1,0 +1,73 @@
+
+
+
+
+========= back ===========
+
+mvnd -DskipTests clean package
+1 mvn -DskipTests clean package
+2 scp target/wbill.jar woldia@YOUR_SERVER_IP:/home/woldia/Documents/systemDataDontDelete2/
+3 sudo mkdir -p /etc/wbill
+4 sudo chown woldia:woldia /etc/wbill
+5 sudo nano /etc/wbill/application-prod.properties
+     server.port=8082
+    server.address=127.0.0.1
+     # plus your DB / CORS / jwt settings
+6  sudo nano /etc/systemd/system/wbill-backend.service
+       ExecStart=/usr/bin/java -jar /home/woldia/Documents/systemDataDontDelete2/wbill.jar \
+        --spring.profiles.active=prod \
+      --spring.config.additional-location=file:/etc/wbill/
+
+7  sudo systemctl daemon-reload
+   sudo systemctl enable wbill-backend
+   sudo systemctl start wbill-backend
+   sudo systemctl status wbill-backend   
+   
+   
+   
+   sudo systemctl enable mardaarif-backend
+   sudo systemctl start mardaarif-backend
+   sudo systemctl status mardaarif-backend
+   
+      
+      sudo systemctl restart wbill-backend
+
+ ========front ========
+1 cd /home/woldia/Documents/Wbill_FT_23
+2 nano .env.production or sudo nano /home/woldia/Documents/Wbill_FT_23/.env.production
+     BACKEND_URL=http://127.0.0.1:8082
+ ** proxy is configured in next.config	 
+3  sudo npm install -force
+   sudo NODE_ENV=production npm run build
+4  cd /home/woldia/Documents/Wbill_FT_23
+   sudo chown woldia:woldia /home/woldia/Documents/Wbill_FT_23
+   sudo chown woldia:woldia /home/woldia/Documents/Wbill_FT_23/ecosystem.config.js
+5  pm2 start ecosystem.config.js   *** dont use sudo for pm2  command
+   pm2 save
+   pm2 startup        # run the command that prints on consol
+               == pm2 startup systemd -u woldia --hp /home/woldia
+               ==sudo env PATH=$PATH pm2 startup systemd -u woldia --hp /home/woldia
+   pm2 status
+   pm2 logs wbill-frontend
+   
+   pm2 restart wbill-frontend
+   pm2 stop wbill-frontend
+   pm2 delete wbill-frontend
+   pm2 list          # see root’s processes
+    pm2 delete all
+    pm2 kill
+6 info
+   For dev: Wbill_FT_23/.env.local
+   For prod: Wbill_FT_23/.env.production
+   Make sure firewall / security group allows port 3000 (or put Nginx in front later).
+
+http://
+
+root@ecs-kobo:~/Documents/marda/newSys
+
+196.189.51.78
+
+
+java -jar wbill.jar \
+  --spring.profiles.active=prod \
+  --spring.config.additional-location=file:/etc/wbill/

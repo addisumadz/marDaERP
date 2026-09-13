@@ -1,0 +1,36 @@
+const parseCsvData = (csvText) =&gt; {
+    const lines = csvText.trim().split('\n');
+    if (lines.length &lt; 2) return []; // No data rows
+
+    const headers = lines[0].split(',').map(h =&gt; h.trim());
+    const csvData = [];
+
+    for (let i = 1; i &lt; lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue; // Skip empty lines
+
+        // Split by comma - this will split kifya_wer "ጥር, 2018" into two parts
+        const values = line.split(',');
+        
+        // The CSV format is: customer_info_id,consumption,maximumreading,kifya_wer,additional_text
+        // Since kif ya_wer contains a comma (e.g., "ጥር, 2018"), it will be split into values[3] and values[4]
+        // We need to recombine them
+        const row = {};
+        if (values.length &gt;= 5) {
+            // Recombine kifya_wer from parts at index 3 and 4
+            row['customer_info_id'] = values[0]?.trim() || '';
+            row['consumption'] = values[1]?.trim() || '';
+            row['maximumreading'] = values[2]?.trim() || '';
+            row['kifya_wer'] = `${values[3]?.trim() || ''},${values[4]?.trim() || ''}`; // Combine "ጥር" + " 2018"
+            row['additional_text'] = values[5]?.trim() || '';
+        } else {
+            // Fallback to original logic for backwards compatibility (old format without comma in kifya_wer)
+            headers.forEach((header, index) =&gt; {
+                row[header] = values[index]?.trim() || '';
+            });
+        }
+        csvData.push(row);
+    }
+
+    return csvData;
+};

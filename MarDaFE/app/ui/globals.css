@@ -1,0 +1,171 @@
+@import url("https://fonts.cdnfonts.com/css/satoshi");
+/* @import url("/app/satoshi.css"); */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply font-satoshi font-normal
+  }
+}
+
+@layer utilities {
+
+  /* Chrome, Safari and Opera */
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    /* IE and Edge */
+    scrollbar-width: none;
+    /* Firefox */
+  }
+
+  .chat-height {
+    @apply h-[calc(100vh_-_8.125rem)] lg:h-[calc(100vh_-_5.625rem)];
+  }
+
+  .inbox-height {
+    @apply h-[calc(100vh_-_8.125rem)] lg:h-[calc(100vh_-_5.625rem)];
+  }
+}
+
+/* Global overrides for MUI contained buttons to avoid Tailwind's button reset
+   hiding their backgrounds. These selectors are more specific than Tailwind's
+   `[type='button']` rule, so contained MUI buttons get solid backgrounds while
+   regular HTML buttons keep Tailwind's transparent reset. */
+/* Global overrides for MUI contained buttons */
+.MuiButton-root.MuiButton-contained {
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  transition: all 0.2s ease-in-out;
+  text-transform: none;
+  font-weight: 600;
+}
+
+.MuiButton-root.MuiButton-contained:hover {
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  transform: translateY(-1px);
+}
+
+.MuiButton-root.MuiButton-contained:active {
+  transform: translateY(0);
+}
+
+.MuiButton-root.MuiButton-contained:disabled {
+  background-color: #e0e0e0;
+  color: #9e9e9e;
+  box-shadow: none;
+  transform: none;
+}
+
+/* Specific colors */
+.MuiButton-root.MuiButton-containedPrimary {
+  background-color: #1976d2;
+  color: #ffffff;
+}
+
+.MuiButton-root.MuiButton-containedPrimary:hover {
+  background-color: #1565c0;
+}
+
+.MuiButton-root.MuiButton-containedSecondary {
+  background-color: #d219b3;
+  color: #ffffff;
+}
+
+.MuiButton-root.MuiButton-containedInfo {
+  background-color: #0288d1;
+  color: #ffffff;
+}
+
+.MuiButton-root.MuiButton-containedInfo:hover {
+  background-color: #01579b;
+}
+
+.MuiButton-root.MuiButton-containedSuccess {
+  background-color: #2e7d32;
+  color: #ffffff;
+}
+
+.MuiButton-root.MuiButton-containedSuccess:hover {
+  background-color: #1b5e20;
+}
+
+.MuiButton-root.MuiButton-containedWarning {
+  background-color: #ed6c02;
+  color: #ffffff;
+}
+
+.MuiButton-root.MuiButton-containedWarning:hover {
+  background-color: #e65100;
+}
+
+.MuiButton-root.MuiButton-containedError {
+  background-color: #d32f2f;
+  color: #ffffff;
+}
+
+.MuiButton-root.MuiButton-containedError:hover {
+  background-color: #c62828;
+}
+
+/* Outlined buttons */
+.MuiButton-root.MuiButton-outlined {
+  text-transform: none;
+  font-weight: 600;
+  border-width: 2px;
+}
+
+.MuiButton-root.MuiButton-outlined:hover {
+  border-width: 2px;
+}
+
+/* third-party libraries CSS */
+
+.tableCheckbox:checked~div span {
+  @apply opacity-100;
+}
+
+.tableCheckbox:checked~div {
+  @apply bg-primary border-primary;
+}
+
+
+
+
+
+.custom-input-date::-webkit-calendar-picker-indicator {
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 20px;
+}
+
+.custom-input-date-1::-webkit-calendar-picker-indicator {
+  background-image: url("/images/icon/icon-calendar.svg");
+}
+
+.custom-input-date-2::-webkit-calendar-picker-indicator {
+  background-image: url("/images/icon/icon-arrow-down.svg");
+}
+
+[x-cloak] {
+  display: none !important;
+}
+
+.jvectormap-tip {
+  background-color: #F8FAFC !important;
+  font-family: Satoshi, sans-serif;
+  ;
+}
+
+.map-btn .jvectormap-container .jvectormap-zoomin,
+.map-btn .jvectormap-container .jvectormap-zoomout {
+  @apply bottom-0 top-auto right-0 left-auto flex items-center justify-center w-7.5 h-7.5 rounded border border-stroke dark:border-strokedark hover:border-primary dark:hover:border-primary bg-white hover:bg-primary text-body hover:text-white dark:text-bodydark dark:hover:text-white text-2xl leading-none px-0 pt-0 pb-0.5;
+}
+
+.map-btn .jvectormap-container .jvectormap-zoomin {
+  right: 45px;
+}

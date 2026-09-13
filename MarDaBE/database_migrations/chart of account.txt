@@ -1,0 +1,50 @@
+-- ══════════════════════════════════════════════════════════
+--  STEP 1: Bill Preparation — Required Subsidiary Accounts
+--  Run this on your database to seed the COA
+-- ══════════════════════════════════════════════════════════
+
+-- 1. Accounts Receivable (Debit side)
+INSERT INTO fnc_account (account_code, account_name, account_name_am, account_type, normal_balance, is_header, is_active, description, created_by, created_at, updated_at)
+SELECT '12010', 'Customers Bill Receivables', 'ደንበኞች የሂሳብ ክፍያ ተቀባይ', 'ASSET', 'DEBIT', false, true, 'Customer receivable sub-ledger control — records billing amounts owed by customers', 'system', NOW(), NOW()
+WHERE NOT EXISTS (SELECT 1 FROM fnc_account WHERE account_code = '12010');
+
+-- 2. Revenue Accounts (Credit side)
+INSERT INTO fnc_account (account_code, account_name, account_name_am, account_type, normal_balance, is_header, is_active, description, created_by, created_at, updated_at)
+SELECT '4100', 'Water Consumption Revenue', 'የውሃ ፍጆታ ገቢ', 'REVENUE', 'CREDIT', false, true, 'Current month water consumption revenue — yezihWerFjotaKfya', 'system', NOW(), NOW()
+WHERE NOT EXISTS (SELECT 1 FROM fnc_account WHERE account_code = '4100');
+
+INSERT INTO fnc_account (account_code, account_name, account_name_am, account_type, normal_balance, is_header, is_active, description, created_by, created_at, updated_at)
+SELECT '4110', 'Meter Rent Revenue', 'ቆጣሪ ኪራይ ገቢ', 'REVENUE', 'CREDIT', false, true, 'Monthly meter rental fees — kotariKiray', 'system', NOW(), NOW()
+WHERE NOT EXISTS (SELECT 1 FROM fnc_account WHERE account_code = '4110');
+
+INSERT INTO fnc_account (account_code, account_name, account_name_am, account_type, normal_balance, is_header, is_active, description, created_by, created_at, updated_at)
+SELECT '4120', 'Waste Charge Revenue', 'ደረቅ ቆሻሻ ገቢ', 'REVENUE', 'CREDIT', false, true, 'Waste collection charge — additionalHisab (ደረቅ ቆሻሻ)', 'system', NOW(), NOW()
+WHERE NOT EXISTS (SELECT 1 FROM fnc_account WHERE account_code = '4120');
+
+INSERT INTO fnc_account (account_code, account_name, account_name_am, account_type, normal_balance, is_header, is_active, description, created_by, created_at, updated_at)
+SELECT '4130', 'Additional Charge Revenue', 'ተጨማሪ ክፍያ ገቢ', 'REVENUE', 'CREDIT', false, true, 'Service fees and surcharges — techemariKfya', 'system', NOW(), NOW()
+WHERE NOT EXISTS (SELECT 1 FROM fnc_account WHERE account_code = '4130');
+
+INSERT INTO fnc_account (account_code, account_name, account_name_am, account_type, normal_balance, is_header, is_active, description, created_by, created_at, updated_at)
+SELECT '4140', 'Arrears Meter Rent Revenue', 'ውዝፍ ቆጣሪ ኪራይ ገቢ', 'REVENUE', 'CREDIT', false, true, 'Prior period meter rent — wuzifKotariKiray', 'system', NOW(), NOW()
+WHERE NOT EXISTS (SELECT 1 FROM fnc_account WHERE account_code = '4140');
+
+INSERT INTO fnc_account (account_code, account_name, account_name_am, account_type, normal_balance, is_header, is_active, description, created_by, created_at, updated_at)
+SELECT '4200', 'Arrears Additional Revenue', 'ውዝፍ ተጨማሪ ክፍያ ገቢ', 'REVENUE', 'CREDIT', false, true, 'Prior period additional fees — wuzifTechemariKfya', 'system', NOW(), NOW()
+WHERE NOT EXISTS (SELECT 1 FROM fnc_account WHERE account_code = '4200');
+
+INSERT INTO fnc_account (account_code, account_name, account_name_am, account_type, normal_balance, is_header, is_active, description, created_by, created_at, updated_at)
+SELECT '4300', 'Arrears Consumption Revenue', 'ውዝፍ ፍጆታ ክፍያ ገቢ', 'REVENUE', 'CREDIT', false, true, 'Prior period water consumption — wuzifFjotaKfya', 'system', NOW(), NOW()
+WHERE NOT EXISTS (SELECT 1 FROM fnc_account WHERE account_code = '4300');
+
+INSERT INTO fnc_account (account_code, account_name, account_name_am, account_type, normal_balance, is_header, is_active, description, created_by, created_at, updated_at)
+SELECT '4400', 'Penalty Revenue', 'ቅጣት ገቢ', 'REVENUE', 'CREDIT', false, true, 'Late payment penalties — kitat', 'system', NOW(), NOW()
+WHERE NOT EXISTS (SELECT 1 FROM fnc_account WHERE account_code = '4400');
+
+INSERT INTO fnc_account (account_code, account_name, account_name_am, account_type, normal_balance, is_header, is_active, description, created_by, created_at, updated_at)
+SELECT '4500', 'Arrears Waste Revenue', 'ውዝፍ ደረቅ ቆሻሻ ገቢ', 'REVENUE', 'CREDIT', false, true, 'Prior period waste fees — wuzifDerekKoshasha', 'system', NOW(), NOW()
+WHERE NOT EXISTS (SELECT 1 FROM fnc_account WHERE account_code = '4500');
+
+INSERT INTO fnc_account (account_code, account_name, account_name_am, account_type, normal_balance, is_header, is_active, description, created_by, created_at, updated_at)
+SELECT '4900', 'Carried Forward Arrears Revenue', 'የተላለፈ ውዝፍ ገቢ', 'REVENUE', 'CREDIT', false, true, 'Legacy/unclassified prior arrears carried forward', 'system', NOW(), NOW()
+WHERE NOT EXISTS (SELECT 1 FROM fnc_account WHERE account_code = '4900');

@@ -1,0 +1,15 @@
+[Unit]
+Description=WBill Backend Spring Boot Application
+After=network.target mysql.service
+
+[Service]
+Type=simple
+User=woldia
+WorkingDirectory=/home/woldia/Documents/systemDataDontDelete
+ExecStart=/usr/bin/java -jar /home/woldia/Documents/systemDataDontDelete/backend.war
+Restart=always
+RestartSec=10
+Environment=SPRING_PROFILES_ACTIVE=prod
+
+[Install]
+WantedBy=multi-user.target

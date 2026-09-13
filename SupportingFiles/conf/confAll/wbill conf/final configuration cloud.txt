@@ -1,0 +1,341 @@
+CREATE USER 'root2'@'localhost' IDENTIFIED BY 'Fb@45412921';
+GRANT ALL PRIVILEGES ON *.* TO 'root2'@'localhost' WITH GRANT OPTION;
+FLUSH PRIVILEGES;
+
+df -h
+
+
+wildfly old
+JAVA_HOME="/usr/lib/jvm/java-1.8.0-openjdk-amd64"
+
+java -version
+sudo apt install openjdk-21-jdk -y
+
+========= back ===========
+1 mvn -DskipTests clean package
+2 scp * wbill@192.168.100.200:/Documents     scp /Documents/systemDataDontDelete2/
+3 sudo mkdir -p /etc/wbill
+4 sudo chown wbill:wbill /etc/wbill
+5 sudo nano /etc/wbill/application-prod.properties
+
+     server.port=8082
+    server.address=127.0.0.1
+     # plus your DB / CORS / jwt settings
+	 
+6  sudo nano /etc/systemd/system/wbill-backend.service
+
+       ExecStart=/usr/bin/java -jar /home/wbill/Documents/systemDataDontDelete2/wbill.jar \
+        --spring.profiles.active=prod \
+      --spring.config.additional-location=file:/etc/wbill/
+
+7  sudo systemctl daemon-reload
+   sudo systemctl enable wbill-backend
+   sudo systemctl start wbill-backend
+   sudo systemctl status wbill-backend   
+   
+      sudo systemctl restart wbill-backend
+
+sudo systemctl daemon-reload
+sudo systemctl enable wbill-backend
+sudo systemctl start wbill-backend
+sudo systemctl status wbill-backend -l
+
+ 
+ ========front ========
+ sudo dpkg --configure -a
+sudo apt update
+ xxxxxx --- s sudo apt install nodejs npm -y
+-----node installl ---
+ curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+source ~/.bashrc
+ nvm install 22.20.0
+ nvm use 22.20.0
+---------------------
+cd /Documents/Wbill_FT_23
+
+sudo rm -rf node_modules package-lock.json
+
+sudo chown -R wbill:wbill /Documents/Wbill_FT_23
+npm install
+npm run build
+npm install pm2@latest -g
+
+1 cd /Documents/Wbill_FT_23
+2 nano .env.production or sudo nano /Documents/Wbill_FT_23/.env.production
+
+     BACKEND_URL=http://127.0.0.1:8082
+ ** proxy is configured in next.config	 
+ 
+3  sudo npm install -force
+npm install @mui/material @mui/icons-material @mui/system @emotion/react @emotion/styled
+
+   sudo NODE_ENV=production npm run build
+4  cd /home/wbill/Documents/Wbill_FT_23
+   sudo chown wbill:wbill /Documents/Wbill_FT_23
+   sudo chown wbill:wbill /Documents/Wbill_FT_23/ecosystem.config.js
+5  pm2 start ecosystem.config.js   *** dont use sudo for pm2  command
+   pm2 save
+   pm2 startup        # run the command that prints on consol
+   sudo env PATH=$PATH:/home/wbill/.nvm/versions/node/v22.20.0/bin /home/wbill/.nvm/versions/node/v22.20.0/lib/node_modules/pm2/bin/pm2 startup systemd -u wbill --hp /home/wbill
+
+               == pm2 startup systemd -u wbill --hp /home/wbill
+               ==sudo env PATH=$PATH pm2 startup systemd -u wbill --hp /home/wbill
+   pm2 status
+   pm2 logs wbill-frontend
+   
+   pm2 restart wbill-frontend
+   pm2 stop wbill-frontend
+   pm2 delete wbill-frontend
+   pm2 list          # see root’s processes
+    pm2 delete all
+    pm2 kill
+    pm2 unstartup systemd
+6 info
+   For dev: Wbill_FT_23/.env.local
+   For prod: Wbill_FT_23/.env.production
+   Make sure firewall / security group allows port 3000 (or put Nginx in front later).
+
+
+=======sms =======conf ===
+
+sudo apt-get install jasmin-sms-gateway
+
+
+sudo systemctl start jasmind.service
+sudo systemctl start jasmin-deliversmd.service
+sudo systemctl start jasmin-dlrd.service
+sudo systemctl start jasmin-dlrlookupd.service
+sudo systemctl start jasmin-interceptord.service
+sudo systemctl start jasmin-restapi.service
+# optional but recommended if you use async tasks:
+sudo systemctl start jasmin-celery.service
+
+sudo systemctl status jasmind.service
+sudo systemctl enable jasmind.service
+sudo systemctl enable jasmin-deliversmd.service jasmin-dlrd.service jasmin-dlrlookupd.service jasmin-interceptord.service jasmin-restapi.service jasmin-celery.service
+
+sudo systemctl daemon-reload
+sudo systemctl start jasmin.service
+sudo systemctl enable jasmin.service
+
+systemctl list-unit-files | grep -i jasmin
+# or
+ls /lib/systemd/system | grep -i jasmin
+ls /etc/systemd/system | grep -i jasmin
+
+
+
+
+telnet 10.204.181.70 5019
+
+
+
+sudo ls /var/log/jasmin
+sudo grep -i submit_sm /var/log/jasmin/* 2>/dev/null | tail -n 50
+sudo tail -n 100 /var/log/jasmin/jasmin.log
+sudo nano /etc/jasmin/jasmin.cfg
+# or: sudo cat /etc/jasmin/jasmin.cfg | grep -i jcli -n
+
+1
+telnet 127.0.0.1 8990
+Username: jcliadmin
+Password: jclipwd
+
+2 
+jcli> smppccm -a
+> cid ethiotelecom
+> host 10.204.181.70
+> port 5019
+> username 8581
+> password Wtw@1921
+> bind transceiver
+> enquire_link_interval 30
+> submit_throughput 10
+> ok
+
+jcli> smppccm -1 ethiotelecom   # enable
+jcli> smppccm -S ethiotelecom   # start
+jcli> smppccm -s ethiotelecom   # show status
+
+
+3
+jcli> group -a
+> gid wbill_group
+> ok
+4
+jcli> user -a
+> uid wbill_api
+> gid wbill_group
+> username 8581
+> password Wtw@1921
+> mt_messaging_cred
+>> default_src_addr WBILL
+>> authorization http_send
+>> ok
+> ok
+
+
+
+5
+jcli> smppccm -a
+> cid ethiotelecom
+> host 10.204.181.70
+> port 5019
+> username 8581
+> password Wtw@1921
+> bind transceiver
+> ok
+
+
+6
+jcli> mtrouter -a
+> type DefaultRoute
+> order 0
+> connector smppc(ethiotelecom)
+> rate 0.00
+> ok
+jcli> persist
+
+
+ add to property 
+src/main/resources/application.properties
+ (dev/local)
+ 
+ jasmin.http.base-url=http://127.0.0.1:1401
+jasmin.http.username=8581
+jasmin.http.password=Wtw@1921
+
+=============================================
+
+
+curl "http://127.0.0.1:1401/send?username=8581&password=Wtw%401921&to=2519XXXXXXXX&from=WBILL&content=Test%20from%20Jasmin"
+
+curl -X POST "http://127.0.0.1:1401/send" \
+  -d "username=8581" \
+  -d "password=Wtw@1921" \
+  -d "to=2519XXXXXXXX" \
+  -d "from=WBILL" \
+  -d "content=Test via POST"
+  
+sudo tail -n 100 /var/log/jasmin/default-ethiotelecom.log
+ curl "http://127.0.0.1:1401/send?username=8581&password=Wtw%401921&to=251935981944&from=WBILL&content=Test%20from%20Jasmin"
+ 
+ 
+INSERT INTO `user_account` (`id`, `logged_devices`, `branchs_id`, `user_name`, `password`, `title_maereg`, `first_name`, `midle_name`, `last_name`, `sex`, `photo`, `signature`, `role_id`, `has_boss`, `pass_code`, `is_doctor`, `is_specialist`, `dr_specialization`, `is_desktop_logged`, `user_performance`, `total_yanebebew`, `total_assigned_customer`, `previous_month_csv_file_name`, `status`, `deleted`, `registered_date`, `modified_date`, `is_allow_previous_reading`) VALUES
+(111, NULL, 1, 'reading2', '$2a$10$PABSsBYB5XWp3laYP9Klw.9cynxNQ1iBKc8kvY.ORpgIckG9pIKCq', 'Mr', 'reading', 'test', '2', 'Male', '67_63440070.jpg', '67_235010396_Signature.jpg', 30, 1, NULL, 0, 0, NULL, 0, 0, 0, 0, NULL, 'active', 'active', '2020-07-11 22:03:03', '2024-01-09 09:28:34', 0);
+
+
+#10 → lastReading
+#1 → customer English name (fullNameEng, falls back to fullName)
+#2 → <month_en>, <year> parsed from kifyaWer (Amharic → English month name)
+#3 → consumption
+#4 → wuzifKezihEske (or empty)
+#5 → (wuzifHisab + wuzifKotariKiray)
+#6 → tekilalaTekefay
+#7 → customer account number
+#8 → Ethiopian-format due date (using 
+EthiopianCalendarUtil.toEthiopian(dueDate)
+)
+#9 → previousReading
+
+
+=========================
+
+rmdir /s /q .git
+
+
+utf8mb4_0900_ai_ci
+
+utf8mb4_unicode_ci
+
+
+
+
+======================derash cancel bill =====
+public void updateReadingBankDataZero(ActionEvent event) {
+    String msg = ResourceBundle.getBundle("/MyBundle").getString("Item" + "Updated");
+
+    try {
+        progress = BigDecimal.ZERO;
+        BigDecimal progressRate = BigDecimal.ONE;
+        if (!selectedReadingNew2List.isEmpty()) {
+            progressRate = new BigDecimal(100)
+                .divide(new BigDecimal(selectedReadingNew2List.size()), 2, RoundingMode.CEILING);
+        }
+
+        for (BillingReading read : selectedReadingNew2List) {
+
+            // 1) (Re)format phone (not really used in the update payload)
+            String phone = read.getCustomerInfoId().getPhoneNumber();
+            String formatedphone = "0900000000";
+            if (phone != null && phone.length() == 13) {
+                formatedphone = phone.replace("+251", "0");
+            } else if (phone != null && phone.length() == 10) {
+                formatedphone = phone.replace("+251", "0");
+            }
+            if (formatedphone != null && !formatedphone.matches("^[0-9]{10}$")) {
+                formatedphone = "0900000000";
+            }
+
+            CompanyProfile cp = this.ejbFacade.findAllCompanyProfileLatest();
+
+            // 2) Build DerashCustomerBillDataUpdate payload
+            DerashCustomerBillDataUpdate dinfo = new DerashCustomerBillDataUpdate();
+
+            dinfo.setAmount_due("0");  // zero bill at Derash
+            dinfo.setBill_desc("Previous:0, Penality:0, Current:0, Total:0");
+            dinfo.setBill_id(read.getInvoiceNumberId().getInvoiceNumbers());
+            dinfo.setDue_date(
+                new SimpleDateFormat("yyyy-MM-dd")
+                    .format(getAddDaytoJdkDate(getCurrentDateJdk(), -1))
+            );
+            dinfo.setReason(
+                getMonthNameFromAmharicMName(getMonthNameFromKfyawor(read.getKifyaWer()))
+                + "," + getYearFromKfyawor(read.getKifyaWer())
+            );
+
+            // 3) If templateDerashMessage is set, override desc+reason with template text
+            if (cp.getTemplateDerashMessage() != null) {
+                String message = cp.getTemplateDerashMessage();
+                String[] kfyamonth = read.getKifyaWer().split(",");
+
+                message = message.replaceAll("#10", read.getLastReading() + "");
+                message = message.replaceAll("#1",  read.getCustomerInfoId().getFullNameEng());
+                message = message.replaceAll("#2",
+                    getMonthNameFromAmharicMName(kfyamonth[0].trim()) + ", " + kfyamonth[1].trim());
+                message = message.replaceAll("#3",  read.getConsumption() + "");
+                message = message.replaceAll("#4",  read.getWuzifKezihEske() != null ? read.getWuzifKezihEske() : "");
+                message = message.replaceAll("#5", (read.getWuzifHisab() + read.getWuzifKotariKiray()) + "");
+                message = message.replaceAll("#6",  read.getTekilalaTekefay() + "");
+                message = message.replaceAll("#7",  read.getCustomerInfoId().getAccountNumber() + "");
+                message = message.replaceAll("#8",  getInEthiopian(read.getBankDueDate()) + "");
+                message = message.replaceAll("#9",  read.getPreviousReading() + "");
+
+                dinfo.setBill_desc(message);
+                dinfo.setReason(message);
+            }
+
+            // 4) Call Derash API to update the bill
+            companyProfile = this.ejbFacade.findAllCompanyProfileLatest();
+            DerashCustomerBillInfoFacade studentRectClient = new DerashCustomerBillInfoFacade(companyProfile);
+            DerashSendBill derash = studentRectClient.updateData(dinfo);
+
+            if (derash != null) {
+                // 5) Locally mark bill as canceled
+                read.setIsBankCanceled(true);
+                this.ejbFacade.editReading(read);
+            }
+            progress = progress.add(progressRate);
+        }
+
+        progress = new BigDecimal(100);
+
+        JsfUtil.addSuccessMessage("ባንክ ተልኳል", "ወደ ባንክ በትክክል ተልኳል።");
+        setSelectedCustomerInfoList(null);
+        setReadingList(null);
+
+    } catch (Exception ex) {
+        ...
+    }
+}
+==================================================

@@ -1,0 +1,203 @@
+﻿# ==============================================================================
+# MarDaERP Monorepo Root .gitignore
+# Covers:
+#   - MarDaFE (Next.js / React Frontend)
+#   - MarDaBE (Spring Boot / Maven Backend)
+#   - MardaApp / MardaMApp (Expo / React Native / Android Mobile App)
+#   - MardaArif / MardaArifBack (Spring Boot / Maven Backend)
+#   - MardaArif / MardaArifFront (Next.js Frontend)
+#   - SupportingFiles & Root Workspace
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. Universal Dependencies & Package Managers
+# ------------------------------------------------------------------------------
+node_modules/
+**/node_modules/
+.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# ------------------------------------------------------------------------------
+# 2. Universal Web & Next.js Build Outputs & Cache
+# ------------------------------------------------------------------------------
+dist/
+**/dist/
+build/
+**/build/
+out/
+**/out/
+.next/
+**/.next/
+.expo/
+**/.expo/
+.cache/
+**/.cache/
+.turbo/
+**/.turbo/
+.vercel
+**/.vercel
+
+# TypeScript build info
+*.tsbuildinfo
+
+# ------------------------------------------------------------------------------
+# 3. Java, Maven & Spring Boot (MarDaBE, MardaArifBack)
+# ------------------------------------------------------------------------------
+target/
+**/target/
+bin/
+**/bin/
+*.class
+**/*.class
+
+# Archives and build packages
+*.jar
+*.war
+*.ear
+*.nar
+*.zip
+*.tar.gz
+*.rar
+!*.example.zip
+
+# Maven wrapper cache
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.jar
+
+# Eclipse / STS project artifacts
+.settings/
+**/.settings/
+.project
+**/.project
+.classpath
+**/.classpath
+.factorypath
+**/.factorypath
+.springBeans
+**/.springBeans
+.sts4-cache/
+**/.sts4-cache/
+
+# Generated CSV exports in MarDaBE
+MarDaBE/src/main/resources/static/derash-csv/*
+!MarDaBE/src/main/resources/static/derash-csv/.gitkeep
+MarDaBE/src/main/resources/static/mobile-csv/*
+!MarDaBE/src/main/resources/static/mobile-csv/.gitkeep
+MarDaBE/src/main/resources/static/unicash-csv/*
+!MarDaBE/src/main/resources/static/unicash-csv/.gitkeep
+MarDaBE/src/main/resources/static/mardaarif-csv/*
+!MarDaBE/src/main/resources/static/mardaarif-csv/.gitkeep
+
+# Generated CSV sync files in MardaArifBack
+MardaArif/MardaArifBack/src/main/resources/static/csv-files/*
+!MardaArif/MardaArifBack/src/main/resources/static/csv-files/.gitkeep
+
+# ------------------------------------------------------------------------------
+# 4. Mobile App & Android (MardaApp / MardaMApp)
+# ------------------------------------------------------------------------------
+web-build/
+**/web-build/
+expo-env.d.ts
+
+# Android Gradle build directories and cache
+.gradle/
+**/.gradle/
+**/android/build/
+**/android/app/build/
+**/android/.gradle/
+**/android/.cxx/
+**/android/local.properties
+
+# Android keystores & release signing keys
+*.jks
+*.keystore
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+
+# Android outputs & bundles
+*.apk
+*.aab
+*.ap_
+*.dex
+*.jsbundle
+.kotlin/
+**/.kotlin/
+.metro-health-check*
+
+# ------------------------------------------------------------------------------
+# 5. IDEs, Editors & Tooling
+# ------------------------------------------------------------------------------
+# Visual Studio Code
+.vscode/
+**/.vscode/
+!.vscode/extensions.json
+
+# IntelliJ IDEA
+.idea/
+**/.idea/
+*.iml
+**/*.iml
+*.iws
+*.ipr
+*.hprof
+
+# Sublime, Vim, Emacs
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+*~
+
+# ------------------------------------------------------------------------------
+# 6. Operating System & Filesystem Artifacts
+# ------------------------------------------------------------------------------
+# macOS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+[Dd]esktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+
+# ------------------------------------------------------------------------------
+# 7. Logs, Debug & Temporary Files
+# ------------------------------------------------------------------------------
+logs/
+**/logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+*.tmp
+*.temp
+*.bak
+*.backup
+backup/
+**/backup/
+
+# ------------------------------------------------------------------------------
+# 8. Local Databases & Dumps
+# ------------------------------------------------------------------------------
+*.db
+*.sqlite
+*.sqlite3

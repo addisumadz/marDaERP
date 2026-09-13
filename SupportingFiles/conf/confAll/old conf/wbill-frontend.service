@@ -1,0 +1,20 @@
+[Unit]
+Description=WBill Frontend Next.js Application
+Wants=network-online.target
+After=network-online.target wbill-backend.service
+
+[Service]
+Type=simple
+User=woldia
+WorkingDirectory=/home/woldia/Documents/systemDataDontDelete/front
+cd WorkingDirectory
+ExecStart=/usr/bin/npm start
+Restart=always
+RestartSec=10
+Environment=NODE_ENV=production
+Environment=PORT=3000
+Environment=BACKEND_URL=http://localhost:8082
+Environment=NODE_OPTIONS=--max-old-space-size=1536
+
+[Install]
+WantedBy=multi-user.target

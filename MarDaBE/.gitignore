@@ -1,0 +1,40 @@
+﻿# Java Maven Build outputs
+target/
+bin/
+*.class
+*.jar
+*.war
+*.ear
+*.nar
+
+# Maven wrapper cache
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.jar
+
+# IDE files
+.settings/
+.project
+.classpath
+.factorypath
+.springBeans
+.sts4-cache/
+.vscode/
+.idea/
+*.iml
+
+# Logs
+*.log
+logs/
+
+# Static CSV reports (keep directories via .gitkeep)
+/src/main/resources/static/derash-csv/*
+!/src/main/resources/static/derash-csv/.gitkeep
+
+/src/main/resources/static/mobile-csv/*
+!/src/main/resources/static/mobile-csv/.gitkeep
+
+/src/main/resources/static/unicash-csv/*
+!/src/main/resources/static/unicash-csv/.gitkeep
+
+/src/main/resources/static/mardaarif-csv/*
+!/src/main/resources/static/mardaarif-csv/.gitkeep

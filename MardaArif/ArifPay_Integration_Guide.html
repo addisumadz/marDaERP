@@ -1,0 +1,1182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ArifPay Payment Integration — Complete Implementation Guide</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap');
+
+  :root {
+    --text: #1a1a2e;
+    --text-secondary: #4a4a6a;
+    --bg: #ffffff;
+    --accent: #2563eb;
+    --accent-light: #dbeafe;
+    --border: #e2e8f0;
+    --code-bg: #1e293b;
+    --code-text: #e2e8f0;
+    --note-bg: #eff6ff;
+    --note-border: #3b82f6;
+    --tip-bg: #f0fdf4;
+    --tip-border: #22c55e;
+    --warning-bg: #fffbeb;
+    --warning-border: #f59e0b;
+    --caution-bg: #fef2f2;
+    --caution-border: #ef4444;
+    --important-bg: #faf5ff;
+    --important-border: #a855f7;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    color: var(--text);
+    background: var(--bg);
+    line-height: 1.7;
+    font-size: 14px;
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 40px 30px;
+  }
+
+  h1 {
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--accent);
+    margin-bottom: 8px;
+    border-bottom: 3px solid var(--accent);
+    padding-bottom: 12px;
+  }
+
+  h2 {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text);
+    margin-top: 36px;
+    margin-bottom: 14px;
+    padding-bottom: 6px;
+    border-bottom: 2px solid var(--border);
+    page-break-after: avoid;
+  }
+
+  h3 {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text);
+    margin-top: 24px;
+    margin-bottom: 10px;
+    page-break-after: avoid;
+  }
+
+  h4 {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-top: 16px;
+    margin-bottom: 8px;
+  }
+
+  p { margin-bottom: 10px; }
+
+  a { color: var(--accent); text-decoration: none; }
+
+  strong { font-weight: 600; }
+
+  code {
+    font-family: 'Fira Code', monospace;
+    font-size: 12.5px;
+    background: #f1f5f9;
+    padding: 2px 5px;
+    border-radius: 3px;
+    color: #be185d;
+  }
+
+  pre {
+    background: var(--code-bg);
+    color: var(--code-text);
+    padding: 16px 18px;
+    border-radius: 8px;
+    overflow-x: auto;
+    margin: 12px 0 16px 0;
+    font-size: 12px;
+    line-height: 1.6;
+    page-break-inside: avoid;
+  }
+
+  pre code {
+    background: none;
+    color: inherit;
+    padding: 0;
+    font-size: 12px;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0 16px 0;
+    font-size: 13px;
+    page-break-inside: avoid;
+  }
+
+  th, td {
+    border: 1px solid var(--border);
+    padding: 8px 12px;
+    text-align: left;
+  }
+
+  th {
+    background: #f8fafc;
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  tr:nth-child(even) { background: #fafbfc; }
+
+  ul, ol {
+    margin: 8px 0 12px 24px;
+  }
+
+  li { margin-bottom: 4px; }
+
+  hr {
+    border: none;
+    border-top: 2px solid var(--border);
+    margin: 28px 0;
+  }
+
+  .alert {
+    padding: 14px 16px;
+    border-left: 4px solid;
+    border-radius: 0 6px 6px 0;
+    margin: 14px 0;
+    font-size: 13px;
+    page-break-inside: avoid;
+  }
+
+  .alert-note { background: var(--note-bg); border-color: var(--note-border); }
+  .alert-tip { background: var(--tip-bg); border-color: var(--tip-border); }
+  .alert-important { background: var(--important-bg); border-color: var(--important-border); }
+  .alert-warning { background: var(--warning-bg); border-color: var(--warning-border); }
+  .alert-caution { background: var(--caution-bg); border-color: var(--caution-border); }
+
+  .alert-title {
+    font-weight: 700;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+  }
+
+  .alert-note .alert-title { color: var(--note-border); }
+  .alert-tip .alert-title { color: var(--tip-border); }
+  .alert-important .alert-title { color: var(--important-border); }
+  .alert-warning .alert-title { color: var(--warning-border); }
+  .alert-caution .alert-title { color: var(--caution-border); }
+
+  .toc {
+    background: #f8fafc;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 18px 24px;
+    margin: 20px 0;
+  }
+
+  .toc h3 { margin-top: 0; }
+  .toc ol { margin-left: 20px; }
+  .toc li { margin-bottom: 3px; }
+
+  .file-tree {
+    background: var(--code-bg);
+    color: var(--code-text);
+    padding: 14px 18px;
+    border-radius: 8px;
+    font-family: 'Fira Code', monospace;
+    font-size: 12px;
+    line-height: 1.8;
+    margin: 12px 0;
+  }
+
+  .checklist {
+    list-style: none;
+    margin-left: 0;
+    padding-left: 0;
+  }
+
+  .checklist li {
+    padding: 6px 0 6px 28px;
+    position: relative;
+    border-bottom: 1px solid #f1f5f9;
+  }
+
+  .checklist li::before {
+    content: "☐";
+    position: absolute;
+    left: 4px;
+    color: var(--accent);
+    font-size: 14px;
+  }
+
+  .mermaid-placeholder {
+    background: #f8fafc;
+    border: 2px dashed var(--border);
+    border-radius: 8px;
+    padding: 20px;
+    text-align: center;
+    margin: 14px 0;
+    color: var(--text-secondary);
+    font-size: 13px;
+  }
+
+  .keyword { color: #c678dd; }
+  .string { color: #98c379; }
+  .comment { color: #5c6370; font-style: italic; }
+  .annotation { color: #e5c07b; }
+  .type { color: #e06c75; }
+  .function { color: #61afef; }
+
+  .print-btn {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: var(--accent);
+    color: white;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+    z-index: 1000;
+    font-family: 'Inter', sans-serif;
+  }
+
+  .print-btn:hover { background: #1d4ed8; }
+
+  @media print {
+    body { padding: 0; font-size: 11px; max-width: 100%; }
+    .print-btn { display: none; }
+    h1 { font-size: 22px; }
+    h2 { font-size: 16px; margin-top: 20px; }
+    h3 { font-size: 14px; margin-top: 14px; }
+    pre { font-size: 10px; padding: 10px 12px; }
+    table { font-size: 11px; }
+    .alert { font-size: 11px; }
+    hr { margin: 16px 0; }
+
+    @page {
+      size: A4;
+      margin: 15mm;
+    }
+  }
+</style>
+</head>
+<body>
+
+<button class="print-btn" onclick="window.print()">📄 Save as PDF (Ctrl+P)</button>
+
+<h1>ArifPay Payment Integration</h1>
+<p style="font-size:16px; color:var(--text-secondary); margin-bottom:20px;">Complete Implementation Guide — Frontend to Backend</p>
+
+<div class="alert alert-note">
+  <div class="alert-title">📘 Note</div>
+  This documentation is extracted from the <strong>MardaArif</strong> project (MardaArifFront + MardaArifBack). It covers the <strong>full end-to-end flow</strong> from the frontend "Pay with Arifpay" button to the backend checkout session creation, webhook handling, and payment recording.
+</div>
+
+<div class="toc">
+  <h3>Table of Contents</h3>
+  <ol>
+    <li><a href="#arch">Architecture Overview</a></li>
+    <li><a href="#flow">Payment Flow Diagram</a></li>
+    <li><a href="#db">Database Schema</a></li>
+    <li><a href="#backend">Backend Implementation (Spring Boot / Java)</a></li>
+    <li><a href="#frontend">Frontend Implementation (Next.js / React)</a></li>
+    <li><a href="#config">Configuration &amp; Environment Setup</a></li>
+    <li><a href="#security">Security Considerations</a></li>
+    <li><a href="#mock">Testing with Mock Mode</a></li>
+    <li><a href="#checklist">Implementation Checklist</a></li>
+  </ol>
+</div>
+
+<hr>
+
+<!-- ============================================================ -->
+<h2 id="arch">1. Architecture Overview</h2>
+
+<table>
+  <thead>
+    <tr><th>Layer</th><th>Technology</th><th>Port</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Frontend</td><td>Next.js (React)</td><td>3001</td></tr>
+    <tr><td>Backend</td><td>Spring Boot 3.2 (Java 17)</td><td>8083</td></tr>
+    <tr><td>Database</td><td>MySQL</td><td>3307</td></tr>
+    <tr><td>Payment Gateway</td><td>ArifPay Checkout API</td><td>External</td></tr>
+  </tbody>
+</table>
+
+<p>The frontend calls the backend API via a <strong>Next.js proxy rewrite</strong> (<code>/backend/*</code> → <code>http://localhost:8083/*</code>). The backend talks to ArifPay's Checkout Session API, and ArifPay calls back the backend's webhook when a payment completes.</p>
+
+<hr>
+
+<!-- ============================================================ -->
+<h2 id="flow">2. Payment Flow Diagram</h2>
+
+<table>
+  <thead><tr><th style="width:40px">#</th><th>From → To</th><th>Action</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>User → Frontend</td><td>Clicks <strong>"Pay with Arifpay"</strong> button on a PENDING bill</td></tr>
+    <tr><td>2</td><td>Frontend</td><td>Opens phone number modal (pre-fills from bill if available)</td></tr>
+    <tr><td>3</td><td>User → Frontend</td><td>Enters 9-digit phone number, submits form</td></tr>
+    <tr><td>4</td><td>Frontend → Backend</td><td><code>POST /api/payments/arifpay/initiate/{billId}</code> with <code>{phone: "251XXXXXXXXX"}</code></td></tr>
+    <tr><td>5</td><td>Backend</td><td>Validates bill (must be PENDING), builds checkout payload</td></tr>
+    <tr><td>6</td><td>Backend → ArifPay</td><td><code>POST https://gateway.arifpay.net/api/checkout/session</code> with API key in <code>x-arifpay-key</code> header</td></tr>
+    <tr><td>7</td><td>ArifPay → Backend</td><td>Returns <code>{sessionId, paymentUrl/checkoutUrl}</code></td></tr>
+    <tr><td>8</td><td>Backend → Frontend</td><td>Returns normalized <code>{sessionId, checkoutUrl}</code></td></tr>
+    <tr><td>9</td><td>Frontend → ArifPay</td><td><code>window.location.href = checkoutUrl</code> (full redirect)</td></tr>
+    <tr><td>10</td><td>User → ArifPay</td><td>Completes payment on ArifPay checkout page</td></tr>
+    <tr><td>11</td><td>ArifPay → Backend</td><td><code>POST /api/payments/arifpay/callback</code> (webhook, server-to-server)</td></tr>
+    <tr><td>12</td><td>Backend</td><td><code>processSuccessfulPayment()</code> — marks bill PAID, creates Payment record</td></tr>
+    <tr><td>13</td><td>ArifPay → User</td><td>Redirects browser to <code>successUrl</code> → <code>/bills?status=success&amp;sessionId=xxx</code></td></tr>
+    <tr><td>14</td><td>Frontend</td><td>Detects <code>?status=success</code> in URL on page load</td></tr>
+    <tr><td>15</td><td>Frontend → Backend</td><td><code>GET /api/payments/arifpay/status/{sessionId}</code> to verify</td></tr>
+    <tr><td>16</td><td>Backend → ArifPay</td><td><code>GET checkout/session/{sessionId}</code> to verify with ArifPay</td></tr>
+    <tr><td>17</td><td>Frontend → User</td><td>Shows "Bill successfully paid with ArifPay!" toast message</td></tr>
+  </tbody>
+</table>
+
+<hr>
+
+<!-- ============================================================ -->
+<h2 id="db">3. Database Schema</h2>
+
+<h3>3.1 — <code>arifpay_config</code> table</h3>
+<p>Stores ArifPay credentials & URLs. There is only <strong>one row</strong> in this table.</p>
+<pre><code>CREATE TABLE arifpay_config (
+    id                  INT AUTO_INCREMENT PRIMARY KEY,
+    api_key             VARCHAR(500)  NOT NULL,
+    merchant_id         VARCHAR(500)  NOT NULL,
+    api_url             VARCHAR(500)  NOT NULL,   -- https://gateway.arifpay.net/api/checkout/session
+    success_url         VARCHAR(500)  NOT NULL,   -- http://yourdomain.com/bills?status=success
+    cancel_url          VARCHAR(500)  NOT NULL,   -- http://yourdomain.com/bills?status=cancel
+    error_url           VARCHAR(500)  NOT NULL,   -- http://yourdomain.com/bills?status=error
+    beneficiary_bank    VARCHAR(100)  NOT NULL,   -- Bank code, e.g. AWINETAA
+    beneficiary_account VARCHAR(100)  NOT NULL,   -- Account number
+    updated_at          DATETIME
+);</code></pre>
+
+<h3>3.2 — <code>bills</code> table (relevant columns)</h3>
+<pre><code>CREATE TABLE bills (
+    id                           BIGINT AUTO_INCREMENT PRIMARY KEY,
+    bill_id                      VARCHAR(100) NOT NULL,
+    city_id                      INT NOT NULL,
+    customer_id                  VARCHAR(100),
+    customer_name                VARCHAR(300),
+    phone_number                 VARCHAR(20),
+    email                        VARCHAR(100),
+    amount_due                   DOUBLE,
+    description                  VARCHAR(500),
+    status                       VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+    paid_amount                  DOUBLE,
+    paid_on                      VARCHAR(30),
+    bank_name                    VARCHAR(200),
+    bank_transaction_reference   VARCHAR(200),
+    created_at                   DATETIME NOT NULL,
+    updated_at                   DATETIME
+);</code></pre>
+
+<h3>3.3 — <code>payments</code> table</h3>
+<pre><code>CREATE TABLE payments (
+    id                           BIGINT AUTO_INCREMENT PRIMARY KEY,
+    bill_id                      BIGINT NOT NULL,
+    city_id                      INT NOT NULL,
+    customer_id                  VARCHAR(100),
+    customer_name                VARCHAR(300),
+    bill_number                  VARCHAR(100),
+    paid_amount                  DOUBLE,
+    paid_on                      VARCHAR(30),
+    bank_name                    VARCHAR(200),
+    bank_transaction_reference   VARCHAR(200),
+    payment_method               VARCHAR(30),   -- BANK, MOBILE, CASH
+    is_reconciled                BOOLEAN NOT NULL DEFAULT FALSE,
+    reconciled_at                DATETIME,
+    created_at                   DATETIME NOT NULL
+);</code></pre>
+
+<div class="alert alert-tip">
+  <div class="alert-title">💡 Tip</div>
+  With <code>spring.jpa.hibernate.ddl-auto=update</code> in application.properties, these tables are auto-created from the JPA entities. The SQL above is for reference.
+</div>
+
+<hr>
+
+<!-- ============================================================ -->
+<h2 id="backend">4. Backend Implementation (Spring Boot / Java)</h2>
+
+<h3>Backend File Structure (ArifPay-specific files)</h3>
+<div class="file-tree">
+src/main/java/com/yourpackage/<br>
+├── model/<br>
+│&nbsp;&nbsp;&nbsp;├── ArifPayConfig.java &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ← JPA entity for config<br>
+│&nbsp;&nbsp;&nbsp;├── Bill.java &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ← Bill entity<br>
+│&nbsp;&nbsp;&nbsp;├── BillStatus.java &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ← Enum: PENDING, PAID, CANCELLED, EXPIRED<br>
+│&nbsp;&nbsp;&nbsp;└── Payment.java &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ← Payment record entity<br>
+├── repository/<br>
+│&nbsp;&nbsp;&nbsp;└── ArifPayConfigRepository.java<br>
+├── service/<br>
+│&nbsp;&nbsp;&nbsp;├── ArifPayConfigService.java &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ← Get/save config<br>
+│&nbsp;&nbsp;&nbsp;├── ArifPayConfigInitializer.java &nbsp;&nbsp; ← Seeds default config on first run<br>
+│&nbsp;&nbsp;&nbsp;├── BillService.java<br>
+│&nbsp;&nbsp;&nbsp;└── PaymentService.java &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ← Records payments, updates bill<br>
+├── controller/<br>
+│&nbsp;&nbsp;&nbsp;├── ArifpayController.java &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ← ★ 3 endpoints (initiate, callback, status)<br>
+│&nbsp;&nbsp;&nbsp;└── ArifPayConfigController.java &nbsp;&nbsp; ← CRUD for config (admin UI)<br>
+└── security/<br>
+&nbsp;&nbsp;&nbsp;&nbsp;└── WebSecurityConfig.java &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ← Permits /callback publicly
+</div>
+
+<h3>Step 1: ArifPayConfig Entity</h3>
+
+<div class="alert alert-important">
+  <div class="alert-title">⚡ Important</div>
+  This entity stores your ArifPay API key, merchant ID, gateway URL, redirect URLs, and beneficiary bank details. There is only <strong>one row</strong> in this table.
+</div>
+
+<pre><code><span class="keyword">package</span> com.yourpackage.model;
+
+<span class="keyword">import</span> jakarta.persistence.*;
+<span class="keyword">import</span> java.time.LocalDateTime;
+
+<span class="annotation">@Entity</span>
+<span class="annotation">@Table</span>(name = <span class="string">"arifpay_config"</span>)
+<span class="keyword">public class</span> <span class="type">ArifPayConfig</span> {
+
+    <span class="annotation">@Id</span>
+    <span class="annotation">@GeneratedValue</span>(strategy = GenerationType.IDENTITY)
+    <span class="keyword">private</span> Integer id;
+
+    <span class="annotation">@Column</span>(name = <span class="string">"api_key"</span>, nullable = <span class="keyword">false</span>, length = 500)
+    <span class="keyword">private</span> String apiKey;
+
+    <span class="annotation">@Column</span>(name = <span class="string">"merchant_id"</span>, nullable = <span class="keyword">false</span>, length = 500)
+    <span class="keyword">private</span> String merchantId;
+
+    <span class="annotation">@Column</span>(name = <span class="string">"api_url"</span>, nullable = <span class="keyword">false</span>, length = 500)
+    <span class="keyword">private</span> String apiUrl;
+
+    <span class="annotation">@Column</span>(name = <span class="string">"success_url"</span>, nullable = <span class="keyword">false</span>, length = 500)
+    <span class="keyword">private</span> String successUrl;
+
+    <span class="annotation">@Column</span>(name = <span class="string">"cancel_url"</span>, nullable = <span class="keyword">false</span>, length = 500)
+    <span class="keyword">private</span> String cancelUrl;
+
+    <span class="annotation">@Column</span>(name = <span class="string">"error_url"</span>, nullable = <span class="keyword">false</span>, length = 500)
+    <span class="keyword">private</span> String errorUrl;
+
+    <span class="annotation">@Column</span>(name = <span class="string">"beneficiary_bank"</span>, nullable = <span class="keyword">false</span>, length = 100)
+    <span class="keyword">private</span> String beneficiaryBank;
+
+    <span class="annotation">@Column</span>(name = <span class="string">"beneficiary_account"</span>, nullable = <span class="keyword">false</span>, length = 100)
+    <span class="keyword">private</span> String beneficiaryAccount;
+
+    <span class="annotation">@Column</span>(name = <span class="string">"updated_at"</span>)
+    <span class="keyword">private</span> LocalDateTime updatedAt;
+
+    <span class="keyword">public</span> <span class="function">ArifPayConfig</span>() {}
+
+    <span class="annotation">@PrePersist</span>
+    <span class="keyword">protected void</span> <span class="function">onCreate</span>() { <span class="keyword">this</span>.updatedAt = LocalDateTime.now(); }
+
+    <span class="annotation">@PreUpdate</span>
+    <span class="keyword">protected void</span> <span class="function">onUpdate</span>() { <span class="keyword">this</span>.updatedAt = LocalDateTime.now(); }
+
+    <span class="comment">// Getters and Setters for all fields...</span>
+    <span class="keyword">public</span> Integer <span class="function">getId</span>() { <span class="keyword">return</span> id; }
+    <span class="keyword">public void</span> <span class="function">setId</span>(Integer id) { <span class="keyword">this</span>.id = id; }
+    <span class="keyword">public</span> String <span class="function">getApiKey</span>() { <span class="keyword">return</span> apiKey; }
+    <span class="keyword">public void</span> <span class="function">setApiKey</span>(String apiKey) { <span class="keyword">this</span>.apiKey = apiKey; }
+    <span class="keyword">public</span> String <span class="function">getMerchantId</span>() { <span class="keyword">return</span> merchantId; }
+    <span class="keyword">public void</span> <span class="function">setMerchantId</span>(String merchantId) { <span class="keyword">this</span>.merchantId = merchantId; }
+    <span class="keyword">public</span> String <span class="function">getApiUrl</span>() { <span class="keyword">return</span> apiUrl; }
+    <span class="keyword">public void</span> <span class="function">setApiUrl</span>(String apiUrl) { <span class="keyword">this</span>.apiUrl = apiUrl; }
+    <span class="keyword">public</span> String <span class="function">getSuccessUrl</span>() { <span class="keyword">return</span> successUrl; }
+    <span class="keyword">public void</span> <span class="function">setSuccessUrl</span>(String s) { <span class="keyword">this</span>.successUrl = s; }
+    <span class="keyword">public</span> String <span class="function">getCancelUrl</span>() { <span class="keyword">return</span> cancelUrl; }
+    <span class="keyword">public void</span> <span class="function">setCancelUrl</span>(String s) { <span class="keyword">this</span>.cancelUrl = s; }
+    <span class="keyword">public</span> String <span class="function">getErrorUrl</span>() { <span class="keyword">return</span> errorUrl; }
+    <span class="keyword">public void</span> <span class="function">setErrorUrl</span>(String s) { <span class="keyword">this</span>.errorUrl = s; }
+    <span class="keyword">public</span> String <span class="function">getBeneficiaryBank</span>() { <span class="keyword">return</span> beneficiaryBank; }
+    <span class="keyword">public void</span> <span class="function">setBeneficiaryBank</span>(String s) { <span class="keyword">this</span>.beneficiaryBank = s; }
+    <span class="keyword">public</span> String <span class="function">getBeneficiaryAccount</span>() { <span class="keyword">return</span> beneficiaryAccount; }
+    <span class="keyword">public void</span> <span class="function">setBeneficiaryAccount</span>(String s) { <span class="keyword">this</span>.beneficiaryAccount = s; }
+    <span class="keyword">public</span> LocalDateTime <span class="function">getUpdatedAt</span>() { <span class="keyword">return</span> updatedAt; }
+    <span class="keyword">public void</span> <span class="function">setUpdatedAt</span>(LocalDateTime t) { <span class="keyword">this</span>.updatedAt = t; }
+}</code></pre>
+
+<h3>Step 2: Repository</h3>
+<pre><code><span class="keyword">package</span> com.yourpackage.repository;
+
+<span class="keyword">import</span> com.yourpackage.model.ArifPayConfig;
+<span class="keyword">import</span> org.springframework.data.jpa.repository.JpaRepository;
+<span class="keyword">import</span> org.springframework.stereotype.Repository;
+
+<span class="annotation">@Repository</span>
+<span class="keyword">public interface</span> <span class="type">ArifPayConfigRepository</span>
+        <span class="keyword">extends</span> JpaRepository&lt;ArifPayConfig, Integer&gt; {
+}</code></pre>
+
+<h3>Step 3: Config Service</h3>
+<pre><code><span class="annotation">@Service</span>
+<span class="keyword">public class</span> <span class="type">ArifPayConfigService</span> {
+
+    <span class="annotation">@Autowired</span>
+    <span class="keyword">private</span> ArifPayConfigRepository configRepository;
+
+    <span class="keyword">public</span> ArifPayConfig <span class="function">getConfig</span>() {
+        <span class="keyword">return</span> configRepository.findAll().stream().findFirst()
+            .orElseThrow(() -> <span class="keyword">new</span> RuntimeException(
+                <span class="string">"ArifPay configuration not found."</span>));
+    }
+
+    <span class="keyword">public</span> ArifPayConfig <span class="function">saveConfig</span>(ArifPayConfig configData) {
+        ArifPayConfig existing = configRepository.findAll()
+            .stream().findFirst().orElse(<span class="keyword">null</span>);
+
+        <span class="keyword">if</span> (existing != <span class="keyword">null</span>) {
+            existing.setApiKey(configData.getApiKey());
+            existing.setMerchantId(configData.getMerchantId());
+            existing.setApiUrl(configData.getApiUrl());
+            existing.setSuccessUrl(configData.getSuccessUrl());
+            existing.setCancelUrl(configData.getCancelUrl());
+            existing.setErrorUrl(configData.getErrorUrl());
+            existing.setBeneficiaryBank(configData.getBeneficiaryBank());
+            existing.setBeneficiaryAccount(configData.getBeneficiaryAccount());
+            <span class="keyword">return</span> configRepository.save(existing);
+        } <span class="keyword">else</span> {
+            <span class="keyword">return</span> configRepository.save(configData);
+        }
+    }
+}</code></pre>
+
+<h3>Step 4: Config Initializer (seeds defaults on first startup)</h3>
+<pre><code><span class="annotation">@Component</span>
+<span class="keyword">public class</span> <span class="type">ArifPayConfigInitializer</span> <span class="keyword">implements</span> CommandLineRunner {
+
+    <span class="annotation">@Autowired</span>
+    <span class="keyword">private</span> ArifPayConfigRepository configRepository;
+
+    <span class="annotation">@Override</span>
+    <span class="keyword">public void</span> <span class="function">run</span>(String... args) {
+        <span class="keyword">if</span> (configRepository.count() == 0) {
+            ArifPayConfig config = <span class="keyword">new</span> ArifPayConfig();
+            config.setApiKey(<span class="string">"YOUR_ARIFPAY_API_KEY"</span>);
+            config.setMerchantId(<span class="string">"YOUR_MERCHANT_ID"</span>);
+            config.setApiUrl(<span class="string">"https://gateway.arifpay.net/api/checkout/session"</span>);
+            config.setSuccessUrl(<span class="string">"http://YOUR_FRONTEND_URL/bills?status=success"</span>);
+            config.setCancelUrl(<span class="string">"http://YOUR_FRONTEND_URL/bills?status=cancel"</span>);
+            config.setErrorUrl(<span class="string">"http://YOUR_FRONTEND_URL/bills?status=error"</span>);
+            config.setBeneficiaryBank(<span class="string">"AWINETAA"</span>);
+            config.setBeneficiaryAccount(<span class="string">"1000123456789"</span>);
+            configRepository.save(config);
+        }
+    }
+}</code></pre>
+
+<h3>Step 5: ArifpayController — The Core (3 Endpoints)</h3>
+
+<div class="alert alert-important">
+  <div class="alert-title">⚡ Important</div>
+  This controller has <strong>3 endpoints</strong>:<br>
+  1. <code>POST /api/payments/arifpay/initiate/{billId}</code> — Creates an ArifPay checkout session<br>
+  2. <code>POST /api/payments/arifpay/callback</code> — Webhook called by ArifPay after payment<br>
+  3. <code>GET /api/payments/arifpay/status/{sessionId}</code> — Frontend verifies payment status after redirect
+</div>
+
+<pre><code><span class="annotation">@RestController</span>
+<span class="annotation">@RequestMapping</span>(<span class="string">"/api/payments/arifpay"</span>)
+<span class="keyword">public class</span> <span class="type">ArifpayController</span> {
+
+    <span class="annotation">@Autowired</span> <span class="keyword">private</span> BillService billService;
+    <span class="annotation">@Autowired</span> <span class="keyword">private</span> PaymentService paymentService;
+    <span class="annotation">@Autowired</span> <span class="keyword">private</span> ArifPayConfigService configService;
+    <span class="keyword">private final</span> RestTemplate restTemplate = <span class="keyword">new</span> RestTemplate();
+
+    <span class="comment">// =========================================================</span>
+    <span class="comment">// ENDPOINT 1: Initiate ArifPay Checkout Session</span>
+    <span class="comment">// =========================================================</span>
+    <span class="annotation">@PostMapping</span>(<span class="string">"/initiate/{billId}"</span>)
+    <span class="keyword">public</span> ResponseEntity&lt;?&gt; <span class="function">initiatePayment</span>(
+            <span class="annotation">@PathVariable</span> Long billId,
+            <span class="annotation">@RequestBody</span>(required = <span class="keyword">false</span>) Map&lt;String, String&gt; body) {
+
+        ArifPayConfig config = configService.getConfig();
+
+        <span class="comment">// 1. Validate bill exists and is PENDING</span>
+        Optional&lt;Bill&gt; billOpt = billService.getBillById(billId);
+        <span class="keyword">if</span> (billOpt.isEmpty())
+            <span class="keyword">return</span> ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(Map.of(<span class="string">"message"</span>, <span class="string">"Bill not found"</span>));
+
+        Bill bill = billOpt.get();
+        <span class="keyword">if</span> (bill.getStatus() != BillStatus.PENDING)
+            <span class="keyword">return</span> ResponseEntity.badRequest()
+                .body(Map.of(<span class="string">"message"</span>, <span class="string">"Bill already paid or cancelled"</span>));
+
+        <span class="comment">// 2. Generate unique nonce: billId_timestamp</span>
+        String nonce = bill.getId() + <span class="string">"_"</span> + System.currentTimeMillis();
+
+        <span class="comment">// 3. Build ArifPay checkout payload</span>
+        Map&lt;String, Object&gt; payload = <span class="keyword">new</span> LinkedHashMap&lt;&gt;();
+        payload.put(<span class="string">"cancelUrl"</span>, config.getCancelUrl());
+        payload.put(<span class="string">"successUrl"</span>, config.getSuccessUrl());
+        payload.put(<span class="string">"errorUrl"</span>, config.getErrorUrl());
+        payload.put(<span class="string">"notifyUrl"</span>, getWebhookUrl());
+
+        String rawPhone = (body != <span class="keyword">null</span> &amp;&amp; body.get(<span class="string">"phone"</span>) != <span class="keyword">null</span>)
+            ? body.get(<span class="string">"phone"</span>) : bill.getPhoneNumber();
+        payload.put(<span class="string">"phone"</span>, normalizePhone(rawPhone));
+        payload.put(<span class="string">"email"</span>, bill.getEmail() != <span class="keyword">null</span>
+            ? bill.getEmail() : <span class="string">"customer@example.com"</span>);
+        payload.put(<span class="string">"nonce"</span>, nonce);
+        payload.put(<span class="string">"paymentMethods"</span>,
+            Arrays.asList(<span class="string">"TELEBIRR_USSD"</span>, <span class="string">"CBE"</span>, <span class="string">"AWASH_BIRR"</span>));
+        payload.put(<span class="string">"expireDate"</span>,
+            LocalDateTime.now().plusDays(1).toString());
+
+        <span class="comment">// Item details</span>
+        Map&lt;String, Object&gt; item = <span class="keyword">new</span> LinkedHashMap&lt;&gt;();
+        item.put(<span class="string">"name"</span>, <span class="string">"Water Bill Payment"</span>);
+        item.put(<span class="string">"price"</span>, bill.getAmountDue());
+        item.put(<span class="string">"quantity"</span>, 1);
+        payload.put(<span class="string">"items"</span>, Collections.singletonList(item));
+
+        <span class="comment">// Beneficiary (where money goes)</span>
+        Map&lt;String, Object&gt; beneficiary = <span class="keyword">new</span> LinkedHashMap&lt;&gt;();
+        beneficiary.put(<span class="string">"accountNumber"</span>, config.getBeneficiaryAccount());
+        beneficiary.put(<span class="string">"bank"</span>, config.getBeneficiaryBank());
+        beneficiary.put(<span class="string">"amount"</span>, bill.getAmountDue());
+        payload.put(<span class="string">"beneficiaries"</span>,
+            Collections.singletonList(beneficiary));
+        payload.put(<span class="string">"lang"</span>, <span class="string">"EN"</span>);
+
+        <span class="comment">// 4. Call ArifPay API</span>
+        <span class="keyword">try</span> {
+            HttpHeaders headers = <span class="keyword">new</span> HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.set(<span class="string">"x-arifpay-key"</span>, config.getApiKey());
+
+            HttpEntity&lt;Map&lt;String, Object&gt;&gt; entity =
+                <span class="keyword">new</span> HttpEntity&lt;&gt;(payload, headers);
+
+            ResponseEntity&lt;Map&gt; response = restTemplate
+                .postForEntity(config.getApiUrl(), entity, Map.<span class="keyword">class</span>);
+
+            <span class="keyword">if</span> (response.getStatusCode().is2xxSuccessful()) {
+                Map&lt;String, Object&gt; data = response.getBody();
+                <span class="comment">// ArifPay may nest data inside "data" field</span>
+                <span class="keyword">if</span> (data.containsKey(<span class="string">"data"</span>)
+                        &amp;&amp; data.get(<span class="string">"data"</span>) <span class="keyword">instanceof</span> Map)
+                    data = (Map) data.get(<span class="string">"data"</span>);
+
+                String sid = getStringField(data,
+                    <span class="string">"sessionId"</span>, <span class="string">"session_id"</span>, <span class="string">"id"</span>);
+                String checkoutUrl = getStringField(data,
+                    <span class="string">"paymentUrl"</span>, <span class="string">"checkoutUrl"</span>, <span class="string">"url"</span>);
+
+                Map&lt;String, Object&gt; result = <span class="keyword">new</span> LinkedHashMap&lt;&gt;(data);
+                <span class="keyword">if</span> (sid != <span class="keyword">null</span>) result.put(<span class="string">"sessionId"</span>, sid);
+                <span class="keyword">if</span> (checkoutUrl != <span class="keyword">null</span>)
+                    result.put(<span class="string">"checkoutUrl"</span>, checkoutUrl);
+                <span class="keyword">return</span> ResponseEntity.ok(result);
+            }
+            <span class="keyword">return</span> ResponseEntity.status(500)
+                .body(Map.of(<span class="string">"message"</span>, <span class="string">"ArifPay error"</span>));
+        } <span class="keyword">catch</span> (Exception e) {
+            <span class="keyword">return</span> ResponseEntity.status(500)
+                .body(Map.of(<span class="string">"message"</span>, e.getMessage()));
+        }
+    }
+
+    <span class="comment">// =========================================================</span>
+    <span class="comment">// ENDPOINT 2: Webhook Callback (called by ArifPay)</span>
+    <span class="comment">// =========================================================</span>
+    <span class="annotation">@PostMapping</span>(<span class="string">"/callback"</span>)
+    <span class="keyword">public</span> ResponseEntity&lt;?&gt; <span class="function">handleCallback</span>(
+            <span class="annotation">@RequestBody</span> Map&lt;String, Object&gt; payload) {
+        Map&lt;String, Object&gt; data =
+            (Map) payload.getOrDefault(<span class="string">"data"</span>, payload);
+
+        String status = getStringField(data,
+            <span class="string">"transactionStatus"</span>, <span class="string">"status"</span>);
+        String txnId = getStringField(data, <span class="string">"transactionId"</span>);
+        String nonce = getStringField(data, <span class="string">"nonce"</span>, <span class="string">"referenceId"</span>);
+
+        <span class="keyword">if</span> (<span class="string">"SUCCESS"</span>.equalsIgnoreCase(status)
+                || <span class="string">"PAID"</span>.equalsIgnoreCase(status)) {
+            processSuccessfulPayment(nonce, txnId, data);
+            <span class="keyword">return</span> ResponseEntity.ok(Map.of(<span class="string">"status"</span>, <span class="string">"SUCCESS"</span>));
+        }
+        <span class="keyword">return</span> ResponseEntity.ok(Map.of(<span class="string">"status"</span>, <span class="string">"IGNORED"</span>));
+    }
+
+    <span class="comment">// =========================================================</span>
+    <span class="comment">// ENDPOINT 3: Check Status (called by frontend after redirect)</span>
+    <span class="comment">// =========================================================</span>
+    <span class="annotation">@GetMapping</span>(<span class="string">"/status/{sessionId}"</span>)
+    <span class="keyword">public</span> ResponseEntity&lt;?&gt; <span class="function">getPaymentStatus</span>(
+            <span class="annotation">@PathVariable</span> String sessionId) {
+        ArifPayConfig config = configService.getConfig();
+        HttpHeaders headers = <span class="keyword">new</span> HttpHeaders();
+        headers.set(<span class="string">"x-arifpay-key"</span>, config.getApiKey());
+
+        String url = config.getApiUrl() + <span class="string">"/"</span> + sessionId;
+        ResponseEntity&lt;Map&gt; response = restTemplate
+            .exchange(url, HttpMethod.GET,
+                <span class="keyword">new</span> HttpEntity&lt;&gt;(headers), Map.<span class="keyword">class</span>);
+
+        Map&lt;String, Object&gt; data = response.getBody();
+        String paymentStatus = getStringField(data,
+            <span class="string">"transactionStatus"</span>, <span class="string">"paymentStatus"</span>, <span class="string">"status"</span>);
+        String nonce = getStringField(data, <span class="string">"nonce"</span>, <span class="string">"referenceId"</span>);
+        String txnId = getStringField(data, <span class="string">"transactionId"</span>);
+
+        <span class="keyword">if</span> (<span class="string">"SUCCESS"</span>.equalsIgnoreCase(paymentStatus)) {
+            processSuccessfulPayment(nonce, txnId, data);
+            <span class="keyword">return</span> ResponseEntity.ok(
+                Map.of(<span class="string">"status"</span>, <span class="string">"SUCCESS"</span>));
+        }
+        <span class="keyword">return</span> ResponseEntity.ok(Map.of(<span class="string">"status"</span>,
+            paymentStatus != <span class="keyword">null</span> ? paymentStatus : <span class="string">"PENDING"</span>));
+    }
+
+    <span class="comment">// =========================================================</span>
+    <span class="comment">// Helper: Process successful payment</span>
+    <span class="comment">// =========================================================</span>
+    <span class="keyword">private void</span> <span class="function">processSuccessfulPayment</span>(
+            String referenceId, String txnId,
+            Map&lt;String, Object&gt; data) {
+        <span class="keyword">if</span> (referenceId == <span class="keyword">null</span>) <span class="keyword">return</span>;
+
+        <span class="comment">// nonce format: "billId_timestamp"</span>
+        Long billId = Long.parseLong(referenceId.split(<span class="string">"_"</span>)[0]);
+        billService.getBillById(billId).ifPresent(bill -&gt; {
+            <span class="keyword">if</span> (bill.getStatus() == BillStatus.PENDING) {
+                paymentService.recordPayment(
+                    bill.getId(), bill.getAmountDue(),
+                    LocalDateTime.now().toString().split(<span class="string">"T"</span>)[0],
+                    <span class="string">"Arifpay"</span>,
+                    txnId != <span class="keyword">null</span> ? txnId : <span class="string">"ARIFPAY-"</span>
+                        + System.currentTimeMillis(),
+                    <span class="string">"MOBILE"</span>);
+            }
+        });
+    }
+
+    <span class="comment">/** Normalize phone to 251XXXXXXXXX format */</span>
+    <span class="keyword">private</span> String <span class="function">normalizePhone</span>(String phone) {
+        <span class="keyword">if</span> (phone == <span class="keyword">null</span>) <span class="keyword">return</span> <span class="string">"251900000000"</span>;
+        phone = phone.trim().replaceAll(<span class="string">"[\\s\\-]"</span>, <span class="string">""</span>);
+        <span class="keyword">if</span> (phone.startsWith(<span class="string">"+"</span>)) phone = phone.substring(1);
+        <span class="keyword">if</span> (phone.startsWith(<span class="string">"0"</span>))
+            phone = <span class="string">"251"</span> + phone.substring(1);
+        <span class="keyword">if</span> (!phone.startsWith(<span class="string">"251"</span>))
+            phone = <span class="string">"251"</span> + phone;
+        <span class="keyword">return</span> phone;
+    }
+
+    <span class="keyword">private</span> String <span class="function">getWebhookUrl</span>() {
+        <span class="keyword">return</span> <span class="string">"http://YOUR_SERVER_IP:8083/api/payments/arifpay/callback"</span>;
+    }
+
+    <span class="keyword">private</span> String <span class="function">getStringField</span>(
+            Map&lt;String, Object&gt; map, String... keys) {
+        <span class="keyword">for</span> (String key : keys) {
+            Object val = map.get(key);
+            <span class="keyword">if</span> (val != <span class="keyword">null</span>) <span class="keyword">return</span> val.toString();
+        }
+        <span class="keyword">return null</span>;
+    }
+}</code></pre>
+
+<h3>Step 6: PaymentService — Recording Payments</h3>
+<pre><code><span class="annotation">@Service</span>
+<span class="keyword">public class</span> <span class="type">PaymentService</span> {
+    <span class="annotation">@Autowired</span> <span class="keyword">private</span> PaymentRepository paymentRepository;
+    <span class="annotation">@Autowired</span> <span class="keyword">private</span> BillRepository billRepository;
+
+    <span class="keyword">public</span> Payment <span class="function">recordPayment</span>(Long billId, Double paidAmount,
+            String paidOn, String bankName,
+            String bankRef, String paymentMethod) {
+
+        Bill bill = billRepository.findById(billId)
+            .orElseThrow(() -> <span class="keyword">new</span> RuntimeException(<span class="string">"Bill not found"</span>));
+
+        <span class="comment">// 1. Update bill status to PAID</span>
+        bill.setStatus(BillStatus.PAID);
+        bill.setPaidAmount(paidAmount);
+        bill.setPaidOn(paidOn);
+        bill.setBankName(bankName);
+        bill.setBankTransactionReference(bankRef);
+        billRepository.save(bill);
+
+        <span class="comment">// 2. Create payment record</span>
+        Payment payment = <span class="keyword">new</span> Payment();
+        payment.setBillId(billId);
+        payment.setCityId(bill.getCityId());
+        payment.setCustomerId(bill.getCustomerId());
+        payment.setCustomerName(bill.getCustomerName());
+        payment.setBillNumber(bill.getBillId());
+        payment.setPaidAmount(paidAmount);
+        payment.setPaidOn(paidOn);
+        payment.setBankName(bankName);
+        payment.setBankTransactionReference(bankRef);
+        payment.setPaymentMethod(paymentMethod != <span class="keyword">null</span>
+            ? paymentMethod : <span class="string">"BANK"</span>);
+        <span class="keyword">return</span> paymentRepository.save(payment);
+    }
+}</code></pre>
+
+<h3>Step 7: Security Config — Allow Webhook Publicly</h3>
+
+<div class="alert alert-warning">
+  <div class="alert-title">⚠️ Warning</div>
+  The ArifPay webhook callback <strong>must</strong> be accessible without authentication. Add it to your security config's <code>permitAll()</code> list.
+</div>
+
+<pre><code><span class="comment">// In WebSecurityConfig.java — inside filterChain()</span>
+.authorizeHttpRequests(auth -> auth
+    <span class="comment">// ... your other rules ...</span>
+
+    <span class="comment">// PUBLIC: ArifPay webhook callback</span>
+    .requestMatchers(<span class="string">"/api/payments/arifpay/callback"</span>)
+        .permitAll()
+
+    <span class="comment">// All other requests require authentication</span>
+    .anyRequest().authenticated()
+)</code></pre>
+
+<h3>Maven Dependencies</h3>
+<p>No extra dependencies needed. <code>RestTemplate</code> is included in <code>spring-boot-starter-web</code>.</p>
+<pre><code>&lt;dependency&gt;
+    &lt;groupId&gt;org.springframework.boot&lt;/groupId&gt;
+    &lt;artifactId&gt;spring-boot-starter-web&lt;/artifactId&gt;
+&lt;/dependency&gt;
+&lt;dependency&gt;
+    &lt;groupId&gt;org.springframework.boot&lt;/groupId&gt;
+    &lt;artifactId&gt;spring-boot-starter-data-jpa&lt;/artifactId&gt;
+&lt;/dependency&gt;</code></pre>
+
+<hr>
+
+<!-- ============================================================ -->
+<h2 id="frontend">5. Frontend Implementation (Next.js / React)</h2>
+
+<h3>Frontend File Structure</h3>
+<div class="file-tree">
+app/<br>
+├── lib/<br>
+│&nbsp;&nbsp;&nbsp;└── apiService.js &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ← API functions<br>
+├── (dashboard)/<br>
+│&nbsp;&nbsp;&nbsp;└── bills/<br>
+│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└── page.js &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ← "Pay with Arifpay" button + modal<br>
+next.config.mjs &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ← Proxy rewrite to backend
+</div>
+
+<h3>Step 1: Next.js Proxy Configuration</h3>
+
+<div class="alert alert-important">
+  <div class="alert-title">⚡ Important</div>
+  The frontend uses Next.js rewrites to proxy API calls to the backend, avoiding CORS issues.
+</div>
+
+<pre><code><span class="comment">// next.config.mjs</span>
+<span class="keyword">const</span> nextConfig = {
+  <span class="keyword">async</span> <span class="function">rewrites</span>() {
+    <span class="keyword">const</span> backendUrl = process.env.BACKEND_URL
+      || <span class="string">'http://localhost:8083'</span>;
+    <span class="keyword">return</span> [
+      {
+        source: <span class="string">"/backend/:path*"</span>,
+        destination: <span class="string">`${backendUrl}/:path*`</span>,
+      },
+    ];
+  },
+};
+<span class="keyword">export default</span> nextConfig;</code></pre>
+
+<h3>Step 2: API Service Functions</h3>
+<pre><code><span class="comment">// app/lib/apiService.js</span>
+
+<span class="keyword">const</span> API_BASE = <span class="keyword">typeof</span> window !== <span class="string">'undefined'</span>
+    ? <span class="string">'/backend'</span>
+    : (process.env.BACKEND_URL || <span class="string">'http://localhost:8083'</span>);
+
+<span class="keyword">function</span> <span class="function">getAuthHeaders</span>() {
+    <span class="keyword">const</span> token = <span class="keyword">typeof</span> window !== <span class="string">'undefined'</span>
+        ? localStorage.getItem(<span class="string">'auth_token'</span>) : <span class="keyword">null</span>;
+    <span class="keyword">const</span> headers = { <span class="string">'Content-Type'</span>: <span class="string">'application/json'</span> };
+    <span class="keyword">if</span> (token) headers[<span class="string">'Authorization'</span>] = <span class="string">`Bearer ${token}`</span>;
+    <span class="keyword">return</span> headers;
+}
+
+<span class="keyword">async function</span> <span class="function">handleResponse</span>(res) {
+    <span class="keyword">if</span> (res.status === 401) {
+        localStorage.removeItem(<span class="string">'auth_token'</span>);
+        window.location.href = <span class="string">'/signin'</span>;
+        <span class="keyword">throw new</span> Error(<span class="string">'Unauthorized'</span>);
+    }
+    <span class="keyword">const</span> data = <span class="keyword">await</span> res.json().<span class="function">catch</span>(() => <span class="keyword">null</span>);
+    <span class="keyword">if</span> (!res.ok) <span class="keyword">throw new</span> Error(
+        data?.message || <span class="string">`Request failed (${res.status})`</span>);
+    <span class="keyword">return</span> data;
+}
+
+<span class="comment">// ============ ARIFPAY PAYMENTS ============</span>
+
+<span class="comment">/**
+ * Initiate ArifPay checkout session for a bill.
+ * @param {number} billId - Internal bill ID
+ * @param {string} phone  - Full phone e.g. "251911223344"
+ * @returns {Promise&lt;{sessionId, checkoutUrl}&gt;}
+ */</span>
+<span class="keyword">export async function</span> <span class="function">initiateArifpayPayment</span>(billId, phone) {
+    <span class="keyword">const</span> res = <span class="keyword">await</span> fetch(
+        <span class="string">`${API_BASE}/api/payments/arifpay/initiate/${billId}`</span>, {
+        method: <span class="string">'POST'</span>,
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ phone: phone || <span class="keyword">undefined</span> }),
+    });
+    <span class="keyword">return</span> handleResponse(res);
+}
+
+<span class="comment">/**
+ * Check ArifPay session status after redirect.
+ * @param {string} sessionId
+ * @returns {Promise&lt;{status: string}&gt;}
+ */</span>
+<span class="keyword">export async function</span> <span class="function">checkArifpayStatus</span>(sessionId) {
+    <span class="keyword">const</span> res = <span class="keyword">await</span> fetch(
+        <span class="string">`${API_BASE}/api/payments/arifpay/status/${sessionId}`</span>,
+        { headers: getAuthHeaders() });
+    <span class="keyword">return</span> handleResponse(res);
+}</code></pre>
+
+<h3>Step 3: Bills Page — "Pay with Arifpay" Button &amp; Modal</h3>
+<pre><code><span class="string">"use client"</span>;
+<span class="keyword">import</span> { useEffect, useState } <span class="keyword">from</span> <span class="string">"react"</span>;
+<span class="keyword">import</span> { initiateArifpayPayment, checkArifpayStatus }
+    <span class="keyword">from</span> <span class="string">"../../lib/apiService"</span>;
+
+<span class="keyword">export default function</span> <span class="function">BillsPage</span>() {
+  <span class="keyword">const</span> [bills, setBills] = useState([]);
+  <span class="keyword">const</span> [toast, setToast] = useState(<span class="keyword">null</span>);
+
+  <span class="comment">// ---- Arifpay Modal State ----</span>
+  <span class="keyword">const</span> [isModalOpen, setIsModalOpen] = useState(<span class="keyword">false</span>);
+  <span class="keyword">const</span> [modalBill, setModalBill] = useState(<span class="keyword">null</span>);
+  <span class="keyword">const</span> [phoneDigits, setPhoneDigits] = useState(<span class="string">""</span>);
+  <span class="keyword">const</span> [submittingPayment, setSubmittingPayment] =
+      useState(<span class="keyword">false</span>);
+
+  <span class="comment">// ★ STEP A: On page load, check if returning from ArifPay</span>
+  useEffect(() => {
+    <span class="keyword">const</span> params =
+        <span class="keyword">new</span> URLSearchParams(window.location.search);
+    <span class="keyword">const</span> status = params.get(<span class="string">"status"</span>);
+    <span class="keyword">const</span> sessionId = params.get(<span class="string">"sessionId"</span>);
+
+    <span class="keyword">if</span> (status) {
+      <span class="comment">// Clean URL to prevent repeat on reload</span>
+      window.history.replaceState({}, document.title,
+          window.location.pathname);
+
+      <span class="keyword">if</span> (status === <span class="string">"success"</span> &amp;&amp; sessionId) {
+        showToast(<span class="string">"Verifying payment..."</span>, <span class="string">"info"</span>);
+        checkArifpayStatus(sessionId).then((res) => {
+          <span class="keyword">if</span> (res.status === <span class="string">"SUCCESS"</span>)
+            showToast(<span class="string">"Bill paid with ArifPay!"</span>);
+          <span class="keyword">else</span>
+            showToast(<span class="string">`Status: ${res.status}`</span>, <span class="string">"warning"</span>);
+          loadBills();
+        });
+      } <span class="keyword">else if</span> (status === <span class="string">"cancel"</span>) {
+        showToast(<span class="string">"Payment cancelled."</span>, <span class="string">"warning"</span>);
+      } <span class="keyword">else if</span> (status === <span class="string">"error"</span>) {
+        showToast(<span class="string">"Payment error."</span>, <span class="string">"error"</span>);
+      }
+    }
+    loadBills();
+  }, []);
+
+  <span class="comment">// ★ STEP B: Open phone modal</span>
+  <span class="keyword">function</span> <span class="function">handlePayWithArifpay</span>(bill) {
+    setModalBill(bill);
+    <span class="keyword">let</span> digits = <span class="string">""</span>;
+    <span class="keyword">if</span> (bill.phoneNumber) {
+      <span class="keyword">const</span> cleaned =
+          bill.phoneNumber.replace(<span class="type">/[^\d]/g</span>, <span class="string">""</span>);
+      digits = cleaned.length >= 9
+          ? cleaned.slice(-9) : cleaned;
+    }
+    setPhoneDigits(digits);
+    setSubmittingPayment(<span class="keyword">false</span>);
+    setIsModalOpen(<span class="keyword">true</span>);
+  }
+
+  <span class="comment">// ★ STEP C: Submit → redirect to ArifPay</span>
+  <span class="keyword">async function</span> <span class="function">handleSubmitPayment</span>(e) {
+    e.preventDefault();
+    <span class="keyword">if</span> (submittingPayment) <span class="keyword">return</span>;
+
+    <span class="keyword">const</span> trimmed = phoneDigits.trim();
+    <span class="keyword">if</span> (!<span class="type">/^\d{9}$/</span>.test(trimmed)) {
+      showToast(<span class="string">"Enter exactly 9 digits"</span>, <span class="string">"error"</span>);
+      <span class="keyword">return</span>;
+    }
+
+    <span class="keyword">const</span> phone = <span class="string">"251"</span> + trimmed;
+    setSubmittingPayment(<span class="keyword">true</span>);
+
+    <span class="keyword">try</span> {
+      <span class="keyword">const</span> res = <span class="keyword">await</span>
+          initiateArifpayPayment(modalBill.id, phone);
+      <span class="keyword">if</span> (res.checkoutUrl) {
+        <span class="comment">// ★ KEY: Redirect to ArifPay checkout</span>
+        window.location.href = res.checkoutUrl;
+      } <span class="keyword">else</span> {
+        showToast(<span class="string">"No checkout URL"</span>, <span class="string">"error"</span>);
+        setSubmittingPayment(<span class="keyword">false</span>);
+      }
+    } <span class="keyword">catch</span> (err) {
+      showToast(err.message, <span class="string">"error"</span>);
+      setSubmittingPayment(<span class="keyword">false</span>);
+    }
+  }
+
+  <span class="comment">// ... render table with button & modal ...</span>
+  <span class="comment">// (See full source in bills/page.js)</span>
+}</code></pre>
+
+<hr>
+
+<!-- ============================================================ -->
+<h2 id="config">6. Configuration &amp; Environment Setup</h2>
+
+<h3>Backend — <code>application.properties</code></h3>
+<pre><code># Server
+server.port=8083
+server.address=0.0.0.0
+
+# Database (MySQL)
+spring.datasource.url=jdbc:mysql://127.0.0.1:3306/your_db?useSSL=false&amp;allowPublicKeyRetrieval=true
+spring.datasource.username=root
+spring.datasource.password=your_password
+
+# JPA — auto-creates tables
+spring.jpa.hibernate.ddl-auto=update
+spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.MySQLDialect
+
+# CORS
+app.cors.allowed-origins=http://localhost:3001,http://YOUR_SERVER_IP:3001</code></pre>
+
+<h3>Frontend — <code>.env.local</code></h3>
+<pre><code>BACKEND_URL=http://localhost:8083
+# Production:
+# BACKEND_URL=http://YOUR_SERVER_IP:8083</code></pre>
+
+<h3>ArifPay Configuration Table Values</h3>
+<table>
+  <thead><tr><th>Field</th><th>Description</th><th>Example</th></tr></thead>
+  <tbody>
+    <tr><td><code>api_key</code></td><td>Your ArifPay API key</td><td><code>5oCuK7nKZIJtyPa...</code></td></tr>
+    <tr><td><code>merchant_id</code></td><td>Your merchant ID</td><td><code>APMG:001084</code></td></tr>
+    <tr><td><code>api_url</code></td><td>ArifPay Checkout API</td><td><code>https://gateway.arifpay.net/api/checkout/session</code></td></tr>
+    <tr><td><code>success_url</code></td><td>Redirect on success</td><td><code>http://yoursite.com/bills?status=success</code></td></tr>
+    <tr><td><code>cancel_url</code></td><td>Redirect on cancel</td><td><code>http://yoursite.com/bills?status=cancel</code></td></tr>
+    <tr><td><code>error_url</code></td><td>Redirect on error</td><td><code>http://yoursite.com/bills?status=error</code></td></tr>
+    <tr><td><code>beneficiary_bank</code></td><td>Bank code</td><td><code>AWINETAA</code></td></tr>
+    <tr><td><code>beneficiary_account</code></td><td>Account number</td><td><code>1000123456789</code></td></tr>
+  </tbody>
+</table>
+
+<hr>
+
+<!-- ============================================================ -->
+<h2 id="security">7. Security Considerations</h2>
+
+<div class="alert alert-caution">
+  <div class="alert-title">🔴 Caution</div>
+  These are critical security items to address before going to production.
+</div>
+
+<ol>
+  <li><strong>Webhook Authentication</strong> — The current implementation does not verify that webhook calls actually come from ArifPay. In production, validate using ArifPay's webhook signature or IP whitelist.</li>
+  <li><strong>API Key Storage</strong> — The API key is stored in the database. Ensure the database is secured, and consider encrypting the <code>api_key</code> column.</li>
+  <li><strong>Nonce Uniqueness</strong> — The nonce format <code>billId_timestamp</code> ensures unique references. The <code>processSuccessfulPayment</code> method checks <code>bill.getStatus() == PENDING</code> to prevent double-processing.</li>
+  <li><strong>Webhook URL</strong> — The <code>notifyUrl</code> must be publicly accessible from ArifPay's servers. Use your server's public IP or domain.</li>
+  <li><strong>HTTPS</strong> — Use HTTPS for all production URLs (successUrl, cancelUrl, errorUrl, notifyUrl).</li>
+</ol>
+
+<hr>
+
+<!-- ============================================================ -->
+<h2 id="mock">8. Testing with Mock Mode</h2>
+
+<p>The implementation includes a <strong>mock mode</strong> for local development when the API key is set to <code>test_api_key_123456789</code>:</p>
+
+<ul>
+  <li>Instead of calling ArifPay's real API, it generates a mock session ID and redirects to the success URL immediately</li>
+  <li>The <code>/status/{sessionId}</code> endpoint detects <code>mock_session_*</code> IDs and auto-records the payment</li>
+  <li>This lets you test the entire flow locally without a real ArifPay account</li>
+</ul>
+
+<p>To enable: set <code>api_key</code> in the <code>arifpay_config</code> table to <code>test_api_key_123456789</code>.</p>
+
+<hr>
+
+<!-- ============================================================ -->
+<h3>API Endpoints Summary</h3>
+
+<table>
+  <thead>
+    <tr><th>Method</th><th>Endpoint</th><th>Auth</th><th>Description</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>POST</code></td><td><code>/api/payments/arifpay/initiate/{billId}</code></td><td>JWT Required</td><td>Create checkout session</td></tr>
+    <tr><td><code>POST</code></td><td><code>/api/payments/arifpay/callback</code></td><td><strong>Public</strong></td><td>Webhook from ArifPay</td></tr>
+    <tr><td><code>GET</code></td><td><code>/api/payments/arifpay/status/{sessionId}</code></td><td>JWT Required</td><td>Verify payment status</td></tr>
+    <tr><td><code>GET</code></td><td><code>/api/arifpay-config</code></td><td>JWT Required</td><td>Get current config</td></tr>
+    <tr><td><code>PUT</code></td><td><code>/api/arifpay-config</code></td><td>JWT Required</td><td>Update config</td></tr>
+  </tbody>
+</table>
+
+<hr>
+
+<!-- ============================================================ -->
+<h2 id="checklist">9. Implementation Checklist</h2>
+
+<ul class="checklist">
+  <li>Create <code>ArifPayConfig</code> entity and repository</li>
+  <li>Create <code>ArifPayConfigService</code> and <code>ArifPayConfigInitializer</code></li>
+  <li>Create <code>ArifpayController</code> with 3 endpoints (initiate, callback, status)</li>
+  <li>Add <code>processSuccessfulPayment()</code> logic in controller</li>
+  <li>Ensure <code>PaymentService.recordPayment()</code> marks bill PAID + creates Payment record</li>
+  <li>Add <code>/api/payments/arifpay/callback</code> to security config as <code>permitAll()</code></li>
+  <li>Set <code>notifyUrl</code> to your server's public URL</li>
+  <li>Add frontend API functions: <code>initiateArifpayPayment()</code>, <code>checkArifpayStatus()</code></li>
+  <li>Add "Pay with Arifpay" button + phone number modal to bills page</li>
+  <li>Handle redirect-back URL parameters (<code>status</code>, <code>sessionId</code>) on page load</li>
+  <li>Configure Next.js proxy rewrite to backend</li>
+  <li>Seed ArifPay config with your credentials</li>
+  <li>Test with mock mode first, then switch to real API key</li>
+</ul>
+
+<hr>
+<p style="text-align:center; color:var(--text-secondary); font-size:12px; margin-top:30px;">
+  ArifPay Integration Guide — Generated from MardaArif Project — July 2026
+</p>
+
+</body>
+</html>

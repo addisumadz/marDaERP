@@ -848,6 +848,28 @@ export class ReadingService {
     }
   }
 
+  async voidBillsAndRevertToReadings(readingIds) {
+    if (!readingIds || readingIds.length === 0) {
+      throw new Error("No readings provided to void.");
+    }
+    try {
+      const user_accessToken = getAccesToken();
+      const payload = { readingIds };
+      const res = await axios.post(
+        `${commonUrl}bills/void-and-revert-to-readings`,
+        payload,
+        {
+          headers: { "Content-Type": "application/json", ...authHeader(user_accessToken) },
+          timeout: 60000,
+        }
+      );
+      return res.data;
+    } catch (error) {
+      console.error('Error voiding and reverting bills to readings:', error);
+      throw error;
+    }
+  }
+
   async initAverageConsumption(accountNumbers, kifyaWer, months) {
     if (!Array.isArray(accountNumbers) || accountNumbers.length === 0) {
       throw new Error("No account numbers provided.");

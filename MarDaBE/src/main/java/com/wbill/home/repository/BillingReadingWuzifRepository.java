@@ -89,10 +89,6 @@ public interface BillingReadingWuzifRepository extends JpaRepository<BillingRead
 	List<BillingReadingWuzif> findByBillingReadingActualPaymentAll(
 			@Param("billingReading") BillingReading billingReading);
 
-	// Checks if a wuzif record already exists for a specific penalized reading
-	// Optional<BillingReadingWuzif> findByBillingReadingPenalized(BillingReading
-	// penalizedReading);
-
 	@Query("SELECT w FROM BillingReadingWuzif w " +
 			"WHERE w.billingReadingActualPayment.billingCustomerInfo IN :customers " +
 			"AND w.billingReadingActualPayment.status = 'active' " +

@@ -1,8 +1,70 @@
 "use client";
 import { useMemo, useState, useRef, useEffect } from "react";
 import { MaterialReactTable, useMaterialReactTable } from "material-react-table";
-import { Box, Button, Grid, Paper, Typography, FormControl, InputLabel, Select, MenuItem, CircularProgress, Tooltip, IconButton, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, TextField, Tabs, Tab, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TableFooter, Snackbar, Alert } from "@mui/material";
-import CloudUploadIcon from '@mui/icons-material/CloudUpload';
+import {
+  Box,
+  Button,
+  Grid,
+  Paper,
+  Typography,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  CircularProgress,
+  Tooltip,
+  IconButton,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
+  TextField,
+  Tabs,
+  Tab,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  TableFooter,
+  Snackbar,
+  Alert,
+  Card,
+  CardContent,
+  Chip,
+  Stack,
+  Divider,
+  Collapse,
+  Badge,
+  LinearProgress,
+} from "@mui/material";
+import CloudUploadIcon from "@mui/icons-material/CloudUpload";
+import EditIcon from "@mui/icons-material/Edit";
+import WarningIcon from "@mui/icons-material/Warning";
+import VisibilityIcon from "@mui/icons-material/Visibility";
+import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
+import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
+import BoltIcon from "@mui/icons-material/Bolt";
+import PlaylistAddCheckIcon from "@mui/icons-material/PlaylistAddCheck";
+import AccountBalanceIcon from "@mui/icons-material/AccountBalance";
+import PaidIcon from "@mui/icons-material/Paid";
+import ContentCopyIcon from "@mui/icons-material/ContentCopy";
+import PersonIcon from "@mui/icons-material/Person";
+import PhoneIcon from "@mui/icons-material/Phone";
+import ReceiptLongIcon from "@mui/icons-material/ReceiptLong";
+import AccountBalanceWalletIcon from "@mui/icons-material/AccountBalanceWallet";
+import SpeedIcon from "@mui/icons-material/Speed";
+import RefreshIcon from "@mui/icons-material/Refresh";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import ExpandLessIcon from "@mui/icons-material/ExpandLess";
+import CloseIcon from "@mui/icons-material/Close";
+import SearchIcon from "@mui/icons-material/Search";
+import FilterAltOffIcon from "@mui/icons-material/FilterAltOff";
+import CheckCircleIcon from "@mui/icons-material/CheckCircle";
+import ErrorOutlineIcon from "@mui/icons-material/ErrorOutline";
+import CalculateIcon from "@mui/icons-material/Calculate";
 
 import {
   QueryClient,
@@ -20,18 +82,9 @@ import ConfirmDialog from "@/app/ui/components/ConfirmDialog";
 import ViewCustomerModal from "./ViewCustomerModal";
 import ReadingDetailModal from "../../components/ReadingDetailModal";
 import MetersModal from "./MetersModal";
-import EditIcon from "@mui/icons-material/Edit";
-import WarningIcon from "@mui/icons-material/Warning";
 import { amharicFuzzyFilter } from "../../../lib/amharicFuzzyFilter";
 import EthiopianCalendarConverterPure from "../../../lib/ethiopianCalendarConverterPure";
-import VisibilityIcon from "@mui/icons-material/Visibility";
-import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
-import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
-import BoltIcon from '@mui/icons-material/Bolt';
-import PlaylistAddCheckIcon from '@mui/icons-material/PlaylistAddCheck';
 import { ReadingService } from "../../../lib/ReadingService";
-import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
-import PaidIcon from '@mui/icons-material/Paid';
 import bankDerashService from "../../../lib/bankDerashService";
 import bankPaymentImportService from "../../../lib/bankPaymentImportService";
 import billingBanksService from "../../../lib/billingBanksService";
@@ -97,7 +150,7 @@ const buildSingleBillAdjustmentLines = (oldBill, newBill, bpMappings) => {
   // ── New Bill Push (Step 1: DR Receivable / CR Revenue) ──
   if (newBill) {
     const newCharges = getChargeItems(newBill);
-    newCharges.forEach(item => {
+    newCharges.forEach((item) => {
       const amt = Math.round((item.amount || 0) * 100) / 100;
       if (amt <= 0) return;
       const drAccId = bpMappings[item.drKey];
@@ -118,23 +171,22 @@ const buildSingleBillAdjustmentLines = (oldBill, newBill, bpMappings) => {
         debitAmount: 0,
         creditAmount: amt,
       });
-      newBillRows.push({ desc: item.desc, group: item.group, amount: amt });
+      newBillRows.push({ desc: item.desc, drKey: item.drKey, crKey: item.crKey, amount: amt, group: item.group });
     });
   }
 
   // ── Old Bill Reversal (opposite of Step 1: DR Revenue / CR Receivable) ──
   if (oldBill) {
     const oldCharges = getChargeItems(oldBill);
-    oldCharges.forEach(item => {
+    oldCharges.forEach((item) => {
       const amt = Math.round((item.amount || 0) * 100) / 100;
       if (amt <= 0) return;
-      const drAccId = bpMappings[item.drKey];
-      const crAccId = bpMappings[item.crKey];
-      if (!drAccId) missingAccounts.push(`DR: ${item.desc}`);
-      if (!crAccId) missingAccounts.push(`CR: ${item.desc}`);
+      const drAccId = bpMappings[item.drKey]; // was DR Receivable in Step 1 -> now CR
+      const crAccId = bpMappings[item.crKey]; // was CR Revenue in Step 1 -> now DR
+      if (!drAccId) missingAccounts.push(`CR: ${item.desc}`);
+      if (!crAccId) missingAccounts.push(`DR: ${item.desc}`);
       if (!drAccId || !crAccId) return;
 
-      // Reversed: DR Revenue (crAccId) / CR Receivable (drAccId)
       lines.push({
         accountId: Number(crAccId),
         description: `${item.desc} — Revenue Reversal — Old Bill ${invoiceNum}`,
@@ -147,7 +199,7 @@ const buildSingleBillAdjustmentLines = (oldBill, newBill, bpMappings) => {
         debitAmount: 0,
         creditAmount: amt,
       });
-      oldBillRows.push({ desc: item.desc, group: item.group, amount: amt });
+      oldBillRows.push({ desc: item.desc, drKey: item.drKey, crKey: item.crKey, amount: amt, group: item.group });
     });
   }
 
@@ -161,6 +213,8 @@ const buildSingleBillAdjustmentLines = (oldBill, newBill, bpMappings) => {
   return { lines, error: null, newBillRows, oldBillRows };
 };
 
+const fmt = (n) => (n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
 const CustomerList = () => {
   const queryClient = useQueryClient();
   const [viewedCustomerId, setViewedCustomerId] = useState(null);
@@ -168,21 +222,25 @@ const CustomerList = () => {
   const [selectedCustomerId, setSelectedCustomerId] = useState(null);
   const [activeCustomerTab, setActiveCustomerTab] = useState(0);
   const [activeBillTab, setActiveBillTab] = useState(0);
+  const [activeWuzifTab, setActiveWuzifTab] = useState(0);
+  const [detailWorkspaceTab, setDetailWorkspaceTab] = useState(0); // 0 = Bills & Readings, 1 = Wuzif Ledger
+  const [isCustomerDirectoryExpanded, setIsCustomerDirectoryExpanded] = useState(true);
+
   const [isMetersOpen, setMetersOpen] = useState(false);
   const [selectedCustomerTypeId, setSelectedCustomerTypeId] = useState("");
   const [selectedKebeleId, setSelectedKebeleId] = useState("");
   const [selectedKetenaId, setSelectedKetenaId] = useState("");
   const [selectedBranchId, setSelectedBranchId] = useState("");
   const [selectedReaderId, setSelectedReaderId] = useState("");
+
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [importResult, setImportResult] = useState(null);
   const [confirmImportOpen, setConfirmImportOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
-  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
+  const [snackbar, setSnackbar] = useState({ open: false, message: "", severity: "success" });
   const fileInputRef = useRef(null);
   const [viewReadingId, setViewReadingId] = useState(null);
-  // Wuzif management tab state (applies only to the 3rd table)
-  const [activeWuzifTab, setActiveWuzifTab] = useState(0);
+
   // Generic confirm dialog state
   const [confirmState, setConfirmState] = useState({
     open: false,
@@ -198,14 +256,16 @@ const CustomerList = () => {
   const [bpMappings, setBpMappings] = useState({});
   const [openFiscalYearId, setOpenFiscalYearId] = useState(null);
 
-  // --- Journal preview dialog state ---
+  // --- Journal preview dialog state (for standalone Delete Reading) ---
   const [journalPreviewOpen, setJournalPreviewOpen] = useState(false);
   const [journalPreviewData, setJournalPreviewData] = useState(null);
   const [journalPushLoading, setJournalPushLoading] = useState(false);
 
-  useEffect(() => {
-    // Load BP_ account mappings and open fiscal year for journal adjustments
-    const loadJournalSupportData = async () => {
+  // Helper to ensure BP mappings & open fiscal year are available
+  const getEnsuredJournalSupportData = async () => {
+    let currentBpMap = bpMappings;
+    let currentFyId = openFiscalYearId;
+    if (!currentBpMap || Object.keys(currentBpMap).length === 0 || !currentFyId) {
       try {
         const [mappingsData, fyData] = await Promise.all([
           fncBillingAccountMapService.getAllMappings().catch(() => []),
@@ -213,21 +273,27 @@ const CustomerList = () => {
         ]);
         const bpMap = {};
         if (Array.isArray(mappingsData)) {
-          mappingsData.forEach(m => {
+          mappingsData.forEach((m) => {
             if (m.mappingKey && m.mappingKey.startsWith("BP_")) {
               bpMap[m.mappingKey] = m.accountId;
             }
           });
         }
+        currentBpMap = bpMap;
         setBpMappings(bpMap);
         if (Array.isArray(fyData) && fyData.length > 0) {
-          setOpenFiscalYearId(fyData[0].id);
+          currentFyId = fyData[0].id;
+          setOpenFiscalYearId(currentFyId);
         }
       } catch (e) {
         console.warn("[JournalAdjustment] Failed to load support data:", e);
       }
-    };
-    loadJournalSupportData();
+    }
+    return { currentBpMap, currentFyId };
+  };
+
+  useEffect(() => {
+    getEnsuredJournalSupportData();
   }, []);
 
   const [derashModalOpen, setDerashModalOpen] = useState(false);
@@ -245,52 +311,19 @@ const CustomerList = () => {
     setConfirmState({ open: true, title, content, confirmText, cancelText, confirmColor });
   };
 
-  const handleGenerateBill = (bill) => {
-    if (!bill || bill.isBillGenerated) {
-      toast.info("Bill is already generated.");
-      return;
-    }
-    showConfirm({
-      title: "Generate Bill",
-      content: "Generate bill for this reading?",
-      confirmColor: "primary",
-      onConfirm: async () => {
-        try {
-          await generateBillAsync(bill.id);
-        } catch (e) {
-          // Error handled in mutation onError
-        }
-      },
-    });
-  };
   const closeConfirm = () => setConfirmState((s) => ({ ...s, open: false }));
+
   // Fetch data for dropdowns
   const { data: kebeles = [], isLoading: isKebelesLoading } = useQuery({
     queryKey: ["kebeles"],
     queryFn: () => dropdownService.getKebeles(),
-    onSuccess: (data) => {
-      //console.log('Fetched kebeles:', data);
-      if (data && data.length > 0) {
-        //console.log('First kebele object keys:', Object.keys(data[0]));
-      }
-    },
-    onError: (error) => {
-      console.error('Error fetching kebeles:', error);
-    }
+    onError: (error) => console.error("Error fetching kebeles:", error),
   });
 
   const { data: branches = [], isLoading: isBranchesLoading } = useQuery({
     queryKey: ["branches"],
     queryFn: () => dropdownService.getBranches(),
-    onSuccess: (data) => {
-    //  console.log('Fetched branches:', data);
-      if (data && data.length > 0) {
-       // console.log('First branch object keys:', Object.keys(data[0]));
-      }
-    },
-    onError: (error) => {
-      console.error('Error fetching branches:', error);
-    }
+    onError: (error) => console.error("Error fetching branches:", error),
   });
 
   const { data: meterSizes = [] } = useQuery({
@@ -301,25 +334,15 @@ const CustomerList = () => {
   const { data: customerTypes = [], isLoading: isCustomerTypesLoading } = useQuery({
     queryKey: ["customerTypes"],
     queryFn: () => dropdownService.getCustomerTypes(),
-    onSuccess: (data) => {
-      //console.log('Fetched customer types:', data);
-    },
-    onError: (error) => {
-      console.error('Error fetching customer types:', error);
-    }
+    onError: (error) => console.error("Error fetching customer types:", error),
   });
 
-  // Fetch ketenas based on selected kebele
+  // Fetch ketenas based on selected kebele (or all active if none selected)
   const { data: ketenas = [], isLoading: isKetenasLoading } = useQuery({
     queryKey: ["ketenas", selectedKebeleId],
-    queryFn: () => {
-      if (!selectedKebeleId) return [];
-      return dropdownService.getKetenasByKebele(selectedKebeleId);
-    },
-    enabled: !!selectedKebeleId,
-    onError: (error) => {
-      console.error('Error fetching ketenas:', error);
-    }
+    queryFn: () => dropdownService.getKetenasByKebele(selectedKebeleId || null),
+    staleTime: 5 * 60 * 1000,
+    onError: (error) => console.error("Error fetching ketenas:", error),
   });
 
   // Fetch readers based on selected branch
@@ -330,9 +353,7 @@ const CustomerList = () => {
       return dropdownService.getReadersByBranch(selectedBranchId);
     },
     enabled: !!selectedBranchId,
-    onError: (error) => {
-      console.error('Error fetching readers:', error);
-    }
+    onError: (error) => console.error("Error fetching readers:", error),
   });
 
   const { data: billingBanks = [], isLoading: isBillingBanksLoading } = useQuery({
@@ -340,79 +361,21 @@ const CustomerList = () => {
     queryFn: () => billingBanksService.getAllBillingBanks(),
     refetchOnWindowFocus: false,
     staleTime: 10 * 60 * 1000,
-    onError: (error) => {
-      console.error("Error fetching billing banks:", error);
-    },
+    onError: (error) => console.error("Error fetching billing banks:", error),
   });
 
-  // Cached helper fetchers for dependent dropdowns (shared with child modals)
-  const getKetenasByKebeleCached = async (kebeleId) => {
-    if (!kebeleId) return [];
-    return queryClient.fetchQuery({
-      queryKey: ["ketenas", kebeleId],
-      queryFn: () => dropdownService.getKetenasByKebele(kebeleId),
-      staleTime: Infinity,
-    });
-  };
-
-  const handleDeleteReading = async (bill) => {
-    // Only allow delete if money is not collected (removed bill generation check)
-    if (bill.isMoneyCollected || bill.moneyCollected) {
-      toast.error("Cannot delete: Money has already been collected for this bill.");
-      return;
-    }
-    const wasJournalPushed = !!(bill.isJournalPushed || bill.journalPushed);
-    showConfirm({
-      title: "Delete Reading",
-      content: wasJournalPushed
-        ? "This bill was already pushed to journal. Deleting will create a REVERSAL journal entry (DRAFT). Continue?"
-        : "Are you sure you want to delete this reading?",
-      confirmColor: "error",
-      onConfirm: async () => {
-        try {
-          // Snapshot old bill data BEFORE deletion
-          const oldBillSnapshot = { ...bill };
-          await changeReadingStatusAsync({ readingId: bill.id, status: 'deleted' });
-          toast.success('Reading deleted successfully.');
-          queryClient.invalidateQueries(["customer-all-bill-data", selectedCustomerId]);
-
-          // If old bill was journal-pushed, show reversal journal preview
-          if (wasJournalPushed && openFiscalYearId && Object.keys(bpMappings).length > 0) {
-            const invoiceNum = oldBillSnapshot.billingInvoiceNumber || oldBillSnapshot.invoiceNumber || oldBillSnapshot.id;
-            const { lines, error, newBillRows, oldBillRows } = buildSingleBillAdjustmentLines(oldBillSnapshot, null, bpMappings);
-            if (!error && lines.length >= 2) {
-              setJournalPreviewData({ lines, newBillRows, oldBillRows, oldBill: oldBillSnapshot, newBill: null, invoiceNum, isVoidOnly: true });
-              setJournalPreviewOpen(true);
-            } else if (error) {
-              toast.warning(`Journal reversal skipped: ${error}`);
-            }
-          }
-        } catch (error) {
-          console.error("Error deleting reading:", error);
-          toast.error(`Failed to delete reading: ${error.message}`);
-        }
-      },
-    });
-  };
-
-  const getReadersByBranchCached = async (branchId) => {
-    if (!branchId) return [];
-    return queryClient.fetchQuery({
-      queryKey: ["readers", branchId],
-      queryFn: () => dropdownService.getReadersByBranch(branchId),
-      staleTime: Infinity,
-    });
-  };
-  // Modal States
-  // Removed customer creation functionality for complaint handling
-  // const [isCreateModalOpen, setCreateModalOpen] = useState(false);
+  // Reading Edit States with Stepped In-Modal Workflow
   const [editReadingModalOpen, setEditReadingModalOpen] = useState(false);
   const [selectedBillForEdit, setSelectedBillForEdit] = useState(null);
-  const [editReadingData, setEditReadingData] = useState({ currentReading: '', previousReading: '' });
-  const [validationError, setValidationError] = useState('');
+  const [editReadingData, setEditReadingData] = useState({ currentReading: "", previousReading: "" });
+  const [validationError, setValidationError] = useState("");
   const [isEditAndGenerate, setIsEditAndGenerate] = useState(false);
   const [isEditSubmitting, setIsEditSubmitting] = useState(false);
-  // Removed customer editing functionality for complaint handling
+
+  // Stepped in-modal workflow states
+  const [editModalStep, setEditModalStep] = useState("INPUT"); // 'INPUT' | 'PROCESSING' | 'JOURNAL'
+  const [processingStepText, setProcessingStepText] = useState("");
+  const [processingProgress, setProcessingProgress] = useState(0);
 
   const handleBillTabChange = (event, newValue) => {
     setActiveBillTab(newValue);
@@ -420,7 +383,6 @@ const CustomerList = () => {
 
   const handleCustomerTabChange = (event, newValue) => {
     setActiveCustomerTab(newValue);
-    // Reset pagination when switching tabs to avoid empty page
     setPagination((prev) => ({ ...prev, pageIndex: 0 }));
     setActiveBillTab(0);
   };
@@ -433,12 +395,8 @@ const CustomerList = () => {
     const selectedIds = Object.keys(rowSelection);
     setSelectedCustomerId(selectedIds.length === 1 ? selectedIds[0] : null);
     setActiveBillTab(0);
-  }, [rowSelection]);
-  
-  // Reset Wuzif tab to first tab when customer selection changes
-  useEffect(() => {
     setActiveWuzifTab(0);
-  }, [selectedCustomerId]);
+  }, [rowSelection]);
 
   const [pagination, setPagination] = useState({
     pageIndex: 0,
@@ -450,13 +408,11 @@ const CustomerList = () => {
   useEffect(() => {
     const handler = setTimeout(() => {
       setDebouncedSearch(globalFilter);
-      // Reset pageIndex when search changes to avoid out of bounds
       setPagination((prev) => ({ ...prev, pageIndex: 0 }));
     }, 400);
     return () => clearTimeout(handler);
   }, [globalFilter]);
 
-  // Reset pagination index when filters change
   useEffect(() => {
     setPagination((prev) => ({ ...prev, pageIndex: 0 }));
   }, [
@@ -491,7 +447,6 @@ const CustomerList = () => {
       debouncedSearch,
     ],
     queryFn: async () => {
-      const customerService = new CustomerService();
       const data = await customerService.getCustomersPaginatedFiltered({
         pageIndex: pagination.pageIndex,
         pageSize: pagination.pageSize,
@@ -506,27 +461,26 @@ const CustomerList = () => {
       return data;
     },
     keepPreviousData: true,
-    staleTime: 30 * 1000, // 30 seconds
+    staleTime: 30 * 1000,
     refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-    refetchOnMount: false,
   });
 
+  const { data: viewedCustomer, isFetching: isCustomerDetailsFetching } = useQuery({
+    queryKey: ["customer-details", viewedCustomerId],
+    queryFn: () => {
+      if (!viewedCustomerId) return null;
+      return customerService.getCustomerById(viewedCustomerId);
+    },
+    enabled: !!viewedCustomerId,
+  });
 
-  const { data: viewedCustomer, isFetching: isCustomerDetailsFetching } =
-    useQuery({
-      queryKey: ["customer-details", viewedCustomerId],
-      queryFn: () => {
-        if (!viewedCustomerId) return null;
-        const customerService = new CustomerService();
-        return customerService.getCustomerById(viewedCustomerId);
-      },
-      enabled: !!viewedCustomerId,
-    });
+  // Active Selected Customer Record (found from directory or fetched)
+  const selectedCustomerRecord = useMemo(() => {
+    if (!selectedCustomerId) return null;
+    return paginatedData?.content?.find((c) => String(c.id) === String(selectedCustomerId)) || null;
+  }, [selectedCustomerId, paginatedData?.content]);
 
-  // Removed editingCustomer query for complaint handling mode
-
-  // --- 1. SINGLE, COMBINED DATA FETCH ---
+  // Combined Bill and Wuzif Data Fetch
   const {
     data: combinedBillData,
     isLoading: isBillsLoading,
@@ -536,42 +490,87 @@ const CustomerList = () => {
     queryKey: ["customer-all-bill-data", selectedCustomerId],
     queryFn: async () => {
       if (!selectedCustomerId) return null;
-      // Use the new, efficient service method
       return readingService.getCombinedBillDataForCustomer(selectedCustomerId);
     },
     enabled: !!selectedCustomerId,
-    staleTime: 0, // Always consider data stale so manual refresh works
-    cacheTime: 0, // Don't cache the data
-    keepPreviousData: true, // avoid UI flicker during refetch
-    retry: 2, // limit retries to reduce long waits
-    retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 5000),
-    refetchOnWindowFocus: false, // Only fetch on customer selection and manual refresh
-    refetchOnReconnect: false,
-    refetchOnMount: false,
+    staleTime: 0,
+    cacheTime: 0,
+    keepPreviousData: true,
+    retry: 2,
+    refetchOnWindowFocus: false,
   });
 
-  // === MUTATIONS for CRUD operations ===
+  // Extract bills and wuzif
+  const customerBills = combinedBillData?.bills ?? [];
+  const wuzifBills = combinedBillData?.wuzifBills ?? [];
 
-  // Removed customer CREATE/UPDATE mutations for complaint handling
-  // Customer management is not allowed in complaint handling mode
+  // Filter bills
+  const activeBills = useMemo(
+    () => (customerBills || []).filter((bill) => !bill.void),
+    [customerBills]
+  );
+  const voidedBills = useMemo(
+    () => (customerBills || []).filter((bill) => bill.void),
+    [customerBills]
+  );
 
-  // ADD Reading mutation for complaint handling
-  const { mutateAsync: addReading, isLoading: isAddingReading } = useMutation({
-    mutationFn: ({ customerAccountNumber, lastReading, kifyaWer }) =>
-      readingService.addReading(customerAccountNumber, lastReading, kifyaWer),
-    onSuccess: () => {
-      queryClient.invalidateQueries(["customer-all-bill-data", selectedCustomerId]);
-      toast.success("Reading updated successfully!");
-    },
-    onError: (error) => {
-      console.error("Error updating reading:", error);
-      toast.error(error.message || "Failed to update reading");
-    },
-  });
+  // Filter wuzif
+  const activeWuzifList = useMemo(
+    () =>
+      (wuzifBills || []).filter(
+        (b) => b?.wuzifDeleted === "active" && b?.wuzifIsMoneyCollected === false
+      ),
+    [wuzifBills]
+  );
+  const skippedWuzifList = useMemo(
+    () =>
+      (wuzifBills || []).filter(
+        (b) => b?.wuzifDeleted === "deleted" && b?.wuzifIsKitatTenestual === true
+      ),
+    [wuzifBills]
+  );
+  const paidWuzifList = useMemo(
+    () =>
+      (wuzifBills || []).filter(
+        (b) => b?.wuzifDeleted === "deleted" && b?.wuzifIsMoneyCollected === true
+      ),
+    [wuzifBills]
+  );
 
-  // CHANGE Reading Status mutation for complaint handling
-  const { mutate: changeReadingStatus, mutateAsync: changeReadingStatusAsync, isLoading: isChangingStatus } = useMutation({
-    mutationFn: ({ readingId, status, previousReading, currentReading }) => 
+  const activeBillingBanks = useMemo(
+    () => (billingBanks || []).filter((bank) => bank.deleted === "active"),
+    [billingBanks]
+  );
+
+  // Financial summary metrics for selected customer
+  const customerFinancials = useMemo(() => {
+    const unpaidBills = activeBills.filter((b) => !b.isMoneyCollected && !b.moneyCollected);
+    const unpaidBillsTotal = unpaidBills.reduce((acc, b) => acc + (Number(b.tekilalaTekefay) || 0), 0);
+
+    const paidBills = activeBills.filter((b) => b.isMoneyCollected || b.moneyCollected);
+    const paidBillsTotal = paidBills.reduce((acc, b) => acc + (Number(b.tekilalaTekefay) || 0), 0);
+
+    const activeWuzifTotal = activeWuzifList.reduce(
+      (acc, b) => acc + (Number(b.tekilalaTekefay || b.wuzifHisab || 0)),
+      0
+    );
+
+    const totalOutstanding = unpaidBillsTotal + activeWuzifTotal;
+
+    return {
+      unpaidBillsCount: unpaidBills.length,
+      unpaidBillsTotal,
+      paidBillsCount: paidBills.length,
+      paidBillsTotal,
+      activeWuzifCount: activeWuzifList.length,
+      activeWuzifTotal,
+      totalOutstanding,
+    };
+  }, [activeBills, activeWuzifList]);
+
+  // Mutations
+  const { mutateAsync: changeReadingStatusAsync, isLoading: isChangingStatus } = useMutation({
+    mutationFn: ({ readingId, status, previousReading, currentReading }) =>
       readingService.changeReadingStatus(readingId, status, previousReading, currentReading),
     onSuccess: () => {
       queryClient.invalidateQueries(["customer-all-bill-data", selectedCustomerId]);
@@ -580,42 +579,61 @@ const CustomerList = () => {
     onError: (error) => toast.error(`Error changing reading status: ${error.message}`),
   });
 
-  // GENERATE single bill mutation (per-row action)
-  const { mutateAsync: generateBillAsync, isLoading: isGeneratingBill } = useMutation({
-    mutationFn: (readingId) => readingService.generateBills([readingId]),
-    onSuccess: () => {
-      queryClient.invalidateQueries(["customer-all-bill-data", selectedCustomerId]);
-      toast.success("Bill generated successfully!");
-    },
-    onError: (error) => {
-      const msg = error?.message || "Failed to generate bill.";
-      toast.error(msg);
-    },
-  });
+  const handleDeleteReading = async (bill) => {
+    if (bill.isMoneyCollected || bill.moneyCollected) {
+      toast.error("Cannot delete: Money has already been collected for this bill.");
+      return;
+    }
+    const wasJournalPushed = !!(bill.isJournalPushed || bill.journalPushed);
+    showConfirm({
+      title: "Delete Reading",
+      content: wasJournalPushed
+        ? "This bill was already pushed to journal. Deleting will create a REVERSAL journal entry (DRAFT). Continue?"
+        : "Are you sure you want to delete this reading?",
+      confirmColor: "error",
+      onConfirm: async () => {
+        try {
+          const oldBillSnapshot = { ...bill };
+          await changeReadingStatusAsync({ readingId: bill.id, status: "deleted" });
+          toast.success("Reading deleted successfully.");
+          queryClient.invalidateQueries(["customer-all-bill-data", selectedCustomerId]);
 
-  // DELETE active and RECREATE new reading (per complaint resolution rules)
-  const { mutateAsync: deleteAndRecreateAsync, isLoading: isDeletingRecreating } = useMutation({
-    mutationFn: ({ readingId, previousReading, currentReading }) =>
-      readingService.deleteActiveAndCreateNewReading(readingId, previousReading, currentReading),
-    onSuccess: () => {
-      queryClient.invalidateQueries(["customer-all-bill-data", selectedCustomerId]);
-      toast.success("Old reading deleted and new reading created!");
-    },
-    onError: (error) => toast.error(`Error applying changes: ${error.message}`),
-  });
+          if (wasJournalPushed) {
+            const { currentBpMap } = await getEnsuredJournalSupportData();
+            if (currentBpMap && Object.keys(currentBpMap).length > 0) {
+              const invoiceNum = oldBillSnapshot.billingInvoiceNumber || oldBillSnapshot.invoiceNumber || oldBillSnapshot.id;
+              const { lines, error, newBillRows, oldBillRows } = buildSingleBillAdjustmentLines(oldBillSnapshot, null, currentBpMap);
+              if (!error && lines.length >= 2) {
+                setJournalPreviewData({
+                  lines,
+                  newBillRows,
+                  oldBillRows,
+                  oldBill: oldBillSnapshot,
+                  newBill: null,
+                  invoiceNum,
+                  isVoidOnly: true,
+                  mode: "adjustment",
+                });
+                setJournalPreviewOpen(true);
+              } else if (error) {
+                toast.warning(`Journal reversal skipped: ${error}`);
+              }
+            }
+          }
+        } catch (error) {
+          console.error("Error deleting reading:", error);
+          toast.error(`Failed to delete reading: ${error.message}`);
+        }
+      },
+    });
+  };
 
-  // Removed customer deactivate/activate/import mutations for complaint handling mode
-
-  // Removed customer create/update handlers for complaint handling
-  // Added reading edit handlers for complaint handling
-  
   const handleEditReading = (bill) => {
-    // Check business rule: block only when money is collected
     if (bill.isMoneyCollected || bill.moneyCollected) {
       toast.error("Cannot edit reading: Money has already been collected for this bill.");
       return;
     }
-    
+
     showConfirm({
       title: "Edit Reading",
       content: "This will delete the active reading and create a new one with your inputs. Continue?",
@@ -623,17 +641,20 @@ const CustomerList = () => {
       onConfirm: () => {
         setSelectedBillForEdit(bill);
         setEditReadingData({
-          currentReading: bill.lastReading?.toString() || '',
-          previousReading: bill.previousReading?.toString() || '',
+          currentReading: bill.lastReading?.toString() || "",
+          previousReading: bill.previousReading?.toString() || "",
         });
-        setValidationError('');
+        setValidationError("");
+        setIsEditAndGenerate(false);
+        setEditModalStep("INPUT");
+        setProcessingStepText("");
+        setProcessingProgress(0);
         setEditReadingModalOpen(true);
       },
     });
   };
 
   const handleEditAndGenerate = (bill) => {
-    // Same guards as handleEditReading
     if (bill.isMoneyCollected || bill.moneyCollected) {
       toast.error("Cannot edit reading: Money has already been collected for this bill.");
       return;
@@ -646,18 +667,20 @@ const CustomerList = () => {
       onConfirm: () => {
         setSelectedBillForEdit(bill);
         setEditReadingData({
-          currentReading: bill.lastReading?.toString() || '',
-          previousReading: bill.previousReading?.toString() || '',
+          currentReading: bill.lastReading?.toString() || "",
+          previousReading: bill.previousReading?.toString() || "",
         });
-        setValidationError('');
+        setValidationError("");
         setIsEditAndGenerate(true);
+        setEditModalStep("INPUT");
+        setProcessingStepText("");
+        setProcessingProgress(0);
         setEditReadingModalOpen(true);
       },
     });
   };
 
   const handleEditReadingSubmit = async () => {
-    // Prevent double submits if user clicks very fast
     if (isEditSubmitting) return;
     if (!selectedBillForEdit || !editReadingData.currentReading || !editReadingData.previousReading) {
       toast.error("Please enter valid current and previous readings.");
@@ -666,134 +689,152 @@ const CustomerList = () => {
 
     const newReading = parseInt(editReadingData.currentReading);
     const prevReading = parseInt(editReadingData.previousReading);
-    
+
     if (isNaN(newReading) || isNaN(prevReading)) {
       setValidationError("Please enter valid numeric values for both readings.");
       return;
     }
-    
+
     if (newReading < 0 || prevReading < 0) {
       setValidationError("Readings cannot be negative.");
       return;
     }
-    
+
     if (newReading < prevReading) {
       setValidationError("Current reading cannot be less than previous reading.");
       return;
     }
-    
-    setValidationError('');
+
+    setValidationError("");
     setIsEditSubmitting(true);
 
-    // Snapshot the old bill data BEFORE the edit (for journal adjustment)
     const oldBillSnapshot = { ...selectedBillForEdit };
     const wasJournalPushed = !!(oldBillSnapshot.isJournalPushed || oldBillSnapshot.journalPushed);
 
-    try {
-      // New rule: delete active selected reading and create a new one with provided readings
-      const result = await deleteAndRecreateAsync({
-        readingId: selectedBillForEdit.id,
-        previousReading: prevReading,
-        currentReading: newReading,
-      });
+    // ==========================================
+    // MULTI-STEP AUTOMATED "EDIT & GENERATE" FLOW
+    // ==========================================
+    if (isEditAndGenerate) {
+      setEditModalStep("PROCESSING");
+      setProcessingProgress(20);
+      setProcessingStepText("Voiding old reading & saving new inputs...");
 
-      // Close modal and reset state
-      setEditReadingModalOpen(false);
-      setSelectedBillForEdit(null);
-      setEditReadingData({ currentReading: '', previousReading: '' });
+      try {
+        // Step 1: Void active reading and recreate new reading
+        const result = await readingService.deleteActiveAndCreateNewReading(
+          selectedBillForEdit.id,
+          prevReading,
+          newReading
+        );
 
-      // If combined Edit & Generate mode, auto-generate the new bill then show journal preview
-      if (isEditAndGenerate) {
-        let generatedNewBill = null;
-        try {
-          // Wait briefly for backend to persist the new reading
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          let freshData = await readingService.getCombinedBillDataForCustomer(selectedCustomerId);
-          let allBills = freshData?.bills || freshData || [];
-          const newBillToGenerate = allBills.find(b =>
-            b.kifyaWer === oldBillSnapshot.kifyaWer &&
-            !b.isVoid && !b.void &&
-            String(b.status).toLowerCase() === 'active' &&
-            !b.isBillGenerated
+        const newReadingId = result?.newReadingId || result?.id || result?.data?.newReadingId;
+        if (!newReadingId) {
+          throw new Error("Could not retrieve new reading ID from server.");
+        }
+
+        // Step 2: Generate Bill directly on the newly created reading
+        setProcessingProgress(55);
+        setProcessingStepText("Recalculating charges & generating new bill...");
+        await readingService.generateBills([newReadingId]);
+
+        // Step 3: Fetch fresh data to locate the generated bill
+        setProcessingProgress(80);
+        setProcessingStepText("Preparing DR/CR journal adjustment entries...");
+        await queryClient.invalidateQueries(["customer-all-bill-data", selectedCustomerId]);
+
+        const freshData = await readingService.getCombinedBillDataForCustomer(selectedCustomerId);
+        const allBills = freshData?.bills || freshData || [];
+        const generatedNewBill =
+          allBills.find((b) => String(b.id) === String(newReadingId)) ||
+          allBills.find(
+            (b) =>
+              b.kifyaWer === oldBillSnapshot.kifyaWer &&
+              !b.isVoid &&
+              !b.void &&
+              String(b.status).toLowerCase() === "active" &&
+              b.isBillGenerated
           );
-          if (newBillToGenerate) {
-            await generateBillAsync(newBillToGenerate.id);
-            toast.success("Bill generated successfully after edit!");
 
-            // Re-fetch to get the generated bill with calculated charges
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            freshData = await readingService.getCombinedBillDataForCustomer(selectedCustomerId);
-            allBills = freshData?.bills || freshData || [];
-            generatedNewBill = allBills.find(b =>
-              b.kifyaWer === oldBillSnapshot.kifyaWer &&
-              !b.isVoid && !b.void &&
-              String(b.status).toLowerCase() === 'active' &&
-              b.isBillGenerated
-            );
-          } else {
-            toast.warning("Reading updated but could not find new bill to generate. Please generate manually.");
-          }
-        } catch (genErr) {
-          toast.warning(`Reading updated but bill generation failed: ${genErr.message}. Please generate manually.`);
-        } finally {
-          setIsEditAndGenerate(false);
+        if (!generatedNewBill) {
+          toast.warning("Bill generated but could not load details. Please check the bill list.");
+          handleCloseEditReadingModal();
+          return;
         }
 
-        // Always show journal preview after Edit & Generate (if new bill was generated and mappings exist)
-        if (generatedNewBill && Object.keys(bpMappings).length > 0) {
-          try {
-            const invoiceNum = generatedNewBill.billingInvoiceNumber || generatedNewBill.invoiceNumber || generatedNewBill.id;
-            // If old bill was journal-pushed: adjustment mode (reversal + new push)
-            // If not: billPrep mode (new bill push only, Step 1 style)
-            const oldBillForJournal = wasJournalPushed ? oldBillSnapshot : null;
-            const { lines, error, newBillRows, oldBillRows } = buildSingleBillAdjustmentLines(oldBillForJournal, generatedNewBill, bpMappings);
-            if (!error && lines.length >= 2) {
-              setJournalPreviewData({
-                lines, newBillRows, oldBillRows,
-                oldBill: wasJournalPushed ? oldBillSnapshot : null,
-                newBill: generatedNewBill,
-                invoiceNum,
-                isVoidOnly: false,
-                mode: wasJournalPushed ? 'adjustment' : 'billPrep',
-              });
-              setJournalPreviewOpen(true);
-            } else if (error) {
-              toast.warning(`Journal preview skipped: ${error}`);
-            }
-          } catch (journalErr) {
-            console.error("[BillAdjustment] Journal preview failed:", journalErr);
-            toast.warning(`Bill generated but journal preview failed: ${journalErr.message}`, { autoClose: 10000 });
-          }
-        }
-      } else {
-        toast.success("Reading updated successfully!");
+        // Step 4: Ensure BP account mappings & open fiscal year are loaded
+        const { currentBpMap } = await getEnsuredJournalSupportData();
+        const invoiceNum = generatedNewBill.billingInvoiceNumber || generatedNewBill.invoiceNumber || generatedNewBill.id;
+        const oldBillForJournal = wasJournalPushed ? oldBillSnapshot : null;
+        const { lines, error, newBillRows, oldBillRows } = buildSingleBillAdjustmentLines(oldBillForJournal, generatedNewBill, currentBpMap);
 
-        // For non-Edit&Generate edits: only show journal preview if old bill was journal-pushed
-        if (wasJournalPushed && openFiscalYearId && Object.keys(bpMappings).length > 0) {
-          try {
-            await new Promise(resolve => setTimeout(resolve, 1500));
-            const freshData = await readingService.getCombinedBillDataForCustomer(selectedCustomerId);
-            const allBills = freshData?.bills || freshData || [];
-            const newBill = allBills.find(b =>
-              b.kifyaWer === oldBillSnapshot.kifyaWer &&
-              !b.isVoid && !b.void &&
-              String(b.status).toLowerCase() === 'active' &&
-              b.isBillGenerated
-            );
-            const invoiceNum = oldBillSnapshot.billingInvoiceNumber || oldBillSnapshot.invoiceNumber || oldBillSnapshot.id;
-            const { lines, error, newBillRows, oldBillRows } = buildSingleBillAdjustmentLines(oldBillSnapshot, newBill || null, bpMappings);
-            if (!error && lines.length >= 2) {
-              setJournalPreviewData({ lines, newBillRows, oldBillRows, oldBill: oldBillSnapshot, newBill: newBill || null, invoiceNum, isVoidOnly: !newBill, mode: 'adjustment' });
-              setJournalPreviewOpen(true);
-            } else if (error) {
-              toast.warning(`Journal adjustment skipped: ${error}`);
-            }
-          } catch (journalErr) {
-            console.error("[BillAdjustment] Journal preview failed:", journalErr);
-            toast.warning(`Reading updated but journal preview failed: ${journalErr.message}. Create manually.`, { autoClose: 10000 });
+        if (error) {
+          toast.warning(`Bill generated! Journal adjustment skipped: ${error}`);
+          handleCloseEditReadingModal();
+          return;
+        }
+
+        if (lines.length >= 2) {
+          setProcessingProgress(100);
+          setJournalPreviewData({
+            lines,
+            newBillRows,
+            oldBillRows,
+            oldBill: oldBillForJournal,
+            newBill: generatedNewBill,
+            invoiceNum,
+            isVoidOnly: false,
+            mode: wasJournalPushed ? "adjustment" : "billPrep",
+          });
+          // Transition seamlessly into the Journal Adjustment Review screen!
+          setEditModalStep("JOURNAL");
+        } else {
+          toast.success("Bill generated successfully!");
+          handleCloseEditReadingModal();
+        }
+      } catch (err) {
+        console.error("Error during Edit & Generate:", err);
+        toast.error(err.message || "Failed to edit and generate bill.");
+        setEditModalStep("INPUT");
+      } finally {
+        setIsEditSubmitting(false);
+      }
+      return;
+    }
+
+    // ==========================================
+    // STANDARD "UPDATE READING" FLOW (NO GENERATE)
+    // ==========================================
+    try {
+      await readingService.deleteActiveAndCreateNewReading(
+        selectedBillForEdit.id,
+        prevReading,
+        newReading
+      );
+
+      toast.success("Reading updated successfully!");
+      queryClient.invalidateQueries(["customer-all-bill-data", selectedCustomerId]);
+
+      if (wasJournalPushed) {
+        const { currentBpMap } = await getEnsuredJournalSupportData();
+        if (currentBpMap && Object.keys(currentBpMap).length > 0) {
+          const invoiceNum = oldBillSnapshot.billingInvoiceNumber || oldBillSnapshot.invoiceNumber || oldBillSnapshot.id;
+          const { lines, error, newBillRows, oldBillRows } = buildSingleBillAdjustmentLines(oldBillSnapshot, null, currentBpMap);
+          if (!error && lines.length >= 2) {
+            setJournalPreviewData({
+              lines,
+              newBillRows,
+              oldBillRows,
+              oldBill: oldBillSnapshot,
+              newBill: null,
+              invoiceNum,
+              isVoidOnly: true,
+              mode: "adjustment",
+            });
+            setJournalPreviewOpen(true);
           }
         }
       }
+      handleCloseEditReadingModal();
     } catch (error) {
       console.error("Error updating reading:", error);
       toast.error(`Failed to update reading: ${error.message}`);
@@ -804,26 +845,34 @@ const CustomerList = () => {
 
   const handleCloseEditReadingModal = () => {
     setEditReadingModalOpen(false);
+    setEditModalStep("INPUT");
     setSelectedBillForEdit(null);
-    setEditReadingData({ currentReading: '', previousReading: 0 });
+    setEditReadingData({ currentReading: "", previousReading: "" });
     setIsEditSubmitting(false);
     setIsEditAndGenerate(false);
+    setProcessingStepText("");
+    setProcessingProgress(0);
   };
 
   // --- Journal Preview Push Handler ---
   const handleJournalPreviewPush = async () => {
-    if (!journalPreviewData || !openFiscalYearId) return;
+    if (!journalPreviewData) return;
+    const { currentFyId } = await getEnsuredJournalSupportData();
+    if (!currentFyId) {
+      toast.error("No open fiscal year found for journal creation.");
+      return;
+    }
     setJournalPushLoading(true);
     const { lines, oldBill, newBill, invoiceNum, isVoidOnly, mode } = journalPreviewData;
-    const kifyaWer = (newBill || oldBill)?.kifyaWer || '';
-    const isBillPrep = mode === 'billPrep';
+    const kifyaWer = (newBill || oldBill)?.kifyaWer || "";
+    const isBillPrep = mode === "billPrep";
     const ref = isBillPrep
       ? `BILL-PREP-SINGLE-${invoiceNum}-${Date.now()}`
       : `BILL-ADJ-${invoiceNum}-${Date.now()}`;
     const today = new Date().toISOString().split("T")[0];
     try {
       await fncJournalEntryService.createEntry({
-        fiscalYearId: openFiscalYearId,
+        fiscalYearId: currentFyId,
         entryDate: today,
         referenceNumber: ref,
         description: isBillPrep
@@ -839,6 +888,8 @@ const CustomerList = () => {
       toast.success(`📋 Journal entry created (DRAFT): ${ref}. Review and post in Journal Entries.`, { autoClose: 8000 });
       setJournalPreviewOpen(false);
       setJournalPreviewData(null);
+      handleCloseEditReadingModal();
+      queryClient.invalidateQueries(["customer-all-bill-data", selectedCustomerId]);
     } catch (err) {
       toast.error(`Failed to create journal entry: ${err.message}`);
     } finally {
@@ -849,6 +900,137 @@ const CustomerList = () => {
   const handleCloseJournalPreview = () => {
     setJournalPreviewOpen(false);
     setJournalPreviewData(null);
+  };
+
+  // Shared renderer for Journal Adjustment Review tables
+  const renderJournalPreviewContent = (data) => {
+    if (!data) return null;
+    const { newBillRows = [], oldBillRows = [], oldBill, newBill } = data;
+    const newTotal = newBillRows.reduce((s, r) => s + (r.amount || 0), 0);
+    const oldTotal = oldBillRows.reduce((s, r) => s + (r.amount || 0), 0);
+
+    return (
+      <Box>
+        {/* New Bill Push Table */}
+        {newBillRows.length > 0 && (
+          <Box sx={{ mb: 3 }}>
+            <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 1, color: "#00897b" }}>
+              ✅ New Bill — Push to Journal (Step 1)
+            </Typography>
+            <TableContainer component={Paper} elevation={1} sx={{ borderRadius: 1.5, overflow: "auto", border: "1px solid #00897b" }}>
+              <Table size="small" stickyHeader>
+                <TableHead>
+                  <TableRow>
+                    <TableCell sx={{ fontWeight: 700, bgcolor: "#00897b", color: "white" }}>#</TableCell>
+                    <TableCell sx={{ fontWeight: 700, bgcolor: "#00897b", color: "white" }}>Charge Type</TableCell>
+                    <TableCell align="right" sx={{ fontWeight: 700, bgcolor: "#1565c0", color: "white" }}>
+                      DR — Receivable (A/R)
+                    </TableCell>
+                    <TableCell align="right" sx={{ fontWeight: 700, bgcolor: "#2e7d32", color: "white" }}>
+                      CR — Revenue / Liability
+                    </TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {newBillRows.map((row, idx) => (
+                    <TableRow key={idx} sx={{ bgcolor: row.group === "g1" ? "#f0f8ff" : "#fff5f5" }}>
+                      <TableCell sx={{ color: "text.secondary" }}>{idx + 1}</TableCell>
+                      <TableCell sx={{ fontFamily: "Nyala, serif", fontWeight: 600 }}>{row.desc}</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 700, color: "primary.main" }}>
+                        {fmt(row.amount)}
+                      </TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 700, color: "success.main" }}>
+                        {fmt(row.amount)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+                <TableFooter>
+                  <TableRow sx={{ "& td": { fontWeight: 800, borderTop: "2px solid #333", fontSize: "0.95rem" } }}>
+                    <TableCell />
+                    <TableCell>TOTAL</TableCell>
+                    <TableCell align="right" sx={{ color: "primary.main" }}>{fmt(newTotal)}</TableCell>
+                    <TableCell align="right" sx={{ color: "success.main" }}>{fmt(newTotal)}</TableCell>
+                  </TableRow>
+                </TableFooter>
+              </Table>
+            </TableContainer>
+          </Box>
+        )}
+
+        {/* Old Bill Reversal Table */}
+        {oldBillRows.length > 0 && (
+          <Box sx={{ mb: 3 }}>
+            <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 1, color: "#c62828" }}>
+              ✕ Old Bill — Reversal (Opposite of Step 1)
+            </Typography>
+            <TableContainer component={Paper} elevation={1} sx={{ borderRadius: 1.5, overflow: "auto", border: "1px solid #ef5350" }}>
+              <Table size="small" stickyHeader>
+                <TableHead>
+                  <TableRow>
+                    <TableCell sx={{ fontWeight: 700, bgcolor: "#ef5350", color: "white" }}>#</TableCell>
+                    <TableCell sx={{ fontWeight: 700, bgcolor: "#ef5350", color: "white" }}>Charge Type</TableCell>
+                    <TableCell align="right" sx={{ fontWeight: 700, bgcolor: "#c62828", color: "white" }}>
+                      DR — Revenue (Reversal)
+                    </TableCell>
+                    <TableCell align="right" sx={{ fontWeight: 700, bgcolor: "#d32f2f", color: "white" }}>
+                      CR — Receivable (Reversal)
+                    </TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {oldBillRows.map((row, idx) => (
+                    <TableRow key={idx} sx={{ bgcolor: "#fff5f5" }}>
+                      <TableCell sx={{ color: "text.secondary" }}>{idx + 1}</TableCell>
+                      <TableCell sx={{ fontFamily: "Nyala, serif", fontWeight: 600 }}>{row.desc}</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 700, color: "error.main" }}>
+                        {fmt(row.amount)}
+                      </TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 700, color: "error.dark" }}>
+                        {fmt(row.amount)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+                <TableFooter>
+                  <TableRow sx={{ "& td": { fontWeight: 800, borderTop: "2px solid #c62828", fontSize: "0.95rem" } }}>
+                    <TableCell />
+                    <TableCell>TOTAL</TableCell>
+                    <TableCell align="right" sx={{ color: "error.main" }}>{fmt(oldTotal)}</TableCell>
+                    <TableCell align="right" sx={{ color: "error.dark" }}>{fmt(oldTotal)}</TableCell>
+                  </TableRow>
+                </TableFooter>
+              </Table>
+            </TableContainer>
+          </Box>
+        )}
+
+        {/* Balanced check banner */}
+        <Alert severity="success" sx={{ mb: 2.5, fontWeight: 600 }}>
+          Combined Journal: Total DR = <strong>{fmt(newTotal + oldTotal)}</strong> ETB, Total CR = <strong>{fmt(newTotal + oldTotal)}</strong> ETB — Balanced ✅
+        </Alert>
+
+        {/* Bill comparison cards */}
+        <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
+          {oldBill && (
+            <Paper elevation={0} sx={{ p: 1.5, flex: 1, minWidth: 200, bgcolor: "#fff5f5", border: "1px solid #ef9a9a", borderRadius: 1.5 }}>
+              <Typography variant="caption" sx={{ fontWeight: 700, color: "error.main" }}>OLD BILL (VOIDED)</Typography>
+              <Typography variant="body2" sx={{ fontWeight: 600, fontFamily: "monospace" }}>Invoice: {oldBill.billingInvoiceNumber || "-"}</Typography>
+              <Typography variant="body2">Period: {oldBill.kifyaWer || "-"}</Typography>
+              <Typography variant="body2" sx={{ fontWeight: 700 }}>Total: {fmt(oldBill.tekilalaTekefay)} ETB</Typography>
+            </Paper>
+          )}
+          {newBill && (
+            <Paper elevation={0} sx={{ p: 1.5, flex: 1, minWidth: 200, bgcolor: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 1.5 }}>
+              <Typography variant="caption" sx={{ fontWeight: 700, color: "success.main" }}>NEW BILL (GENERATED)</Typography>
+              <Typography variant="body2" sx={{ fontWeight: 600, fontFamily: "monospace" }}>Invoice: {newBill.billingInvoiceNumber || "-"}</Typography>
+              <Typography variant="body2">Period: {newBill.kifyaWer || "-"}</Typography>
+              <Typography variant="body2" sx={{ fontWeight: 700 }}>Total: {fmt(newBill.tekilalaTekefay)} ETB</Typography>
+            </Paper>
+          )}
+        </Box>
+      </Box>
+    );
   };
 
   const handleFetchDerashForBill = async (bill) => {
@@ -874,7 +1056,7 @@ const CustomerList = () => {
     try {
       if (!selectedBillForDerash || !derashResult) return;
       const bill = selectedBillForDerash;
-      const paidAmount = Number(String(derashResult.paid_amount || '').toString().replace(/,/g, ''));
+      const paidAmount = Number(String(derashResult.paid_amount || "").toString().replace(/,/g, ""));
       const expected = bill.tekilalaTekefay || 0;
       const diff = Math.abs((paidAmount || 0) - expected);
       if (!(paidAmount > 0) || diff > 0.01) {
@@ -888,8 +1070,8 @@ const CustomerList = () => {
         isPaidThroughBank: true,
         isDerashPaid: true,
         moneyCollectedDate,
-        bankPaidConfirmationCode: derashResult.confirmation_code || '',
-        bankPaidAgentId: derashResult.agent_name || derashResult.agent_id || ''
+        bankPaidConfirmationCode: derashResult.confirmation_code || "",
+        bankPaidAgentId: derashResult.agent_name || derashResult.agent_id || "",
       };
       await bankPaymentImportService.updateSingleBankPayment(bill.id, updates);
       toast.success("Payment saved");
@@ -945,11 +1127,9 @@ const CustomerList = () => {
       }
       const moneyCollectedDate = new Date().toISOString();
 
-      const selectedBank = activeBillingBanks.find(
-        (b) => String(b.bankCode) === String(selectedBankKey)
-      ) || activeBillingBanks.find(
-        (b) => String(b.id) === String(selectedBankKey)
-      );
+      const selectedBank =
+        activeBillingBanks.find((b) => String(b.bankCode) === String(selectedBankKey)) ||
+        activeBillingBanks.find((b) => String(b.id) === String(selectedBankKey));
 
       const gatewayCode = (selectedBank?.gatewayCode || "").toLowerCase();
       const bankCodeToSend = selectedBank?.bankCode || selectedBankKey;
@@ -976,8 +1156,7 @@ const CustomerList = () => {
           {
             id: bill.id,
             updates: {
-              tekilalaYetekefele:
-                (bill.tekilalaTekefay || 0) + (bill.kecreditYetekefele || 0),
+              tekilalaYetekefele: (bill.tekilalaTekefay || 0) + (bill.kecreditYetekefele || 0),
               tekilalaBankYetekefele: bill.tekilalaTekefay || 0,
               isUnicashPaid: true,
               moneyCollectedDate,
@@ -1047,7 +1226,6 @@ const CustomerList = () => {
     onError: (error) => toast.error(`Failed to return kitate: ${error.message}`),
   });
 
-  // --- WUZIF ACTION HANDLERS WITH CONFIRMATION ---
   const onRemoveWuzif = async (readingId) => {
     showConfirm({
       title: "Remove Wuzif",
@@ -1084,52 +1262,42 @@ const CustomerList = () => {
     }
   };
 
-  // --- 2. EXTRACT DATA FROM THE SINGLE SOURCE ---
-  const customerBills = combinedBillData?.bills ?? [];
-  const wuzifBills = combinedBillData?.wuzifBills ?? [];
+  const handleActivateBill = async (billId) => {
+    const targetBill = customerBills?.find?.((b) => b.id === billId);
+    if (targetBill && targetBill.kifyaWer != null) {
+      const hasDuplicateActive = customerBills?.some?.(
+        (b) => b.id !== billId && b.kifyaWer === targetBill.kifyaWer && b.status === "active"
+      );
+      if (hasDuplicateActive) {
+        toast.error("There is already an active bill for the same payment month.");
+        return;
+      }
+    }
 
-  // --- 2b. FILTER WUZIF LISTS FOR THE 3rd TABLE TABS ---
-  const activeWuzifList = useMemo(
-    () => (wuzifBills || []).filter(
-      (b) => b?.wuzifDeleted === "active" && b?.wuzifIsMoneyCollected === false
-    ),
-    [wuzifBills]
-  );
-  const skippedWuzifList = useMemo(
-    () => (wuzifBills || []).filter(
-      (b) => b?.wuzifDeleted === "deleted" && b?.wuzifIsKitatTenestual === true
-    ),
-    [wuzifBills]
-  );
-  const paidWuzifList = useMemo(
-    () => (wuzifBills || []).filter(
-      (b) => b?.wuzifDeleted === "deleted" && b?.wuzifIsMoneyCollected === true
-    ),
-    [wuzifBills]
-  );
+    showConfirm({
+      title: "Activate Bill",
+      content: "Are you sure you want to activate this bill?",
+      confirmColor: "success",
+      onConfirm: async () => {
+        try {
+          await changeReadingStatusAsync({ readingId: billId, status: "active" });
+          toast.success("Bill activated successfully!");
+          queryClient.invalidateQueries(["customer-all-bill-data", selectedCustomerId]);
+        } catch (error) {
+          console.error("Error activating bill:", error);
+          toast.error(`Failed to activate bill: ${error.message}`);
+        }
+      },
+    });
+  };
 
-  // Filter bills for the tabs (this logic remains the same)
-  const activeBills = useMemo(
-    () => (customerBills || []).filter((bill) => !bill.void),
-    [customerBills]
-  );
-  const voidedBills = useMemo(
-    () => (customerBills || []).filter((bill) => bill.void),
-    [customerBills]
-  );
-
-  const activeBillingBanks = useMemo(
-    () => (billingBanks || []).filter((bank) => bank.deleted === "active"),
-    [billingBanks]
-  );
-
+  // --- Customer Directory Columns ---
   const columns = useMemo(
     () => [
       {
         header: "#",
-        size: 20,
+        size: 30,
         Cell: ({ row, table }) => {
-          // Fix row numbering to work correctly with filtered data
           const pageIndex = table.getState().pagination.pageIndex;
           const pageSize = table.getState().pagination.pageSize;
           return pageIndex * pageSize + row.index + 1;
@@ -1139,18 +1307,44 @@ const CustomerList = () => {
         accessorKey: "accountNumber",
         header: "Account Number",
         filterFn: amharicFuzzyFilter,
+        Cell: ({ cell }) => (
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+            <Typography variant="body2" sx={{ fontWeight: 600, fontFamily: "monospace", color: "primary.main" }}>
+              {cell.getValue() || "-"}
+            </Typography>
+            {cell.getValue() && (
+              <Tooltip title="Copy Account Number">
+                <IconButton
+                  size="small"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    navigator.clipboard.writeText(cell.getValue());
+                    toast.info(`Account ${cell.getValue()} copied!`);
+                  }}
+                  sx={{ p: 0.2 }}
+                >
+                  <ContentCopyIcon sx={{ fontSize: 13, color: "text.secondary" }} />
+                </IconButton>
+              </Tooltip>
+            )}
+          </Box>
+        ),
       },
       {
         accessorKey: "fullName",
         header: "Full Name",
         filterFn: amharicFuzzyFilter,
+        Cell: ({ cell }) => (
+          <Typography variant="body2" sx={{ fontWeight: 600, color: "text.primary" }}>
+            {cell.getValue() || "-"}
+          </Typography>
+        ),
       },
       {
         accessorKey: "phoneNumber",
         header: "Phone Number",
         filterFn: amharicFuzzyFilter,
       },
-
       {
         accessorKey: "registeredDate",
         header: "Registered Date",
@@ -1158,39 +1352,48 @@ const CustomerList = () => {
           const gregorianDate = cell.getValue();
           if (!gregorianDate) return "-";
           return EthiopianCalendarConverterPure.formatEthiopianDate(
-            EthiopianCalendarConverterPure.gregorianToEthiopian(gregorianDate), 
-            'dd/mm/yyyy'
+            EthiopianCalendarConverterPure.gregorianToEthiopian(gregorianDate),
+            "dd/mm/yyyy"
           );
         },
       },
       {
         accessorKey: "status",
         header: "Status",
+        Cell: ({ cell }) => {
+          const status = String(cell.getValue() || "").toLowerCase();
+          const isActive = status === "active";
+          return (
+            <Chip
+              size="small"
+              label={isActive ? "Active" : "Deleted"}
+              color={isActive ? "success" : "default"}
+              variant={isActive ? "filled" : "outlined"}
+              sx={{ height: 22, fontSize: "0.75rem", fontWeight: 600 }}
+            />
+          );
+        },
       },
     ],
-    [activeBillTab]
+    []
   );
 
-  // --- 3. ENHANCED BILL COLUMNS WITH EDIT FUNCTIONALITY FOR COMPLAINTS ---
+  // --- Bill Columns ---
   const billColumns = useMemo(
     () => [
       {
         id: "actions",
         header: "Actions",
-        size: 180,
+        size: 190,
         Cell: ({ row }) => {
           const bill = row.original;
           const canEditOrDelete = !bill.isMoneyCollected && !bill.moneyCollected;
 
-          // Active tab (index 0): show View + Edit + Delete, with disable + tooltip when not allowed
           if (activeBillTab === 0) {
             return (
-              <Box sx={{ display: "flex", gap: "0.5rem" }}>
+              <Box sx={{ display: "flex", gap: "0.4rem", alignItems: "center" }}>
                 <Tooltip title="View Reading Details">
-                  <IconButton
-                    size="small"
-                    onClick={() => setViewReadingId(row.original.id)}
-                  >
+                  <IconButton size="small" onClick={() => setViewReadingId(bill.id)}>
                     <VisibilityIcon fontSize="small" />
                   </IconButton>
                 </Tooltip>
@@ -1202,11 +1405,7 @@ const CustomerList = () => {
                       onClick={() => handleFetchDerashForBill(bill)}
                       disabled={derashLoading}
                     >
-                      {derashLoading ? (
-                        <CircularProgress size={18} color="inherit" />
-                      ) : (
-                        <AccountBalanceIcon fontSize="small" />
-                      )}
+                      {derashLoading ? <CircularProgress size={16} color="inherit" /> : <AccountBalanceIcon fontSize="small" />}
                     </IconButton>
                   </span>
                 </Tooltip>
@@ -1219,47 +1418,39 @@ const CustomerList = () => {
                         onClick={() => handleOpenManualBankPayment(bill)}
                         disabled={manualBankSaving}
                       >
-                        {manualBankSaving ? (
-                          <CircularProgress size={18} color="inherit" />
-                        ) : (
-                          <PaidIcon fontSize="small" />
-                        )}
+                        {manualBankSaving ? <CircularProgress size={16} color="inherit" /> : <PaidIcon fontSize="small" />}
                       </IconButton>
                     </span>
                   </Tooltip>
                 )}
                 {canEditOrDelete ? (
                   <>
-                    <Tooltip title="Edit & Generate Bill">
+                    <Tooltip title="Edit & Generate Bill (Complaint Correction)">
                       <IconButton
                         size="small"
                         color="warning"
                         onClick={() => handleEditAndGenerate(bill)}
-                        disabled={isChangingStatus || isGeneratingBill}
+                        disabled={isChangingStatus || isEditSubmitting}
                       >
                         <PlaylistAddCheckIcon fontSize="small" />
                       </IconButton>
                     </Tooltip>
-                    <Tooltip title={isChangingStatus ? "Deleting..." : "Delete Reading (no recreate)"}>
-                      <IconButton 
-                        size="small" 
+                    <Tooltip title={isChangingStatus ? "Deleting..." : "Delete Reading"}>
+                      <IconButton
+                        size="small"
                         color="error"
                         onClick={() => handleDeleteReading(bill)}
                         disabled={isChangingStatus}
                       >
-                        {isChangingStatus ? (
-                          <CircularProgress size={16} color="inherit" />
-                        ) : (
-                          <DeleteOutlineIcon fontSize="small" />
-                        )}
+                        {isChangingStatus ? <CircularProgress size={16} color="inherit" /> : <DeleteOutlineIcon fontSize="small" />}
                       </IconButton>
                     </Tooltip>
                   </>
                 ) : (
-                  <Tooltip title={"Money already collected"}>
+                  <Tooltip title="Money already collected">
                     <span>
                       <IconButton size="small" disabled>
-                        <WarningIcon fontSize="small" />
+                        <WarningIcon fontSize="small" color="disabled" />
                       </IconButton>
                     </span>
                   </Tooltip>
@@ -1268,35 +1459,27 @@ const CustomerList = () => {
             );
           }
 
-          // Deleted tab (index 1): show View + Activate, with disable + tooltip when not allowed
           const canActivate = !bill.isMoneyCollected && !bill.moneyCollected;
           return (
-            <Box sx={{ display: "flex", gap: "0.5rem" }}>
+            <Box sx={{ display: "flex", gap: "0.4rem", alignItems: "center" }}>
               <Tooltip title="View Reading Details">
-                <IconButton
-                  size="small"
-                  onClick={() => setViewReadingId(row.original.id)}
-                >
+                <IconButton size="small" onClick={() => setViewReadingId(bill.id)}>
                   <VisibilityIcon fontSize="small" />
                 </IconButton>
               </Tooltip>
               {canActivate ? (
                 <Tooltip title={isChangingStatus ? "Activating..." : "Activate Bill"}>
-                  <IconButton 
-                    size="small" 
+                  <IconButton
+                    size="small"
                     color="success"
                     onClick={() => handleActivateBill(bill.id)}
                     disabled={isChangingStatus}
                   >
-                    {isChangingStatus ? (
-                      <CircularProgress size={16} color="inherit" />
-                    ) : (
-                      <CheckCircleOutlineIcon fontSize="small" />
-                    )}
+                    {isChangingStatus ? <CircularProgress size={16} color="inherit" /> : <CheckCircleOutlineIcon fontSize="small" />}
                   </IconButton>
                 </Tooltip>
               ) : (
-                <Tooltip title={"Money already collected"}>
+                <Tooltip title="Money already collected">
                   <span>
                     <IconButton size="small" disabled>
                       <WarningIcon fontSize="small" />
@@ -1308,17 +1491,51 @@ const CustomerList = () => {
           );
         },
       },
-      { header: "#", size: 20, Cell: ({ row }) => row.index + 1 },
-      { accessorKey: "billingInvoiceNumber", header: "Invoice Number" },
-      { accessorKey: "kifyaWer", header: "Kifya Wer" },
+      { header: "#", size: 25, Cell: ({ row }) => row.index + 1 },
+      {
+        accessorKey: "billingInvoiceNumber",
+        header: "Invoice Number",
+        Cell: ({ cell }) => (
+          <Typography variant="body2" sx={{ fontFamily: "monospace", fontWeight: 600 }}>
+            {cell.getValue() || "-"}
+          </Typography>
+        ),
+      },
+      {
+        accessorKey: "kifyaWer",
+        header: "Kifya Wer",
+        Cell: ({ cell }) => (
+          <Chip size="small" label={cell.getValue() || "-"} sx={{ fontWeight: 600, bgcolor: "grey.100" }} />
+        ),
+      },
       { accessorKey: "previousReading", header: "Previous Reading" },
       { accessorKey: "lastReading", header: "Last Reading" },
-      { accessorKey: "consumption", header: "Consumption" },
-      { accessorKey: "tekilalaTekefay", header: "ብር" },
-      { accessorKey: "kecreditYetekefele", header: "ቅድመ ክፍያ" },
+      {
+        accessorKey: "consumption",
+        header: "Consumption (m³)",
+        Cell: ({ cell }) => (
+          <Typography variant="body2" sx={{ fontWeight: 600, color: "primary.main" }}>
+            {cell.getValue() ?? "-"}
+          </Typography>
+        ),
+      },
+      {
+        accessorKey: "tekilalaTekefay",
+        header: "Total Due (ብር)",
+        Cell: ({ cell }) => (
+          <Typography variant="body2" sx={{ fontWeight: 700 }}>
+            {fmt(cell.getValue())}
+          </Typography>
+        ),
+      },
+      {
+        accessorKey: "kecreditYetekefele",
+        header: "Prepaid (ቅድመ)",
+        Cell: ({ cell }) => fmt(cell.getValue()),
+      },
       {
         accessorKey: "paymentInfo",
-        header: "የክፍያ ሁኔታ",
+        header: "Payment Status",
         Cell: ({ row }) => {
           const {
             unicashPaid,
@@ -1336,71 +1553,87 @@ const CustomerList = () => {
             if (derashPaid) paymentLocations.push(bankName);
             if (PaidFromTekemach) paymentLocations.push("ቅድመ ክፍያ");
             if (paidOnFrontOffice) paymentLocations.push("ቢሮ ተከፍሏል");
-            return paymentLocations.join(", ") || "ተከፍሏል";
+            const label = paymentLocations.join(", ") || "ተከፍሏል";
+            return (
+              <Chip
+                size="small"
+                icon={<CheckCircleIcon sx={{ fontSize: "14px !important" }} />}
+                label={label}
+                color="success"
+                sx={{ fontWeight: 600, fontSize: "0.75rem" }}
+              />
+            );
           }
-          return "አልተከፈለም";
+          return (
+            <Chip
+              size="small"
+              icon={<ErrorOutlineIcon sx={{ fontSize: "14px !important" }} />}
+              label="አልተከፈለም"
+              color="warning"
+              variant="outlined"
+              sx={{ fontWeight: 600, fontSize: "0.75rem" }}
+            />
+          );
         },
       },
     ],
-    [activeBillTab]
+    [activeBillTab, derashLoading, manualBankSaving, isChangingStatus, isEditSubmitting]
   );
 
-  const handleActivateBill = async (billId) => {
-    // Guard: prevent activating if an active bill already exists for the same payment month
-    const targetBill = customerBills?.find?.((b) => b.id === billId);
-    if (targetBill && targetBill.kifyaWer != null) {
-      const hasDuplicateActive = customerBills?.some?.(
-        (b) => b.id !== billId && b.kifyaWer === targetBill.kifyaWer && b.status === 'active'
-      );
-      if (hasDuplicateActive) {
-        toast.error("there is same month reading on active tab");
-        return;
-      }
-    }
-
-    showConfirm({
-      title: "Activate Bill",
-      content: "Are you sure you want to activate this bill?",
-      confirmColor: "success",
-      onConfirm: async () => {
-        try {
-          await changeReadingStatusAsync({ readingId: billId, status: 'active' });
-          toast.success('Bill activated successfully!');
-          queryClient.invalidateQueries(["customer-all-bill-data", selectedCustomerId]);
-        } catch (error) {
-          console.error("Error activating bill:", error);
-          toast.error(`Failed to activate bill: ${error.message}`);
-        }
+  // --- Wuzif Columns ---
+  const wuzifColumns = useMemo(() => {
+    const baseCols = (billColumns || []).filter((col) => col.id !== "actions");
+    return [
+      ...baseCols,
+      {
+        id: "penaltyStatus",
+        header: "Penalty Status",
+        accessorFn: (row) => (row?.wuzifIsKitatTenestual === true ? "ተነስቷል" : "አለበት"),
+        Cell: ({ cell }) => {
+          const val = cell.getValue();
+          return (
+            <Chip
+              size="small"
+              label={val}
+              color={val === "ተነስቷል" ? "success" : "error"}
+              variant="outlined"
+              sx={{ fontWeight: 600, fontSize: "0.75rem" }}
+            />
+          );
+        },
+        size: 140,
       },
-    });
-  };
+      {
+        id: "wuzifBirr",
+        header: "Wuzif Status",
+        accessorFn: (row) => {
+          const del = row?.wuzifDeleted;
+          if (del === "active") return "አለበት";
+          if (del === "deleted") return "ተነስቷል";
+          return "-";
+        },
+        Cell: ({ cell }) => {
+          const val = cell.getValue();
+          return (
+            <Chip
+              size="small"
+              label={val}
+              color={val === "ተነስቷል" ? "default" : "warning"}
+              sx={{ fontWeight: 600, fontSize: "0.75rem" }}
+            />
+          );
+        },
+        size: 120,
+      },
+    ];
+  }, [billColumns]);
 
-  const renderVoidedBillActions = (bill) => {
-    return (
-      <Box sx={{ display: 'flex', gap: 1 }}>
-        <Tooltip title="View Details">
-          <IconButton size="small" onClick={() => setSelectedBillForEdit(bill)}>
-            <VisibilityIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
-        <Tooltip title="Activate Bill">
-          <IconButton 
-            size="small" 
-            color="success"
-            onClick={() => handleActivateBill(bill.id)}
-          >
-            <CheckCircleOutlineIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
-      </Box>
-    );
-  };
-
+  // Master Customer Table
   const table = useMaterialReactTable({
     columns,
     data: paginatedData?.content || [],
-    initialState: { 
-      showColumnFilters: false, 
+    initialState: {
+      showColumnFilters: false,
       showGlobalFilter: true,
       pagination: { pageIndex: 0, pageSize: 10 },
     },
@@ -1408,7 +1641,7 @@ const CustomerList = () => {
     manualFiltering: true,
     rowCount: paginatedData?.totalElements || 0,
     enableRowNumbers: true,
-    rowNumberMode: 'original',
+    rowNumberMode: "original",
     onGlobalFilterChange: setGlobalFilter,
     state: {
       pagination,
@@ -1426,31 +1659,40 @@ const CustomerList = () => {
     enableRowActions: true,
     positionActionsColumn: "first",
     renderRowActions: ({ row }) => (
-      <Box sx={{ display: "flex", gap: "0.5rem" }}>
-        <Tooltip title="View Customer Details">
-          <IconButton onClick={() => setViewedCustomerId(row.original.id)}>
-            <VisibilityIcon />
+      <Box sx={{ display: "flex", gap: "0.25rem" }}>
+        <Tooltip title="View Full Customer Profile">
+          <IconButton size="small" onClick={() => setViewedCustomerId(row.original.id)}>
+            <VisibilityIcon fontSize="small" />
           </IconButton>
         </Tooltip>
-        {/* Removed Edit/Delete customer actions for complaint handling */}
-        {/* Only view is allowed in complaint mode */}
       </Box>
     ),
     renderTopToolbarCustomActions: () => (
-      <Box sx={{ display: "flex", gap: "1rem", p: "4px" }}>
-        <Typography variant="h6" color="warning.main" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <WarningIcon />
-          Customer Complaint Handling Mode
-        </Typography>
+      <Box sx={{ display: "flex", gap: 1, alignItems: "center", flexWrap: "wrap", p: "4px" }}>
+        <Chip
+          icon={<WarningIcon sx={{ color: "#e65100 !important" }} />}
+          label="Customer Complaint Handling Console"
+          sx={{
+            fontWeight: 700,
+            bgcolor: "#fff3e0",
+            color: "#e65100",
+            border: "1px solid #ffe0b2",
+            py: 0.5,
+          }}
+        />
         <Button
+          size="small"
           variant="outlined"
+          startIcon={isFetching ? <CircularProgress size={14} /> : <RefreshIcon />}
           onClick={() => refetchCustomersAll()}
           disabled={isFetching}
         >
           {isFetching ? "Refreshing..." : "Refresh"}
         </Button>
         <Button
+          size="small"
           variant="outlined"
+          startIcon={<SpeedIcon />}
           onClick={() => setMetersOpen(true)}
           disabled={!selectedCustomerId}
         >
@@ -1459,10 +1701,11 @@ const CustomerList = () => {
       </Box>
     ),
     muiToolbarAlertBannerProps: isCustomersError
-      ? { color: "error", children: "Error loading data" }
+      ? { color: "error", children: "Error loading customer directory" }
       : undefined,
   });
 
+  // Customer Bills Table
   const billTable = useMaterialReactTable({
     columns: billColumns,
     data: activeBillTab === 0 ? activeBills : voidedBills,
@@ -1476,125 +1719,72 @@ const CustomerList = () => {
       : undefined,
     muiTableBodyRowProps: ({ row }) => ({
       sx: {
-        backgroundColor: row.original.moneyCollected
-          ? "lightgreen"
-          : "lightyellow",
+        backgroundColor: row.original.moneyCollected ? "#e8f5e9" : "#fffde7",
+        "&:hover": {
+          backgroundColor: row.original.moneyCollected ? "#c8e6c9 !important" : "#fff9c4 !important",
+        },
       },
     }),
     enableRowActions: false,
   });
 
-  // === MUTATIONS for CRUD operations ===
-
-  const handleFileUpload = async (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
-    
-    // Store the file and show confirmation dialog
-    setSelectedFile(file);
-    setConfirmImportOpen(true);
-    
-    // Reset file input
-    event.target.value = '';
-  };
-
-  const handleConfirmImport = async () => {
-    if (!selectedFile) return;
-    
-    try {
-      setConfirmImportOpen(false);
-      const customerService = new CustomerService();
-      const result = await customerService.importCustomers(selectedFile);
-      setImportResult(result);
-      setImportDialogOpen(true);
-      // Refresh customer list
-      refetchCustomersAll();
-    } catch (error) {
-      setSnackbar({
-        open: true,
-        message: `Import failed: ${error.message}`,
-        severity: 'error'
-      });
-    } finally {
-      setSelectedFile(null);
-    }
-  };
-
-  const handleImportClick = () => {
-    fileInputRef.current?.click();
-  };
-
-  const handleCancelImport = () => {
-    setConfirmImportOpen(false);
-    setSelectedFile(null);
-  };
-
-  const handleCloseImportDialog = () => {
-    setImportDialogOpen(false);
-    setImportResult(null);
-  };
-
-  const handleCloseSnackbar = () => {
-    setSnackbar(prev => ({ ...prev, open: false }));
-  };
-
-  // Columns specific to Wuzif table (extend billColumns without affecting Bills table)
-  const wuzifColumns = useMemo(() => {
-    const baseCols = (billColumns || []).filter(col => col.id !== 'actions');
-    return [
-      ...baseCols,
-      {
-        id: 'penaltyStatus',
-        header: 'Penalty Status',
-        accessorFn: (row) => (row?.wuzifIsKitatTenestual === true ? 'ተነስቷል' : 'አለበት'),
-        size: 140,
-      },
-      {
-        id: 'wuzifBirr',
-        header: 'Wuzif Birr',
-        accessorFn: (row) => {
-          const del = row?.wuzifDeleted;
-          if (del === 'active') return 'አለበት';
-          if (del === 'deleted') return 'ተነስቷል';
-          return '-';
-        },
-        size: 120,
-      },
-    ];
-  }, [billColumns]);
-
-  // --- 4. CREATE TABLE INSTANCE FOR WUZIF BILLS ---
+  // Wuzif Table
   const wuzifTable = useMaterialReactTable({
-    columns: wuzifColumns, // Add Penalty Status only for Wuzif table
+    columns: wuzifColumns,
     data: activeWuzifTab === 0 ? activeWuzifList : activeWuzifTab === 1 ? skippedWuzifList : paidWuzifList,
     state: {
-      isLoading: isBillsLoading, // It uses the same loading state
+      isLoading: isBillsLoading,
       showAlertBanner: isBillsError,
       showProgressBars: isBillsLoading,
     },
     muiToolbarAlertBannerProps: isBillsError
       ? { color: "error", children: "Error loading Wuzif bills" }
       : undefined,
-    muiTableBodyRowProps: { sx: { backgroundColor: "lightyellow" } }, // Styling kept simple for Wuzif
+    muiTableBodyRowProps: {
+      sx: {
+        backgroundColor: "#fffde7",
+        "&:hover": { backgroundColor: "#fff9c4 !important" },
+      },
+    },
     enableRowActions: true,
-    positionActionsColumn: 'first',
+    positionActionsColumn: "first",
     renderRowActions: ({ row }) => {
       const bill = row.original;
       const readingId = bill.id;
       if (activeWuzifTab === 0) {
-        // Active Wuzif List: Remove wuzif, and either Remove kitate or Return kitate based on wuzifIsKitatTenestual
         const kitated = bill?.wuzifIsKitatTenestual === true;
         return (
-          <Box sx={{ display: 'flex', gap: 1 }}>
-            <Button size="small" color="error" variant="outlined" onClick={() => onRemoveWuzif(readingId)} disabled={isRemovingWuzif}>
+          <Box sx={{ display: "flex", gap: 0.5 }}>
+            <Button
+              size="small"
+              color="error"
+              variant="outlined"
+              onClick={() => onRemoveWuzif(readingId)}
+              disabled={isRemovingWuzif}
+              sx={{ py: 0.2, px: 1, fontSize: "0.75rem" }}
+            >
               Remove wuzif
             </Button>
             {kitated ? (
-              <Button size="small" color="success" variant="outlined" onClick={() => onToggleKitate(readingId, true)} disabled={isReturningKitate}>
+              <Button
+                size="small"
+                color="success"
+                variant="outlined"
+                onClick={() => onToggleKitate(readingId, true)}
+                disabled={isReturningKitate}
+                sx={{ py: 0.2, px: 1, fontSize: "0.75rem" }}
+              >
                 Return kitate
               </Button>
             ) : (
-              <Button size="small" color="warning" variant="outlined" onClick={() => onToggleKitate(readingId, false)} disabled={isRemovingKitate}>
+              <Button
+                size="small"
+                color="warning"
+                variant="outlined"
+                onClick={() => onToggleKitate(readingId, false)}
+                disabled={isRemovingKitate}
+                sx={{ py: 0.2, px: 1, fontSize: "0.75rem" }}
+              >
                 Remove kitate
               </Button>
             )}
@@ -1602,24 +1792,80 @@ const CustomerList = () => {
         );
       }
       if (activeWuzifTab === 1) {
-        // Skipped Wuzif List: Return wuzif
         return (
-          <Box sx={{ display: 'flex', gap: 1 }}>
-            <Button size="small" color="success" variant="outlined" onClick={() => onReturnWuzif(readingId)} disabled={isReturningWuzif}>
+          <Box sx={{ display: "flex", gap: 0.5 }}>
+            <Button
+              size="small"
+              color="success"
+              variant="outlined"
+              onClick={() => onReturnWuzif(readingId)}
+              disabled={isReturningWuzif}
+              sx={{ py: 0.2, px: 1, fontSize: "0.75rem" }}
+            >
               Return wuzif
             </Button>
           </Box>
         );
       }
-      // Paid Wuzif List: No actions
       return null;
     },
   });
 
+  const handleFileUpload = async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+    setSelectedFile(file);
+    setConfirmImportOpen(true);
+    event.target.value = "";
+  };
+
+  const handleConfirmImport = async () => {
+    if (!selectedFile) return;
+    try {
+      setConfirmImportOpen(false);
+      const result = await customerService.importCustomers(selectedFile);
+      setImportResult(result);
+      setImportDialogOpen(true);
+      refetchCustomersAll();
+    } catch (error) {
+      setSnackbar({
+        open: true,
+        message: `Import failed: ${error.message}`,
+        severity: "error",
+      });
+    } finally {
+      setSelectedFile(null);
+    }
+  };
+
+  const activeFiltersCount = [
+    selectedCustomerTypeId,
+    selectedKebeleId,
+    selectedKetenaId,
+    selectedBranchId,
+    selectedReaderId,
+  ].filter(Boolean).length;
+
+  const handleClearAllFilters = () => {
+    setSelectedCustomerTypeId("");
+    setSelectedKebeleId("");
+    setSelectedKetenaId("");
+    setSelectedBranchId("");
+    setSelectedReaderId("");
+  };
+
+  // Live consumption calculation in Edit Reading modal
+  const liveConsumption = useMemo(() => {
+    const curr = parseInt(editReadingData.currentReading);
+    const prev = parseInt(editReadingData.previousReading);
+    if (isNaN(curr) || isNaN(prev)) return null;
+    return curr - prev;
+  }, [editReadingData.currentReading, editReadingData.previousReading]);
+
   return (
     <>
       <ToastContainer autoClose={5000} hideProgressBar theme="colored" />
-      <ConfirmDialog 
+      <ConfirmDialog
         open={confirmState.open}
         title={confirmState.title}
         content={confirmState.content}
@@ -1629,316 +1875,704 @@ const CustomerList = () => {
         onClose={closeConfirm}
         onConfirm={() => (confirmActionRef.current ? confirmActionRef.current() : undefined)}
       />
-      <Breadcrumb pageName="Customer Complaint Handling" />
+      <Breadcrumb pageName="Customer Complaint & History Dossier" />
 
-      <Grid container spacing={2} mt={3}>
-        <Grid item xs={12}>
-          <Paper elevation={3} sx={{ padding: 2 }}>
-            <Box sx={{ borderBottom: 1, borderColor: "divider", mb: 2 }}>
-              <Tabs
-                value={activeCustomerTab}
-                onChange={handleCustomerTabChange}
-                aria-label="customer status tabs"
-              >
-                <Tab label="Active" />
-                <Tab label="Deleted" />
-              </Tabs>
-            </Box>
-            
-            {/* Filters Row */}
-            <Box sx={{ mb: 2, display: "flex", flexWrap: 'wrap', gap: 2, alignItems: 'center' }}>
-              {/* Customer Type Filter */}
-              <FormControl size="small" sx={{ minWidth: 200 }}>
-                <InputLabel>Customer Type</InputLabel>
-                <Select
-                  value={selectedCustomerTypeId}
-                  label="Customer Type"
-                  onChange={(e) => setSelectedCustomerTypeId(e.target.value)}
-                  disabled={isCustomerTypesLoading}
-                >
-                  <MenuItem value="">
-                    <em>All Types</em>
-                  </MenuItem>
-                  {isCustomerTypesLoading ? (
-                    <MenuItem disabled>Loading...</MenuItem>
-                  ) : customerTypes?.length > 0 ? (
-                    customerTypes.map((type) => (
-                      <MenuItem key={type.id} value={type.id}>
-                        {type.name || `Type ${type.id}`}
-                      </MenuItem>
-                    ))
-                  ) : (
-                    <MenuItem disabled>No types found</MenuItem>
-                  )}
-                </Select>
-              </FormControl>
+      {/* MASTER SECTION: Customer Directory & Top Filter Bar */}
+      <Paper elevation={2} sx={{ p: 2.5, mb: 3, borderRadius: 2 }}>
+        <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2, flexWrap: "wrap", gap: 1 }}>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+            <Tabs
+              value={activeCustomerTab}
+              onChange={handleCustomerTabChange}
+              aria-label="customer status tabs"
+              sx={{ minHeight: 40 }}
+            >
+              <Tab label="Active Customers" sx={{ fontWeight: 600 }} />
+              <Tab label="Deleted Accounts" sx={{ fontWeight: 600 }} />
+            </Tabs>
+          </Box>
 
-              {/* Kebele Filter */}
-              <FormControl size="small" sx={{ minWidth: 180 }}>
-                <InputLabel>Kebele</InputLabel>
-                <Select
-                  value={selectedKebeleId}
-                  label="Kebele"
-                  onChange={(e) => {
-                    setSelectedKebeleId(e.target.value);
-                    setSelectedKetenaId(""); // Reset ketena when kebele changes
-                  }}
-                  disabled={isKebelesLoading}
-                >
-                  <MenuItem value="">
-                    <em>All Kebeles</em>
-                  </MenuItem>
-                  {isKebelesLoading ? (
-                    <MenuItem disabled>Loading...</MenuItem>
-                  ) : kebeles?.length > 0 ? (
-                    kebeles.map((kebele) => (
-                      <MenuItem key={kebele.id} value={kebele.id}>
-                        {kebele.name || `Kebele ${kebele.id}`}
-                      </MenuItem>
-                    ))
-                  ) : (
-                    <MenuItem disabled>No kebeles found</MenuItem>
-                  )}
-                </Select>
-              </FormControl>
+          {selectedCustomerId && (
+            <Button
+              size="small"
+              variant="text"
+              startIcon={isCustomerDirectoryExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+              onClick={() => setIsCustomerDirectoryExpanded(!isCustomerDirectoryExpanded)}
+              sx={{ fontWeight: 600 }}
+            >
+              {isCustomerDirectoryExpanded ? "Collapse Directory Table" : "Expand Customer Directory"}
+            </Button>
+          )}
+        </Box>
 
-              {/* Ketena Filter - Only enabled when a kebele is selected */}
-              <FormControl size="small" sx={{ minWidth: 180 }} disabled={!selectedKebeleId}>
-                <InputLabel>Ketena</InputLabel>
-                <Select
-                  value={selectedKetenaId}
-                  label="Ketena"
-                  onChange={(e) => setSelectedKetenaId(e.target.value)}
-                  disabled={isKetenasLoading || !selectedKebeleId}
-                >
-                  <MenuItem value="">
-                    <em>All Ketenas</em>
-                  </MenuItem>
-                  {isKetenasLoading ? (
-                    <MenuItem disabled>Loading...</MenuItem>
-                  ) : ketenas?.length > 0 ? (
-                    ketenas.map((ketena) => (
-                      <MenuItem key={ketena.id} value={ketena.id}>
-                        {ketena.name || `Ketena ${ketena.id}`}
-                      </MenuItem>
-                    ))
-                  ) : (
-                    <MenuItem disabled>No ketenas found</MenuItem>
-                  )}
-                </Select>
-              </FormControl>
+        {/* Top Filters Bar */}
+        <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1.5, alignItems: "center", mb: 2 }}>
+          {/* Customer Type Filter */}
+          <FormControl size="small" sx={{ minWidth: 160 }}>
+            <InputLabel>Customer Type</InputLabel>
+            <Select
+              value={selectedCustomerTypeId}
+              label="Customer Type"
+              onChange={(e) => setSelectedCustomerTypeId(e.target.value)}
+              disabled={isCustomerTypesLoading}
+            >
+              <MenuItem value="">
+                <em>All Types</em>
+              </MenuItem>
+              {customerTypes.map((type) => (
+                <MenuItem key={type.id} value={type.id}>
+                  {type.name || `Type ${type.id}`}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
 
-              {/* Branch Filter */}
-              <FormControl size="small" sx={{ minWidth: 180 }}>
-                <InputLabel>Branch</InputLabel>
-                <Select
-                  value={selectedBranchId}
-                  label="Branch"
-                  onChange={(e) => {
-                    setSelectedBranchId(e.target.value);
-                    setSelectedReaderId(""); // Reset reader when branch changes
-                  }}
-                  disabled={isBranchesLoading}
-                >
-                  <MenuItem value="">
-                    <em>All Branches</em>
-                  </MenuItem>
-                  {isBranchesLoading ? (
-                    <MenuItem disabled>Loading...</MenuItem>
-                  ) : branches?.length > 0 ? (
-                    branches.map((branch) => (
-                      <MenuItem key={branch.id} value={branch.id}>
-                        {branch.name || `Branch ${branch.id}`}
-                      </MenuItem>
-                    ))
-                  ) : (
-                    <MenuItem disabled>No branches found</MenuItem>
-                  )}
-                </Select>
-              </FormControl>
+          {/* Kebele Filter */}
+          <FormControl size="small" sx={{ minWidth: 150 }}>
+            <InputLabel>Kebele</InputLabel>
+            <Select
+              value={selectedKebeleId}
+              label="Kebele"
+              onChange={(e) => {
+                setSelectedKebeleId(e.target.value);
+                setSelectedKetenaId("");
+              }}
+              disabled={isKebelesLoading}
+            >
+              <MenuItem value="">
+                <em>All Kebeles</em>
+              </MenuItem>
+              {kebeles.map((kebele) => (
+                <MenuItem key={kebele.id} value={kebele.id}>
+                  {kebele.name || `Kebele ${kebele.id}`}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
 
-              {/* Reader Filter - Only enabled when a branch is selected */}
-              <FormControl size="small" sx={{ minWidth: 180 }} disabled={!selectedBranchId}>
-                <InputLabel>Assigned Reader</InputLabel>
-                <Select
-                  value={selectedReaderId}
-                  label="Assigned Reader"
-                  onChange={(e) => setSelectedReaderId(e.target.value)}
-                  disabled={isReadersLoading || !selectedBranchId}
-                >
-                  <MenuItem value="">
-                    <em>All Readers</em>
-                  </MenuItem>
-                  {isReadersLoading ? (
-                    <MenuItem disabled>Loading...</MenuItem>
-                  ) : readers?.length > 0 ? (
-                    readers.map((reader) => (
-                      <MenuItem key={reader.id} value={reader.id}>
-                        {reader.name || `Reader ${reader.id}`}
-                      </MenuItem>
-                    ))
-                  ) : (
-                    <MenuItem disabled>No readers found</MenuItem>
-                  )}
-                </Select>
-              </FormControl>
+          {/* Ketena Filter - Independent or Scoped */}
+          <FormControl size="small" sx={{ minWidth: 150 }}>
+            <InputLabel>Ketena</InputLabel>
+            <Select
+              value={selectedKetenaId}
+              label="Ketena"
+              onChange={(e) => setSelectedKetenaId(e.target.value)}
+              disabled={isKetenasLoading}
+            >
+              <MenuItem value="">
+                <em>All Ketenas</em>
+              </MenuItem>
+              {ketenas.map((ketena) => (
+                <MenuItem key={ketena.id} value={ketena.id}>
+                  {ketena.name || `Ketena ${ketena.id}`}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
 
-              {/* Clear All Filters Button */}
-              {(selectedCustomerTypeId || selectedKebeleId || selectedKetenaId || selectedBranchId || selectedReaderId) && (
+          {/* Branch Filter */}
+          <FormControl size="small" sx={{ minWidth: 150 }}>
+            <InputLabel>Branch</InputLabel>
+            <Select
+              value={selectedBranchId}
+              label="Branch"
+              onChange={(e) => {
+                setSelectedBranchId(e.target.value);
+                setSelectedReaderId("");
+              }}
+              disabled={isBranchesLoading}
+            >
+              <MenuItem value="">
+                <em>All Branches</em>
+              </MenuItem>
+              {branches.map((branch) => (
+                <MenuItem key={branch.id} value={branch.id}>
+                  {branch.name || `Branch ${branch.id}`}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+
+          {/* Reader Filter */}
+          <FormControl size="small" sx={{ minWidth: 150 }} disabled={!selectedBranchId}>
+            <InputLabel>Reader</InputLabel>
+            <Select
+              value={selectedReaderId}
+              label="Reader"
+              onChange={(e) => setSelectedReaderId(e.target.value)}
+              disabled={isReadersLoading || !selectedBranchId}
+            >
+              <MenuItem value="">
+                <em>All Readers</em>
+              </MenuItem>
+              {readers.map((reader) => (
+                <MenuItem key={reader.id} value={reader.id}>
+                  {reader.name || `Reader ${reader.id}`}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+
+          {/* Clear Filters Button */}
+          {activeFiltersCount > 0 && (
+            <Button
+              variant="outlined"
+              size="small"
+              color="inherit"
+              startIcon={<FilterAltOffIcon />}
+              onClick={handleClearAllFilters}
+              sx={{ fontWeight: 600 }}
+            >
+              Clear ({activeFiltersCount})
+            </Button>
+          )}
+        </Box>
+
+        {/* Collapsible Customer Directory Table */}
+        <Collapse in={isCustomerDirectoryExpanded || !selectedCustomerId}>
+          <MaterialReactTable table={table} />
+        </Collapse>
+      </Paper>
+
+      {/* DETAIL WORKSPACE: Rendered when a customer is selected */}
+      {selectedCustomerId ? (
+        <Box>
+          {/* CUSTOMER 360 EXECUTIVE SPOTLIGHT DOSSIER */}
+          <Paper
+            elevation={3}
+            sx={{
+              p: 2.5,
+              mb: 3,
+              borderRadius: 2,
+              background: "linear-gradient(135deg, #ffffff 0%, #f8fafd 100%)",
+              border: "1px solid #e2e8f0",
+            }}
+          >
+            <Grid container spacing={2.5} alignItems="center">
+              {/* Left Column: Customer Profile */}
+              <Grid item xs={12} md={4}>
+                <Box sx={{ display: "flex", alignItems: "flex-start", gap: 1.5 }}>
+                  <Box
+                    sx={{
+                      width: 44,
+                      height: 44,
+                      borderRadius: "50%",
+                      bgcolor: "primary.main",
+                      color: "#fff",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      boxShadow: "0 2px 8px rgba(25,118,210,0.3)",
+                    }}
+                  >
+                    <PersonIcon />
+                  </Box>
+                  <Box sx={{ flex: 1 }}>
+                    <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
+                      <Typography variant="h6" sx={{ fontWeight: 700, color: "#1e293b" }}>
+                        {selectedCustomerRecord?.fullName || "Selected Customer"}
+                      </Typography>
+                      <Chip
+                        size="small"
+                        label={selectedCustomerRecord?.status === "active" ? "Active Account" : "Inactive"}
+                        color={selectedCustomerRecord?.status === "active" ? "success" : "default"}
+                        sx={{ height: 20, fontSize: "0.7rem", fontWeight: 700 }}
+                      />
+                    </Box>
+
+                    <Box sx={{ display: "flex", alignItems: "center", gap: 1, mt: 0.5 }}>
+                      <Typography variant="body2" sx={{ fontFamily: "monospace", fontWeight: 700, color: "primary.dark" }}>
+                        Acc: {selectedCustomerRecord?.accountNumber || "-"}
+                      </Typography>
+                      {selectedCustomerRecord?.accountNumber && (
+                        <Tooltip title="Copy Account Number">
+                          <IconButton
+                            size="small"
+                            onClick={() => {
+                              navigator.clipboard.writeText(selectedCustomerRecord.accountNumber);
+                              toast.info("Account number copied!");
+                            }}
+                            sx={{ p: 0.2 }}
+                          >
+                            <ContentCopyIcon sx={{ fontSize: 13 }} />
+                          </IconButton>
+                        </Tooltip>
+                      )}
+                    </Box>
+
+                    <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.25 }}>
+                      Phone: {selectedCustomerRecord?.phoneNumber || "-"}
+                    </Typography>
+                  </Box>
+                </Box>
+              </Grid>
+
+              {/* Middle Column: Live Financial KPI Badges */}
+              <Grid item xs={12} md={5}>
+                <Stack direction="row" spacing={1.5} flexWrap="wrap">
+                  <Box
+                    sx={{
+                      flex: 1,
+                      minWidth: 120,
+                      p: 1.5,
+                      borderRadius: 1.5,
+                      bgcolor: "#fffde7",
+                      border: "1px solid #fff59d",
+                    }}
+                  >
+                    <Typography variant="caption" sx={{ color: "#795548", fontWeight: 700 }}>
+                      UNPAID INVOICES ({customerFinancials.unpaidBillsCount})
+                    </Typography>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 800, color: "#e65100" }}>
+                      {fmt(customerFinancials.unpaidBillsTotal)} ETB
+                    </Typography>
+                  </Box>
+
+                  <Box
+                    sx={{
+                      flex: 1,
+                      minWidth: 120,
+                      p: 1.5,
+                      borderRadius: 1.5,
+                      bgcolor: "#fff3e0",
+                      border: "1px solid #ffe0b2",
+                    }}
+                  >
+                    <Typography variant="caption" sx={{ color: "#e65100", fontWeight: 700 }}>
+                      ACTIVE WUZIF ({customerFinancials.activeWuzifCount})
+                    </Typography>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 800, color: "#d84315" }}>
+                      {fmt(customerFinancials.activeWuzifTotal)} ETB
+                    </Typography>
+                  </Box>
+
+                  <Box
+                    sx={{
+                      flex: 1,
+                      minWidth: 130,
+                      p: 1.5,
+                      borderRadius: 1.5,
+                      bgcolor: "#fbe9e7",
+                      border: "1px solid #ffccbc",
+                    }}
+                  >
+                    <Typography variant="caption" sx={{ color: "#b71c1c", fontWeight: 800 }}>
+                      NET BALANCE DUE
+                    </Typography>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 900, color: "#c62828" }}>
+                      {fmt(customerFinancials.totalOutstanding)} ETB
+                    </Typography>
+                  </Box>
+                </Stack>
+              </Grid>
+
+              {/* Right Column: Quick Action Buttons */}
+              <Grid item xs={12} md={3} sx={{ display: "flex", flexDirection: "column", gap: 1, alignItems: { xs: "flex-start", md: "flex-end" } }}>
+                <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    startIcon={<SpeedIcon />}
+                    onClick={() => setMetersOpen(true)}
+                  >
+                    Meters
+                  </Button>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    startIcon={<VisibilityIcon />}
+                    onClick={() => setViewedCustomerId(selectedCustomerId)}
+                  >
+                    Profile
+                  </Button>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    color="inherit"
+                    startIcon={isBillsLoading ? <CircularProgress size={14} /> : <RefreshIcon />}
+                    onClick={() => refetchBillData()}
+                    disabled={isBillsLoading}
+                  >
+                    Refresh
+                  </Button>
+                </Box>
                 <Button
-                  variant="outlined"
                   size="small"
+                  color="secondary"
                   onClick={() => {
-                    setSelectedCustomerTypeId("");
-                    setSelectedKebeleId("");
-                    setSelectedKetenaId("");
-                    setSelectedBranchId("");
-                    setSelectedReaderId("");
+                    setRowSelection({});
+                    setSelectedCustomerId(null);
+                    setIsCustomerDirectoryExpanded(true);
                   }}
-                  sx={{ ml: 'auto' }}
+                  startIcon={<CloseIcon />}
+                  sx={{ fontSize: "0.75rem", textTransform: "none" }}
                 >
-                  Clear All Filters
+                  Switch / Deselect Customer
                 </Button>
-              )}
-            </Box>
-            
-            <MaterialReactTable table={table} />
+              </Grid>
+            </Grid>
           </Paper>
-        </Grid>
-      </Grid>
 
-      {selectedCustomerId && (
-        <Box mt={4}>
-          <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <WarningIcon color="warning" />
-            Bills for Selected Customer - Complaint Handling
-          </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            You can edit readings for bills that are generated but money is not yet collected.
-            This will mark the current reading as deleted and create a new reading.
-          </Typography>
-          <Paper>
-            <Box sx={{ borderBottom: 1, borderColor: "divider" }}>
+          {/* SEGMENTED CUSTOMER LEDGER WORKSPACE */}
+          <Paper elevation={2} sx={{ borderRadius: 2, overflow: "hidden" }}>
+            {/* Primary Detail Workspace Tabs */}
+            <Box sx={{ borderBottom: 1, borderColor: "divider", bgcolor: "#f8fafd", px: 2, pt: 1 }}>
               <Tabs
-                value={activeBillTab}
-                onChange={handleBillTabChange}
-                aria-label="bill status tabs"
+                value={detailWorkspaceTab}
+                onChange={(e, v) => setDetailWorkspaceTab(v)}
+                aria-label="customer ledger sections"
               >
-                <Tab label="Active Bills" />
-                <Tab label="Voided Bills" />
+                <Tab
+                  icon={<ReceiptLongIcon />}
+                  iconPosition="start"
+                  label={`Billing & Readings (${activeBills.length} Active, ${voidedBills.length} Voided)`}
+                  sx={{ fontWeight: 700 }}
+                />
+                <Tab
+                  icon={<AccountBalanceWalletIcon />}
+                  iconPosition="start"
+                  label={`Wuzif & Arrears Ledger (${activeWuzifList.length} Active, ${skippedWuzifList.length} Skipped, ${paidWuzifList.length} Paid)`}
+                  sx={{ fontWeight: 700 }}
+                />
               </Tabs>
             </Box>
-            <MaterialReactTable key={`bill-${activeBillTab}`} table={billTable} />
+
+            {/* TAB 0: BILLING & READINGS HISTORY */}
+            {detailWorkspaceTab === 0 && (
+              <Box sx={{ p: 2 }}>
+                <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2, flexWrap: "wrap", gap: 1 }}>
+                  <Tabs
+                    value={activeBillTab}
+                    onChange={handleBillTabChange}
+                    aria-label="bill status tabs"
+                    sx={{ minHeight: 36 }}
+                  >
+                    <Tab label={`Active Bills (${activeBills.length})`} sx={{ fontWeight: 600 }} />
+                    <Tab label={`Voided Bills (${voidedBills.length})`} sx={{ fontWeight: 600 }} />
+                  </Tabs>
+
+                  <Typography variant="caption" sx={{ color: "text.secondary" }}>
+                    💡 Edit readings is permitted only on bills where payment has not yet been collected.
+                  </Typography>
+                </Box>
+                <MaterialReactTable key={`bill-${activeBillTab}`} table={billTable} />
+              </Box>
+            )}
+
+            {/* TAB 1: WUZIF & ARREARS LEDGER */}
+            {detailWorkspaceTab === 1 && (
+              <Box sx={{ p: 2 }}>
+                <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2, flexWrap: "wrap", gap: 1 }}>
+                  <Tabs
+                    value={activeWuzifTab}
+                    onChange={handleWuzifTabChange}
+                    aria-label="wuzif status tabs"
+                    sx={{ minHeight: 36 }}
+                  >
+                    <Tab label={`Active Wuzif (${activeWuzifList.length})`} sx={{ fontWeight: 600 }} />
+                    <Tab label={`Skipped Wuzif (${skippedWuzifList.length})`} sx={{ fontWeight: 600 }} />
+                    <Tab label={`Paid Wuzif (${paidWuzifList.length})`} sx={{ fontWeight: 600 }} />
+                  </Tabs>
+
+                  <Typography variant="caption" sx={{ color: "text.secondary" }}>
+                    ⚖️ Active wuzif rows can be removed or have penalties (kitat) waived per resolution policies.
+                  </Typography>
+                </Box>
+                <MaterialReactTable key={`wuzif-${activeWuzifTab}`} table={wuzifTable} />
+              </Box>
+            )}
           </Paper>
         </Box>
+      ) : (
+        <Paper elevation={1} sx={{ p: 4, textAlign: "center", borderRadius: 2, bgcolor: "#fafafa", border: "1px dashed #cbd5e1" }}>
+          <SearchIcon sx={{ fontSize: 44, color: "text.secondary", mb: 1 }} />
+          <Typography variant="h6" sx={{ fontWeight: 600, color: "text.primary" }}>
+            No Customer Account Selected
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 500, mx: "auto", mt: 0.5 }}>
+            Search by Account Number, Full Name, or Phone in the directory table above, and select a customer row to view their billing history, perform reading corrections, and manage wuzif arrears.
+          </Typography>
+        </Paper>
       )}
 
-      {/* --- 5. RENDER THE WUZIF TABLE WITH TABS --- */}
-      {selectedCustomerId && (
-        <Box mt={4}>
-          <Typography variant="h6" gutterBottom>
-            Unpaid Wuzif List
-          </Typography>
-          <Paper>
-            <Box sx={{ borderBottom: 1, borderColor: "divider" }}>
-              <Tabs
-                value={activeWuzifTab}
-                onChange={handleWuzifTabChange}
-                aria-label="wuzif status tabs"
+      {/* ==================== EXECUTIVE PRO MODALS ==================== */}
+
+      {/* 1. Edit Reading Modal with Multi-step In-Modal Workflow */}
+      <Dialog
+        open={editReadingModalOpen}
+        onClose={editModalStep === "PROCESSING" ? undefined : handleCloseEditReadingModal}
+        maxWidth={editModalStep === "JOURNAL" ? "md" : "sm"}
+        fullWidth
+      >
+        {/* Title */}
+        <DialogTitle
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            bgcolor:
+              editModalStep === "JOURNAL"
+                ? "#f0fdf4"
+                : editModalStep === "PROCESSING"
+                ? "#fff8e1"
+                : "#fff3e0",
+            borderBottom:
+              editModalStep === "JOURNAL"
+                ? "1px solid #bbf7d0"
+                : editModalStep === "PROCESSING"
+                ? "1px solid #ffe082"
+                : "1px solid #ffe0b2",
+          }}
+        >
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+            {editModalStep === "JOURNAL" ? (
+              <ReceiptLongIcon sx={{ color: "#166534" }} />
+            ) : editModalStep === "PROCESSING" ? (
+              <CircularProgress size={20} sx={{ color: "#e65100" }} />
+            ) : (
+              <EditIcon sx={{ color: "#e65100" }} />
+            )}
+            <Box>
+              <Typography
+                variant="h6"
+                sx={{
+                  fontWeight: 700,
+                  color: editModalStep === "JOURNAL" ? "#166534" : "#e65100",
+                  lineHeight: 1.2,
+                }}
               >
-                <Tab label="Active Wuzif" />
-                <Tab label="Skipped Wuzif" />
-                <Tab label="Paid Wuzif" />
-              </Tabs>
+                {editModalStep === "JOURNAL"
+                  ? journalPreviewData?.mode === "billPrep"
+                    ? "📋 Bill Preparation — Revenue Recognition"
+                    : "📋 Journal Adjustment Review & Push"
+                  : editModalStep === "PROCESSING"
+                  ? "Processing Complaint Adjustment..."
+                  : isEditAndGenerate
+                  ? "Edit & Generate Bill"
+                  : "Edit Reading — Customer Complaint"}
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                {editModalStep === "JOURNAL" && journalPreviewData?.invoiceNum
+                  ? `Invoice: ${journalPreviewData.invoiceNum} — ${journalPreviewData.newBill?.kifyaWer || journalPreviewData.oldBill?.kifyaWer || ""}`
+                  : editModalStep === "PROCESSING"
+                  ? "Applying corrections and generating new invoice..."
+                  : "Reading adjustment and complaint resolution workflow"}
+              </Typography>
             </Box>
-            <MaterialReactTable key={`wuzif-${activeWuzifTab}`} table={wuzifTable} />
-          </Paper>
-        </Box>
-      )}
-      {/* MODALS */}
-      {/* Removed CustomerFormModal for complaint handling */}
-      
-      {/* Edit Reading Modal for Complaint Handling */}
-      <Dialog open={editReadingModalOpen} onClose={handleCloseEditReadingModal} maxWidth="sm" fullWidth>
-        <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <WarningIcon color="warning" />
-          {isEditAndGenerate ? "Edit & Generate Bill" : "Edit Reading - Customer Complaint"}
+          </Box>
+
+          {editModalStep !== "PROCESSING" && (
+            <IconButton size="small" onClick={handleCloseEditReadingModal}>
+              <CloseIcon fontSize="small" />
+            </IconButton>
+          )}
         </DialogTitle>
-        <DialogContent>
-          <DialogContentText sx={{ mb: 2 }}>
-            This will mark the current reading as deleted and create a new reading with the updated value.
-            <strong> This action is for handling customer complaints only.</strong>
-          </DialogContentText>
-          {selectedBillForEdit && (
-            <Box sx={{ mb: 2, p: 2, bgcolor: 'grey.100', borderRadius: 1 }}>
-              <Typography variant="subtitle2">Bill Information:</Typography>
-              <Typography variant="body2">Invoice: {selectedBillForEdit.billingInvoiceNumber}</Typography>
-              <Typography variant="body2">Period: {selectedBillForEdit.kifyaWer}</Typography>
-              <Typography variant="body2">Current Reading: {selectedBillForEdit.lastReading}</Typography>
+
+        {/* Content */}
+        <DialogContent sx={{ pt: 2.5 }}>
+          {/* STEP: INPUT */}
+          {editModalStep === "INPUT" && (
+            <>
+              <Alert severity="warning" sx={{ mb: 2.5 }}>
+                This will void the active reading and generate an adjusted reading row with your inputs.
+              </Alert>
+
+              {selectedBillForEdit && (
+                <Paper elevation={0} sx={{ p: 2, bgcolor: "#f8fafc", borderRadius: 1.5, border: "1px solid #e2e8f0", mb: 2.5 }}>
+                  <Grid container spacing={1}>
+                    <Grid item xs={6}>
+                      <Typography variant="caption" color="text.secondary">Invoice Number:</Typography>
+                      <Typography variant="body2" sx={{ fontWeight: 600, fontFamily: "monospace" }}>
+                        {selectedBillForEdit.billingInvoiceNumber || "-"}
+                      </Typography>
+                    </Grid>
+                    <Grid item xs={6}>
+                      <Typography variant="caption" color="text.secondary">Billing Period:</Typography>
+                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                        {selectedBillForEdit.kifyaWer || "-"}
+                      </Typography>
+                    </Grid>
+                    <Grid item xs={6}>
+                      <Typography variant="caption" color="text.secondary">Current Recorded Reading:</Typography>
+                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                        {selectedBillForEdit.lastReading ?? "-"}
+                      </Typography>
+                    </Grid>
+                    <Grid item xs={6}>
+                      <Typography variant="caption" color="text.secondary">Recorded Consumption:</Typography>
+                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                        {selectedBillForEdit.consumption ?? "-"} m³
+                      </Typography>
+                    </Grid>
+                  </Grid>
+                </Paper>
+              )}
+
+              <TextField
+                autoFocus
+                margin="dense"
+                label="Previous Reading"
+                type="number"
+                fullWidth
+                variant="outlined"
+                value={editReadingData.previousReading}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setEditReadingData((prev) => ({ ...prev, previousReading: value }));
+                }}
+                sx={{ mb: 2 }}
+              />
+
+              <TextField
+                margin="dense"
+                label="New Current Reading"
+                type="number"
+                fullWidth
+                variant="outlined"
+                value={editReadingData.currentReading}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setEditReadingData((prev) => ({ ...prev, currentReading: value }));
+                }}
+                error={!!validationError}
+                helperText={validationError}
+              />
+
+              {liveConsumption !== null && (
+                <Box
+                  sx={{
+                    mt: 2,
+                    p: 1.5,
+                    borderRadius: 1.5,
+                    bgcolor: liveConsumption >= 0 ? "#e8f5e9" : "#ffebee",
+                    border: liveConsumption >= 0 ? "1px solid #a5d6a7" : "1px solid #ef9a9a",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                  }}
+                >
+                  <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                    <CalculateIcon sx={{ color: liveConsumption >= 0 ? "success.main" : "error.main" }} />
+                    <Typography variant="body2" sx={{ fontWeight: 600, color: liveConsumption >= 0 ? "success.dark" : "error.dark" }}>
+                      {liveConsumption >= 0 ? "Calculated Consumption:" : "Invalid Consumption:"}
+                    </Typography>
+                  </Box>
+                  <Chip
+                    label={`${liveConsumption} m³`}
+                    color={liveConsumption >= 0 ? "success" : "error"}
+                    sx={{ fontWeight: 700 }}
+                  />
+                </Box>
+              )}
+            </>
+          )}
+
+          {/* STEP: PROCESSING */}
+          {editModalStep === "PROCESSING" && (
+            <Box sx={{ py: 4, px: 2, textAlign: "center" }}>
+              <CircularProgress size={46} sx={{ color: "#e65100", mb: 2 }} />
+              <Typography variant="h6" sx={{ fontWeight: 700, mb: 1, color: "text.primary" }}>
+                {processingStepText || "Processing complaint resolution..."}
+              </Typography>
+              <Box sx={{ width: "80%", mx: "auto", mt: 2, mb: 3 }}>
+                <LinearProgress variant="determinate" value={processingProgress} sx={{ height: 8, borderRadius: 4 }} />
+              </Box>
+              <Stack spacing={1.5} sx={{ maxWidth: 380, mx: "auto", textAlign: "left" }}>
+                <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                  {processingProgress >= 25 ? (
+                    <CheckCircleIcon color="success" fontSize="small" />
+                  ) : (
+                    <CircularProgress size={16} />
+                  )}
+                  <Typography variant="body2" sx={{ fontWeight: processingProgress >= 25 ? 600 : 400 }}>
+                    1. Void active reading & save new readings
+                  </Typography>
+                </Box>
+                <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                  {processingProgress >= 75 ? (
+                    <CheckCircleIcon color="success" fontSize="small" />
+                  ) : processingProgress >= 40 ? (
+                    <CircularProgress size={16} />
+                  ) : (
+                    <Box sx={{ width: 16, height: 16, borderRadius: "50%", border: "2px solid #ccc" }} />
+                  )}
+                  <Typography variant="body2" sx={{ fontWeight: processingProgress >= 75 ? 600 : 400 }}>
+                    2. Recalculate tariffs & generate new bill
+                  </Typography>
+                </Box>
+                <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                  {processingProgress >= 100 ? (
+                    <CheckCircleIcon color="success" fontSize="small" />
+                  ) : processingProgress >= 75 ? (
+                    <CircularProgress size={16} />
+                  ) : (
+                    <Box sx={{ width: 16, height: 16, borderRadius: "50%", border: "2px solid #ccc" }} />
+                  )}
+                  <Typography variant="body2" sx={{ fontWeight: processingProgress >= 100 ? 600 : 400 }}>
+                    3. Compute DR/CR journal adjustment entries
+                  </Typography>
+                </Box>
+              </Stack>
             </Box>
           )}
-          <TextField
-            autoFocus
-            margin="dense"
-            label="Previous Reading"
-            type="number"
-            fullWidth
-            variant="outlined"
-            value={editReadingData.previousReading}
-            onChange={(e) => {
-              const value = e.target.value;
-              setEditReadingData(prev => ({ ...prev, previousReading: value }));
-            }}
-            sx={{ mb: 2 }}
-          />
-          <TextField
-            margin="dense"
-            label="New Current Reading"
-            type="number"
-            fullWidth
-            variant="outlined"
-            value={editReadingData.currentReading}
-            onChange={(e) => {
-              const value = e.target.value;
-              setEditReadingData(prev => ({ ...prev, currentReading: value }));
-            }}
-            error={!!validationError}
-            helperText={validationError || `Consumption will be: ${editReadingData.currentReading && editReadingData.previousReading ? 
-              (parseInt(editReadingData.currentReading) - parseInt(editReadingData.previousReading)) : 0}`}
-          />
+
+          {/* STEP: JOURNAL */}
+          {editModalStep === "JOURNAL" && renderJournalPreviewContent(journalPreviewData)}
         </DialogContent>
-        <DialogActions>
-          <Button onClick={handleCloseEditReadingModal}>Cancel</Button>
-          <Button 
-            onClick={handleEditReadingSubmit} 
-            variant="contained" 
-            color="warning"
-            disabled={
-              isEditSubmitting ||
-              isDeletingRecreating ||
-              isAddingReading ||
-              isChangingStatus ||
-              !editReadingData.currentReading ||
-              !editReadingData.previousReading
-            }
-          >
-            {isEditSubmitting || isDeletingRecreating || isAddingReading || isChangingStatus
-              ? 'Processing...'
-              : isEditAndGenerate ? 'Update & Generate' : 'Update Reading'}
-          </Button>
+
+        {/* Actions */}
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          {editModalStep === "INPUT" && (
+            <>
+              <Button onClick={handleCloseEditReadingModal}>Cancel</Button>
+              <Button
+                onClick={handleEditReadingSubmit}
+                variant="contained"
+                color="warning"
+                disabled={
+                  isEditSubmitting ||
+                  !editReadingData.currentReading ||
+                  !editReadingData.previousReading ||
+                  (liveConsumption !== null && liveConsumption < 0)
+                }
+                sx={{ fontWeight: 700, px: 3 }}
+              >
+                {isEditSubmitting ? "Processing..." : isEditAndGenerate ? "Update & Generate Bill" : "Update Reading"}
+              </Button>
+            </>
+          )}
+
+          {editModalStep === "PROCESSING" && null}
+
+          {editModalStep === "JOURNAL" && (
+            <>
+              <Button onClick={handleCloseEditReadingModal} disabled={journalPushLoading}>
+                Close / Review Later
+              </Button>
+              <Button
+                variant="contained"
+                color="primary"
+                onClick={handleJournalPreviewPush}
+                disabled={journalPushLoading || !journalPreviewData}
+                sx={{ bgcolor: "#00897b", "&:hover": { bgcolor: "#00695c" }, fontWeight: 700, px: 3 }}
+              >
+                {journalPushLoading ? "Pushing..." : "Push to Journal (DRAFT)"}
+              </Button>
+            </>
+          )}
         </DialogActions>
       </Dialog>
 
-      {/* Journal Preview Dialog — Bill Preparation Summary style */}
+      {/* 2. Standalone Journal Preview Dialog (Used for Delete Reading) */}
       <Dialog open={journalPreviewOpen} onClose={handleCloseJournalPreview} maxWidth="md" fullWidth>
-        <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <DialogTitle sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", bgcolor: "#f0fdf4", borderBottom: "1px solid #bbf7d0" }}>
           <Box>
-            <Typography variant="h6" component="span">
-              {journalPreviewData?.mode === 'billPrep'
-                ? '📋 Bill Preparation — Revenue Recognition'
+            <Typography variant="h6" sx={{ fontWeight: 700, color: "#166534" }}>
+              {journalPreviewData?.mode === "billPrep"
+                ? "📋 Bill Preparation — Revenue Recognition"
                 : journalPreviewData?.isVoidOnly
-                  ? '📋 Journal Reversal Preview'
-                  : '📋 Journal Adjustment Preview'}
+                  ? "📋 Journal Reversal Preview"
+                  : "📋 Journal Adjustment Preview"}
             </Typography>
             {journalPreviewData?.invoiceNum && (
               <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
@@ -1948,239 +2582,148 @@ const CustomerList = () => {
               </Typography>
             )}
           </Box>
-          <Button color="error" onClick={handleCloseJournalPreview} sx={{ fontWeight: 'bold' }}>✕ CLOSE</Button>
+          <Button color="error" onClick={handleCloseJournalPreview} sx={{ fontWeight: 700 }}>
+            ✕ Close
+          </Button>
         </DialogTitle>
-        <DialogContent>
-          {journalPreviewData && (() => {
-            const { newBillRows, oldBillRows, isVoidOnly, mode } = journalPreviewData;
-            const fmt = (n) => (n || 0).toLocaleString("en-US", { minimumFractionDigits: 2 });
-            const newTotal = newBillRows.reduce((s, r) => s + (r.amount || 0), 0);
-            const oldTotal = oldBillRows.reduce((s, r) => s + (r.amount || 0), 0);
-
-            return (
-              <Box>
-                {/* ── New Bill Push Table (Step 1: DR Receivable / CR Revenue) ── */}
-                {newBillRows.length > 0 && (
-                  <Box sx={{ mb: 3 }}>
-                    <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 1, color: '#00897b' }}>
-                      ✅ New Bill — Push to Journal (Step 1)
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                      Revenue Recognition — DR (Receivable) / CR (Revenue) for each charge type.
-                    </Typography>
-                    <TableContainer component={Paper} elevation={2} sx={{ borderRadius: 2, overflow: 'auto', border: '2px solid #00897b' }}>
-                      <Table size="small" stickyHeader>
-                        <TableHead>
-                          <TableRow>
-                            <TableCell sx={{ fontWeight: 'bold', bgcolor: '#00897b', color: 'white' }}>#</TableCell>
-                            <TableCell sx={{ fontWeight: 'bold', bgcolor: '#00897b', color: 'white' }}>Charge Type</TableCell>
-                            <TableCell align="right" sx={{ fontWeight: 'bold', bgcolor: '#1565c0', color: 'white' }}>DR — Receivable (A/R)</TableCell>
-                            <TableCell align="right" sx={{ fontWeight: 'bold', bgcolor: '#2e7d32', color: 'white' }}>CR — Revenue / Liability</TableCell>
-                          </TableRow>
-                        </TableHead>
-                        <TableBody>
-                          {newBillRows.map((row, idx) => (
-                            <TableRow key={idx} sx={{ bgcolor: row.group === 'g1' ? '#f0f8ff' : '#fff5f5' }}>
-                              <TableCell sx={{ color: 'text.secondary' }}>{idx + 1}</TableCell>
-                              <TableCell sx={{ fontFamily: 'Nyala, serif', fontWeight: 'medium' }}>{row.desc}</TableCell>
-                              <TableCell align="right" sx={{ fontWeight: 'bold', color: 'primary.main' }}>{fmt(row.amount)}</TableCell>
-                              <TableCell align="right" sx={{ fontWeight: 'bold', color: 'success.main' }}>{fmt(row.amount)}</TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                        <TableFooter>
-                          <TableRow sx={{ '& td': { fontWeight: 'bold', borderTop: '3px solid #333', fontSize: '1.05rem' } }}>
-                            <TableCell />
-                            <TableCell sx={{ fontFamily: 'Nyala, serif' }}>TOTAL</TableCell>
-                            <TableCell align="right" sx={{ color: 'primary.main' }}>{fmt(newTotal)}</TableCell>
-                            <TableCell align="right" sx={{ color: 'success.main' }}>{fmt(newTotal)}</TableCell>
-                          </TableRow>
-                        </TableFooter>
-                      </Table>
-                    </TableContainer>
-                  </Box>
-                )}
-
-                {/* ── Old Bill Reversal Table (opposite of Step 1: DR Revenue / CR Receivable) ── */}
-                {oldBillRows.length > 0 && (
-                  <Box sx={{ mb: 3 }}>
-                    <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 1, color: '#c62828' }}>
-                      ✕ Old Bill — Reversal (Opposite of Step 1)
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                      Reversing the old bill — DR (Revenue) / CR (Receivable) for each charge type.
-                    </Typography>
-                    <TableContainer component={Paper} elevation={1} sx={{ borderRadius: 2, overflow: 'auto', border: '2px solid #ef5350' }}>
-                      <Table size="small" stickyHeader>
-                        <TableHead>
-                          <TableRow>
-                            <TableCell sx={{ fontWeight: 'bold', bgcolor: '#ef5350', color: 'white' }}>#</TableCell>
-                            <TableCell sx={{ fontWeight: 'bold', bgcolor: '#ef5350', color: 'white' }}>Charge Type</TableCell>
-                            <TableCell align="right" sx={{ fontWeight: 'bold', bgcolor: '#c62828', color: 'white' }}>DR — Revenue (Reversal)</TableCell>
-                            <TableCell align="right" sx={{ fontWeight: 'bold', bgcolor: '#d32f2f', color: 'white' }}>CR — Receivable (Reversal)</TableCell>
-                          </TableRow>
-                        </TableHead>
-                        <TableBody>
-                          {oldBillRows.map((row, idx) => (
-                            <TableRow key={idx} sx={{ bgcolor: '#fff5f5' }}>
-                              <TableCell sx={{ color: 'text.secondary' }}>{idx + 1}</TableCell>
-                              <TableCell sx={{ fontFamily: 'Nyala, serif', fontWeight: 'medium' }}>{row.desc}</TableCell>
-                              <TableCell align="right" sx={{ fontWeight: 'bold', color: 'error.main' }}>{fmt(row.amount)}</TableCell>
-                              <TableCell align="right" sx={{ fontWeight: 'bold', color: 'error.dark' }}>{fmt(row.amount)}</TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                        <TableFooter>
-                          <TableRow sx={{ '& td': { fontWeight: 'bold', borderTop: '2px solid #c62828', fontSize: '1rem' } }}>
-                            <TableCell />
-                            <TableCell sx={{ fontFamily: 'Nyala, serif' }}>TOTAL</TableCell>
-                            <TableCell align="right" sx={{ color: 'error.main' }}>{fmt(oldTotal)}</TableCell>
-                            <TableCell align="right" sx={{ color: 'error.dark' }}>{fmt(oldTotal)}</TableCell>
-                          </TableRow>
-                        </TableFooter>
-                      </Table>
-                    </TableContainer>
-                  </Box>
-                )}
-
-                {/* Balance check */}
-                {newBillRows.length > 0 && oldBillRows.length > 0 && (
-                  <Alert severity="info" sx={{ mb: 2 }}>
-                    Combined Journal: Total Debit = <strong>{fmt(newTotal + oldTotal)}</strong> ETB, Total Credit = <strong>{fmt(newTotal + oldTotal)}</strong> ETB — Balanced ✅
-                  </Alert>
-                )}
-
-                {/* Bill info cards */}
-                <Box sx={{ mt: 2, display: 'flex', gap: 3, flexWrap: 'wrap' }}>
-                  {journalPreviewData.oldBill && (
-                    <Paper elevation={1} sx={{ p: 2, flex: 1, minWidth: 200, bgcolor: '#fff5f5', border: '1px solid #ef5350' }}>
-                      <Typography variant="subtitle2" color="error.main" gutterBottom>Old Bill (Voided)</Typography>
-                      <Typography variant="body2">Invoice: {journalPreviewData.oldBill?.billingInvoiceNumber || '-'}</Typography>
-                      <Typography variant="body2">Period: {journalPreviewData.oldBill?.kifyaWer || '-'}</Typography>
-                      <Typography variant="body2">Total: {fmt(journalPreviewData.oldBill?.tekilalaTekefay)} ETB</Typography>
-                    </Paper>
-                  )}
-                  {journalPreviewData.newBill && (
-                    <Paper elevation={1} sx={{ p: 2, flex: 1, minWidth: 200, bgcolor: '#f0f8ff', border: '1px solid #1565c0' }}>
-                      <Typography variant="subtitle2" color="primary.main" gutterBottom>New Bill (Active)</Typography>
-                      <Typography variant="body2">Invoice: {journalPreviewData.newBill?.billingInvoiceNumber || '-'}</Typography>
-                      <Typography variant="body2">Period: {journalPreviewData.newBill?.kifyaWer || '-'}</Typography>
-                      <Typography variant="body2">Total: {fmt(journalPreviewData.newBill?.tekilalaTekefay)} ETB</Typography>
-                    </Paper>
-                  )}
-                </Box>
-              </Box>
-            );
-          })()}
+        <DialogContent sx={{ pt: 2.5 }}>
+          {renderJournalPreviewContent(journalPreviewData)}
         </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={handleCloseJournalPreview} disabled={journalPushLoading}>Cancel</Button>
+        <DialogActions sx={{ px: 3, pb: 2.5 }}>
+          <Button onClick={handleCloseJournalPreview} disabled={journalPushLoading}>
+            Cancel
+          </Button>
           <Button
             variant="contained"
             color="primary"
             onClick={handleJournalPreviewPush}
             disabled={journalPushLoading || !journalPreviewData}
-            sx={{ bgcolor: '#00897b', '&:hover': { bgcolor: '#00695c' }, fontWeight: 'bold', px: 4 }}
+            sx={{ bgcolor: "#00897b", "&:hover": { bgcolor: "#00695c" }, fontWeight: 700, px: 4 }}
           >
-            {journalPushLoading ? 'Pushing...' : 'Push to Journal (DRAFT)'}
+            {journalPushLoading ? "Pushing..." : "Push to Journal (DRAFT)"}
           </Button>
         </DialogActions>
       </Dialog>
 
-
+      {/* 3. Derash Payment Settlement Modal */}
       <Dialog open={derashModalOpen} onClose={() => setDerashModalOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Derash Payment</DialogTitle>
-        <DialogContent>
+        <DialogTitle sx={{ fontWeight: 700, bgcolor: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
+          Derash Payment Verification
+        </DialogTitle>
+        <DialogContent sx={{ pt: 2.5 }}>
           {selectedBillForDerash && (
-            <Box sx={{ mb: 2, p: 2, bgcolor: 'grey.100', borderRadius: 1 }}>
-              <Typography variant="subtitle2">Bill Information</Typography>
-              <Typography variant="body2">Invoice: {selectedBillForDerash.billingInvoiceNumber}</Typography>
-              <Typography variant="body2">Expected Amount: {selectedBillForDerash.tekilalaTekefay || 0}</Typography>
-            </Box>
+            <Paper elevation={0} sx={{ p: 2, bgcolor: "#f1f5f9", borderRadius: 1.5, mb: 2 }}>
+              <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                Invoice: {selectedBillForDerash.billingInvoiceNumber}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Expected Amount: <strong>{fmt(selectedBillForDerash.tekilalaTekefay)} ETB</strong>
+              </Typography>
+            </Paper>
           )}
+
           {derashResult ? (
-            <Box sx={{ display: 'grid', gridTemplateColumns: 'auto 1fr', rowGap: 1, columnGap: 2 }}>
-              <Typography variant="body2">Agent</Typography>
-              <Typography variant="body2">{derashResult.agent_name || derashResult.agent_id || '-'}</Typography>
-              <Typography variant="body2">Paid Date</Typography>
-              <Typography variant="body2">{derashResult.paid_dt || '-'}</Typography>
-              <Typography variant="body2">Paid Amount</Typography>
-              <Typography variant="body2">{derashResult.paid_amount || '-'}</Typography>
-              <Typography variant="body2">Confirmation</Typography>
-              <Typography variant="body2">{derashResult.confirmation_code || '-'}</Typography>
+            <Box sx={{ display: "grid", gridTemplateColumns: "120px 1fr", rowGap: 1.5, columnGap: 2, p: 2, bgcolor: "#f8fafc", borderRadius: 1.5, border: "1px solid #e2e8f0" }}>
+              <Typography variant="body2" color="text.secondary">Agent / Channel:</Typography>
+              <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                {derashResult.agent_name || derashResult.agent_id || "-"}
+              </Typography>
+
+              <Typography variant="body2" color="text.secondary">Paid Date:</Typography>
+              <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                {derashResult.paid_dt || "-"}
+              </Typography>
+
+              <Typography variant="body2" color="text.secondary">Paid Amount:</Typography>
+              <Typography variant="body2" sx={{ fontWeight: 700, color: "success.main" }}>
+                {fmt(derashResult.paid_amount)} ETB
+              </Typography>
+
+              <Typography variant="body2" color="text.secondary">Confirmation:</Typography>
+              <Typography variant="body2" sx={{ fontWeight: 700, fontFamily: "monospace" }}>
+                {derashResult.confirmation_code || "-"}
+              </Typography>
             </Box>
           ) : (
-            <Typography variant="body2">No payment data.</Typography>
+            <Typography variant="body2" color="text.secondary">
+              No payment record retrieved from Derash.
+            </Typography>
           )}
         </DialogContent>
-        <DialogActions>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button onClick={() => setDerashModalOpen(false)}>Close</Button>
-          <Button 
-            variant="contained" 
-            color="primary" 
+          <Button
+            variant="contained"
+            color="primary"
             onClick={handleSaveDerashPayment}
             disabled={!derashResult || !selectedBillForDerash}
+            sx={{ fontWeight: 700 }}
           >
-            Save Payment
+            Save Verified Payment
           </Button>
         </DialogActions>
       </Dialog>
 
+      {/* 4. Manual Bank Payment Modal */}
       <Dialog open={manualBankModalOpen} onClose={handleCloseManualBankModal} maxWidth="xs" fullWidth>
-        <DialogTitle>Manual Bank Payment</DialogTitle>
-        <DialogContent>
+        <DialogTitle sx={{ fontWeight: 700, bgcolor: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
+          Record Bank Payment
+        </DialogTitle>
+        <DialogContent sx={{ pt: 2.5 }}>
           {manualBankBill && (
-            <Box sx={{ mb: 2, p: 2, bgcolor: 'grey.100', borderRadius: 1 }}>
-              <Typography variant="subtitle2">Bill Information</Typography>
-              <Typography variant="body2">Invoice: {manualBankBill.billingInvoiceNumber}</Typography>
-              <Typography variant="body2">Expected Amount: {manualBankBill.tekilalaTekefay || 0}</Typography>
-            </Box>
+            <Paper elevation={0} sx={{ p: 2, bgcolor: "#f1f5f9", borderRadius: 1.5, mb: 2 }}>
+              <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                Invoice: {manualBankBill.billingInvoiceNumber}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Expected Amount: <strong>{fmt(manualBankBill.tekilalaTekefay)} ETB</strong>
+              </Typography>
+            </Paper>
           )}
+
           <FormControl fullWidth margin="normal" size="small">
-            <InputLabel id="manual-bank-select-label">Bank</InputLabel>
+            <InputLabel id="manual-bank-select-label">Select Bank</InputLabel>
             <Select
               labelId="manual-bank-select-label"
-              label="Bank"
+              label="Select Bank"
               value={selectedBankKey}
               onChange={(e) => setSelectedBankKey(e.target.value)}
               disabled={isBillingBanksLoading || manualBankSaving || !activeBillingBanks.length}
             >
-              {isBillingBanksLoading && (
-                <MenuItem value="" disabled>Loading banks...</MenuItem>
-              )}
-              {!isBillingBanksLoading && activeBillingBanks.length === 0 && (
-                <MenuItem value="" disabled>No active banks found</MenuItem>
-              )}
-              {!isBillingBanksLoading && activeBillingBanks.map((bank) => (
+              {activeBillingBanks.map((bank) => (
                 <MenuItem key={bank.id} value={bank.bankCode || bank.id}>
                   {bank.bankName || bank.bankCode || bank.gatewayCode || bank.id}
                 </MenuItem>
               ))}
             </Select>
           </FormControl>
+
           <TextField
             margin="normal"
             label="Confirmation Code (optional)"
             fullWidth
+            size="small"
             value={manualBankConfirmationCode}
             onChange={(e) => setManualBankConfirmationCode(e.target.value)}
           />
         </DialogContent>
-        <DialogActions>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button onClick={handleCloseManualBankModal} disabled={manualBankSaving}>
             Cancel
           </Button>
-          <Button 
-            variant="contained" 
-            color="primary" 
+          <Button
+            variant="contained"
+            color="primary"
             onClick={handleSaveManualBankPayment}
             disabled={manualBankSaving || !selectedBankKey}
+            sx={{ fontWeight: 700 }}
           >
-            {manualBankSaving ? 'Saving...' : 'Save Payment'}
+            {manualBankSaving ? "Saving..." : "Save Payment"}
           </Button>
         </DialogActions>
       </Dialog>
 
+      {/* 5. Auxiliary Modals */}
       <ViewCustomerModal
         open={!!viewedCustomer}
         onClose={() => setViewedCustomerId(null)}
@@ -2188,6 +2731,7 @@ const CustomerList = () => {
         isLoading={isCustomerDetailsFetching}
         lookupData={{ customerTypes, meterSizes, kebeles, branches }}
       />
+
       <MetersModal
         meterSizes={meterSizes}
         open={isMetersOpen}
@@ -2201,143 +2745,49 @@ const CustomerList = () => {
         readingId={viewReadingId}
       />
 
-      {/* Import Results Modal */}
-      <Dialog
-        open={importDialogOpen}
-        onClose={handleCloseImportDialog}
-        maxWidth="md"
-        fullWidth
-      >
-        <DialogTitle>Import Results</DialogTitle>
-        <DialogContent>
-          {importResult && (
-            <Box>
-              <Box mb={3}>
-                <Typography variant="h6" gutterBottom>
-                  Summary
-                </Typography>
-                <Typography>Successfully imported: {importResult.importedCount || 0} customers</Typography>
-                {importResult.importedCustomerSummaries?.length > 0 && (
-                  <Box mt={2} mb={2}>
-                    <Typography variant="subtitle2">Imported Accounts:</Typography>
-                    <Box sx={{ maxHeight: '150px', overflow: 'auto', border: '1px solid #e0e0e0', p: 1, borderRadius: 1, mt: 1 }}>
-                      {importResult.importedCustomerSummaries.map((summary, index) => (
-                        <Typography key={index} variant="body2" component="div" sx={{ py: 0.5 }}>
-                          {summary}
-                        </Typography>
-                      ))}
-                    </Box>
-                  </Box>
-                )}
-                <Typography>Skipped: {importResult.skippedCount || 0} rows</Typography>
-              </Box>
-
-              {importResult.skippedRows?.length > 0 && (
-                <Box>
-                  <Typography variant="h6" gutterBottom>
-                    Skipped Rows
-                  </Typography>
-                  <TableContainer component={Paper} sx={{ maxHeight: 400, overflow: 'auto' }}>
-                    <Table size="small" stickyHeader>
-                      <TableHead>
-                        <TableRow>
-                          <TableCell>#</TableCell>
-                          <TableCell>Account Number</TableCell>
-                          <TableCell>Error Details</TableCell>
-                        </TableRow>
-                      </TableHead>
-                      <TableBody>
-                        {importResult.skippedRows.map((row, index) => {
-                          // Extract the error message - it could be in different formats
-                          let errorMessage = 'Unknown error occurred';
-                          if (row.message) {
-                            errorMessage = row.message;
-                          } else if (row.reason) {
-                            errorMessage = row.reason;
-                          } else if (row.error) {
-                            errorMessage = typeof row.error === 'string' ? row.error : JSON.stringify(row.error);
-                          }
-
-                          return (
-                            <TableRow 
-                              key={`${row.rowNum}-${index}`}
-                              sx={{ '&:nth-of-type(odd)': { backgroundColor: 'action.hover' } }}
-                            >
-                              <TableCell>{row.rowNum || index + 1}</TableCell>
-                              <TableCell>{row.accountNumber || 'N/A'}</TableCell>
-                              <TableCell>
-                                <Box>
-                                  <Typography variant="body2" color="error" sx={{ wordBreak: 'break-word' }}>
-                                    {errorMessage}
-                                  </Typography>
-                                  {row.accountNumber && row.accountNumber !== 'N/A' && (
-                                    <Typography variant="caption" color="textSecondary">
-                                      Account: {row.accountNumber}
-                                    </Typography>
-                                  )}
-                                </Box>
-                              </TableCell>
-                            </TableRow>
-                          );
-                        })}
-                      </TableBody>
-                    </Table>
-                  </TableContainer>
-                </Box>
-              )}
-            </Box>
-          )}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleCloseImportDialog} color="primary">
-            Close
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* Confirm Import Dialog */}
-      <Dialog
-        open={confirmImportOpen}
-        onClose={handleCancelImport}
-        maxWidth="sm"
-        fullWidth
-      >
-        <DialogTitle>Confirm Import</DialogTitle>
+      {/* Import Confirmation and Results Dialogs */}
+      <Dialog open={confirmImportOpen} onClose={() => setConfirmImportOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ fontWeight: 700 }}>Confirm Customer Import</DialogTitle>
         <DialogContent>
           <Typography>Are you sure you want to import customers from this file?</Typography>
-          <Typography variant="body2" color="textSecondary" sx={{ mt: 2, fontWeight: 'bold' }}>
+          <Typography variant="body2" sx={{ mt: 1, fontWeight: 700 }}>
             File: {selectedFile?.name}
-          </Typography>
-          <Typography variant="caption" color="textSecondary" display="block" sx={{ mt: 1 }}>
-            This action cannot be undone.
           </Typography>
         </DialogContent>
         <DialogActions>
-          <Button onClick={handleCancelImport} color="primary">
-            Cancel
-          </Button>
-          <Button 
-            onClick={handleConfirmImport} 
-            color="primary"
-            variant="contained"
-            startIcon={<CloudUploadIcon />}
-          >
+          <Button onClick={() => setConfirmImportOpen(false)}>Cancel</Button>
+          <Button onClick={handleConfirmImport} color="primary" variant="contained" startIcon={<CloudUploadIcon />}>
             Confirm Import
           </Button>
         </DialogActions>
       </Dialog>
 
-      {/* Snackbar for notifications */}
+      <Dialog open={importDialogOpen} onClose={() => setImportDialogOpen(false)} maxWidth="md" fullWidth>
+        <DialogTitle sx={{ fontWeight: 700 }}>Import Results</DialogTitle>
+        <DialogContent>
+          {importResult && (
+            <Box>
+              <Typography variant="h6" gutterBottom>
+                Imported: {importResult.importedCount || 0} customers | Skipped: {importResult.skippedCount || 0} rows
+              </Typography>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setImportDialogOpen(false)}>Close</Button>
+        </DialogActions>
+      </Dialog>
+
       <Snackbar
         open={snackbar.open}
         autoHideDuration={6000}
-        onClose={handleCloseSnackbar}
-        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+        onClose={() => setSnackbar((prev) => ({ ...prev, open: false }))}
+        anchorOrigin={{ vertical: "top", horizontal: "center" }}
       >
-        <Alert 
-          onClose={handleCloseSnackbar} 
+        <Alert
+          onClose={() => setSnackbar((prev) => ({ ...prev, open: false }))}
           severity={snackbar.severity}
-          sx={{ width: '100%' }}
+          sx={{ width: "100%" }}
         >
           {snackbar.message}
         </Alert>

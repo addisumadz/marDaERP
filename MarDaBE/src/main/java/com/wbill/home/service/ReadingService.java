@@ -20,7 +20,9 @@ import com.wbill.home.repository.BillingCustomerInfoRepository;
 import com.wbill.home.repository.BillingReadingRepository;
 import com.wbill.home.repository.BillingCustomerInfoMeterRepository;
 import com.wbill.home.repository.BillingReadingConsumptionRepository;
+import com.wbill.home.repository.BillingInvoiceNumbersRepository;
 import com.wbill.home.repository.CompanyProfileRepository;
+import com.wbill.home.model.BillingInvoiceNumbers;
 import com.wbill.home.util.EthiopianCalendarUtil;
 
 import org.slf4j.Logger;
@@ -30,8 +32,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 @Service
@@ -49,6 +53,8 @@ public class ReadingService {
     private BillingCustomerInfoMeterRepository billingCustomerInfoMeterRepository;
     @Autowired
     private BillingReadingConsumptionRepository billingReadingConsumptionRepository;
+    @Autowired
+    private BillingInvoiceNumbersRepository billingInvoiceNumbersRepository;
     @Autowired
     private DerashClient derashClient;
     @Autowired
@@ -2126,5 +2132,119 @@ public class ReadingService {
 
         int attempted = requests.size();
         return new SmsBulkSendStats(readingIds.size(), attempted, sent, failed);
+    }
+
+    /**
+     * Voids or removes the bill property from the specified reading rows,
+     * restoring them to unbilled meter readings ready for bill generation.
+     * Reverses the actions of BillingService.generateBillsForSelectedReadings.
+     *
+     * @param readingIds List of reading IDs whose bills are to be voided/reverted
+     * @return Map with summary of voided bills and any skipped bills
+     */
+    @Transactional
+    public Map<String, Object> voidBillsAndRevertToReadings(List<Integer> readingIds) {
+        if (readingIds == null || readingIds.isEmpty()) {
+            return Map.of("success", false, "message", "No reading IDs provided");
+        }
+
+        int requested = readingIds.size();
+        int voidedCount = 0;
+        List<Map<String, Object>> skipped = new ArrayList<>();
+
+        for (Integer id : readingIds) {
+            BillingReading reading = billingReadingRepository.findById(id).orElse(null);
+            if (reading == null) {
+                skipped.add(Map.of("id", id, "reason", "Reading not found"));
+                continue;
+            }
+
+            // Check if already unbilled
+            if (!reading.isBillGenerated()) {
+                String acc = reading.getBillingCustomerInfo() != null ? reading.getBillingCustomerInfo().getAccountNumber() : "N/A";
+                skipped.add(Map.of("id", id, "accountNumber", acc, "reason", "Bill is not generated for this reading"));
+                continue;
+            }
+
+            // Check if payment already collected
+            if (reading.isMoneyCollected() || reading.isPaidThroughBank() || reading.isPaidOnFrontOffice()
+                    || reading.isDerashPaid() || reading.isUnicashPaid() || reading.isMardaArifPaid()
+                    || reading.getTekilalaYetekefele() > 0) {
+                String acc = reading.getBillingCustomerInfo() != null ? reading.getBillingCustomerInfo().getAccountNumber() : "N/A";
+                skipped.add(Map.of("id", id, "accountNumber", acc, "reason", "Payment already collected (Cannot void paid bill)"));
+                continue;
+            }
+
+            // 1) Delete detailed consumption rows associated with this reading
+            try {
+                billingReadingConsumptionRepository.deleteAllByBillingReading(reading);
+            } catch (Exception ex) {
+                logger.warn("Could not delete consumption records for reading {}: {}", id, ex.getMessage());
+            }
+
+            // 2) Mark invoice number as void/deleted if present
+            if (reading.getBillingInvoiceNumbers() != null) {
+                try {
+                    BillingInvoiceNumbers invoice = reading.getBillingInvoiceNumbers();
+                    invoice.setStatus("void");
+                    invoice.setDeleted("deleted");
+                    billingInvoiceNumbersRepository.save(invoice);
+                } catch (Exception ex) {
+                    logger.warn("Could not invalidate invoice for reading {}: {}", id, ex.getMessage());
+                }
+            }
+
+            // 3) Reset bill properties and restore reading to unbilled state (no wuzif/arrears records touched)
+            reading.setBillGenerated(false);
+            reading.setReadyForBill(true);
+            reading.setInvoiceNumber(null);
+            reading.setBillingInvoiceNumbers(null);
+            reading.setPaidFromTekemach(false);
+            reading.setKecreditTekeflual(false);
+            reading.setKecreditYetekefele(0.0);
+            reading.setYezihWer(0.0);
+            reading.setYezihWerFjotaKfya(0.0);
+            reading.setKotariKiray(0.0);
+            reading.setWuzifHisab(0.0);
+            reading.setWuzifKotariKiray(0.0);
+            reading.setWuzifWorBzat(0);
+            reading.setWuzifWorZrzr(null);
+            reading.setWuzifKezihEske(null);
+            reading.setWuzifFjota(0);
+            reading.setWuzifFjotaKfya(0.0);
+            reading.setWuzifDerekKoshasha(0.0);
+            reading.setWuzifTechemariKfya(0.0);
+            reading.setKitat(0.0);
+            reading.setKitat(false);
+            reading.setAdditionalText(null);
+            reading.setAdditionalHisab(0.0);
+            reading.setTechemariFieldName(null);
+            reading.setTechemariKfya(0.0);
+            reading.setmBillingAdditionalPayment1Value(0.0);
+            reading.setmBillingAdditionalPayment2Value(0.0);
+            reading.setmBillingAdditionalPayment1ValueLable(null);
+            reading.setmBillingAdditionalPayment2ValueLable(null);
+            reading.setTekilalaTekefay(0.0);
+            reading.setBillDescriptionBank(null);
+            reading.setSendToBank(false);
+            reading.setSendToBankUnicash(false);
+            reading.setSendToBankMardaArif(false);
+            reading.setBankConfirmationCode(null);
+            reading.setVoid(false);
+            reading.setStatus("active");
+            reading.setModifiedDate(new Date());
+
+            billingReadingRepository.save(reading);
+            voidedCount++;
+        }
+
+        return Map.of(
+                "success", true,
+                "totalRequested", requested,
+                "voidedCount", voidedCount,
+                "skippedCount", skipped.size(),
+                "skipped", skipped,
+                "message", voidedCount + " bill(s) successfully voided and reverted to registered readings."
+        );
     }
 }

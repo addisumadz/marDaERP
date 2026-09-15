@@ -1916,6 +1916,27 @@ public class ReadingController {
         }
     }
 
+    @PostMapping("/bills/void-and-revert-to-readings")
+    public ResponseEntity<?> voidBillsAndRevertToReadings(
+            @RequestBody Map<String, List<Integer>> payload) {
+        List<Integer> readingIds = payload.get("readingIds");
+        if (readingIds == null || readingIds.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "success", false,
+                    "message", "Reading IDs list cannot be empty."));
+        }
+
+        try {
+            Map<String, Object> result = readingService.voidBillsAndRevertToReadings(readingIds);
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            log.error("Error voiding and reverting bills to readings", e);
+            return ResponseEntity.internalServerError().body(Map.of(
+                    "success", false,
+                    "message", "An error occurred while voiding bills: " + e.getMessage()));
+        }
+    }
+
     @GetMapping("/customer/{customerId}/all-bill-data")
     public ResponseEntity<CustomerBillDataDTO> getCustomerAllBillData(@PathVariable Integer customerId) {
         // 1. Get the regular list of bills

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect, useCallback } from "react";
 import { MaterialReactTable, useMaterialReactTable } from "material-react-table";
 import {
   Box,
@@ -30,6 +30,9 @@ import {
   Card,
   CardContent,
   CardHeader,
+  Chip,
+  Stack,
+  Alert,
 } from "@mui/material";
 import {
   QueryClient,
@@ -42,6 +45,10 @@ import "react-toastify/dist/ReactToastify.css";
 import Breadcrumb from "@/app/ui/components/Breadcrumbs/Breadcrumb";
 import VisibilityIcon from "@mui/icons-material/Visibility";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import FilterAltOffIcon from "@mui/icons-material/FilterAltOff";
+import CancelPresentationIcon from "@mui/icons-material/CancelPresentation";
+import ProPeriodPicker from "@/app/ui/components/ProPeriodPicker";
+import { ETH_MONTHS_AM } from "@/app/helpers/constants";
 import { ReadingService } from "../../../lib/ReadingService";
 import { DropdownService } from "../../../lib/dropdownService";
 import { SmsService } from "../../../lib/smsService";
@@ -52,6 +59,29 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import "../billList/nyala-normal"; // register Nyala font for Amharic
 import { CampanyProfileService } from "../../../lib/campanyProfileService"; // Added for company profile
+
+const modernSelectSx = {
+  borderRadius: 2,
+  bgcolor: "#f8fafc",
+  "&:hover": { bgcolor: "#f1f5f9" },
+};
+
+const modernMenuProps = {
+  PaperProps: {
+    sx: {
+      maxHeight: 320,
+      borderRadius: 2,
+      boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
+      "& .MuiMenuItem-root": {
+        fontSize: "0.875rem",
+        py: 0.8,
+        borderRadius: 1,
+        mx: 0.5,
+        my: 0.2,
+      },
+    },
+  },
+};
 
 var ethiopianDate = require("ethiopian-date");
 
@@ -127,7 +157,16 @@ const BillSupport = () => {
   const [selectedKifyaWerYear, setSelectedKifyaWerYear] = useState(
     String(ethYear) || ""
   );
+  const [currentCycleMonth, setCurrentCycleMonth] = useState(
+    ethiopianMonths[ethMonth - 1] || ""
+  );
+  const [currentCycleYear, setCurrentCycleYear] = useState(
+    String(ethYear) || ""
+  );
   const [viewReadingId, setViewReadingId] = useState(null);
+  const [rowSelection, setRowSelection] = useState({});
+  const [isVoidModalOpen, setIsVoidModalOpen] = useState(false);
+  const [billsToVoid, setBillsToVoid] = useState([]);
 
   const [filterMoneyCollected, setFilterMoneyCollected] = useState("all");
   const [wuzifMonthsOp, setWuzifMonthsOp] = useState("eq");
@@ -239,6 +278,46 @@ const BillSupport = () => {
     },
     staleTime: 10 * 60 * 1000,
   });
+
+  // Sync active reading date cycle
+  useEffect(() => {
+    if (companyProfile && companyProfile.activeReadingDate) {
+      try {
+        const activeDate = new Date(companyProfile.activeReadingDate);
+        const [eYear, eMonth] = ethiopianDate.toEthiopian(
+          activeDate.getFullYear(),
+          activeDate.getMonth() + 1,
+          activeDate.getDate()
+        );
+        const monthIndex = Math.min(eMonth, 12) - 1;
+        const cycleMonth = ETH_MONTHS_AM[monthIndex];
+        setCurrentCycleMonth(cycleMonth);
+        setCurrentCycleYear(String(eYear));
+        setSelectedKifyaWerMonth(cycleMonth);
+        setSelectedKifyaWerYear(String(eYear));
+        return;
+      } catch (e) {
+        console.error("Error parsing activeReadingDate:", e);
+      }
+    }
+    const monthIndex = Math.min(ethMonth, 12) - 1;
+    const cycleMonth = ETH_MONTHS_AM[monthIndex];
+    setCurrentCycleMonth(cycleMonth);
+    setCurrentCycleYear(String(ethYear));
+  }, [companyProfile, ethYear, ethMonth]);
+
+  // Distinct billing periods in database for indicator dots
+  const { data: dbPeriods = [] } = useQuery({
+    queryKey: ["distinctKifyaWer"],
+    queryFn: () => readingService.getDistinctKifyaWerList(),
+    staleTime: 15 * 60 * 1000,
+  });
+
+  const handlePeriodChange = useCallback((newMonth, newYear) => {
+    setSelectedKifyaWerMonth(newMonth);
+    setSelectedKifyaWerYear(String(newYear));
+  }, []);
+
   const yearOptions = [2014, 2015, 2016, 2017, 2018, 2019, 2020];
 
   // dropdown data
@@ -254,20 +333,15 @@ const BillSupport = () => {
 
   const { data: ketenas = [], isLoading: isKetenasLoading } = useQuery({
     queryKey: ["ketenas", selectedKebeleId],
-    queryFn: () => {
-      if (!selectedKebeleId) return [];
-      return dropdownService.getKetenasByKebele(selectedKebeleId);
-    },
-    enabled: !!selectedKebeleId,
+    queryFn: () => dropdownService.getKetenasByKebele(selectedKebeleId || null),
   });
 
   const { data: readers = [], isLoading: isReadersLoading } = useQuery({
     queryKey: ["readers", selectedBranchId],
     queryFn: () => {
-      if (!selectedBranchId) return [];
+      if (!selectedBranchId) return dropdownService.getActiveMeterReaders();
       return dropdownService.getReadersByBranch(selectedBranchId);
     },
-    enabled: !!selectedBranchId,
   });
 
   const { data: customerTypes = [], isLoading: isCustomerTypesLoading } =
@@ -561,9 +635,115 @@ const BillSupport = () => {
     [displayData]
   );
 
+  const activeFiltersCount = useMemo(() => {
+    let count = 0;
+    if (selectedKebeleId) count++;
+    if (selectedKetenaId) count++;
+    if (selectedBranchId) count++;
+    if (selectedReaderId) count++;
+    if (selectedCustomerTypeId) count++;
+    if (selectedCashierId) count++;
+    if (filterMoneyCollected !== "all") count++;
+    if (filterBankSent !== "all") count++;
+    if (filterSmsSent !== "all") count++;
+    if (wuzifMonthsVal !== "") count++;
+    if (zeroReadingMonthsVal !== "") count++;
+    if (consumptionVal !== "") count++;
+    if (additionalHisabVal !== "") count++;
+    if (filterVoidChangedCustomers) count++;
+    return count;
+  }, [
+    selectedKebeleId,
+    selectedKetenaId,
+    selectedBranchId,
+    selectedReaderId,
+    selectedCustomerTypeId,
+    selectedCashierId,
+    filterMoneyCollected,
+    filterBankSent,
+    filterSmsSent,
+    wuzifMonthsVal,
+    zeroReadingMonthsVal,
+    consumptionVal,
+    additionalHisabVal,
+    filterVoidChangedCustomers,
+  ]);
+
+  const handleClearAllFilters = useCallback(() => {
+    setSelectedKebeleId("");
+    setSelectedKetenaId("");
+    setSelectedBranchId("");
+    setSelectedReaderId("");
+    setSelectedCustomerTypeId("");
+    setSelectedCashierId("");
+    setFilterMoneyCollected("all");
+    setFilterBankSent("all");
+    setFilterSmsSent("all");
+    setWuzifMonthsOp("eq");
+    setWuzifMonthsVal("");
+    setZeroReadingMonthsOp("eq");
+    setZeroReadingMonthsVal("");
+    setConsumptionOp("eq");
+    setConsumptionVal("");
+    setAdditionalHisabOp("eq");
+    setAdditionalHisabVal("");
+    setFilterVoidChangedCustomers(false);
+  }, []);
+
   const handleFilterClick = () => {
     if (selectedKifyaWerMonth && selectedKifyaWerYear) refetch();
     else toast.info("Please select both a month and a year to filter.");
+  };
+
+  const selectedRows = useMemo(() => {
+    if (!rowSelection || Object.keys(rowSelection).length === 0) return [];
+    return displayData.filter((r) => rowSelection[String(r.id)] || rowSelection[r.id]);
+  }, [rowSelection, displayData]);
+
+  const voidBillsMutation = useMutation({
+    mutationFn: async (readingIds) => readingService.voidBillsAndRevertToReadings(readingIds),
+    onSuccess: (data) => {
+      const voided = data?.voidedCount || 0;
+      const skipped = data?.skippedCount || 0;
+      if (voided > 0) {
+        toast.success(`${voided} bill(s) successfully voided and reverted to unbilled readings!`);
+      }
+      if (skipped > 0) {
+        toast.warn(`${skipped} bill(s) skipped (already paid or unbilled).`);
+      }
+      setRowSelection({});
+      setIsVoidModalOpen(false);
+      setBillsToVoid([]);
+      refetch();
+    },
+    onError: (err) => {
+      toast.error(err?.response?.data?.message || err?.message || "Failed to void bills.");
+    },
+  });
+
+  const handleOpenVoidSelected = () => {
+    if (selectedRows.length === 0) {
+      toast.info("Please select at least one bill from the table using checkboxes to void.");
+      return;
+    }
+    setBillsToVoid(selectedRows);
+    setIsVoidModalOpen(true);
+  };
+
+  const handleOpenVoidSingle = (bill) => {
+    if (!bill) return;
+    setBillsToVoid([bill]);
+    setIsVoidModalOpen(true);
+  };
+
+  const handleConfirmVoidBills = () => {
+    const eligible = billsToVoid.filter((b) => !b.moneyCollected && !b.isVoid);
+    if (eligible.length === 0) {
+      toast.error("None of the selected bills can be voided (they are already paid or void).");
+      return;
+    }
+    const ids = eligible.map((b) => b.id);
+    voidBillsMutation.mutate(ids);
   };
 
   // Kitat transfer
@@ -1837,7 +2017,10 @@ const BillSupport = () => {
   const table = useMaterialReactTable({
     columns,
     data: displayData,
-    state: { isLoading, showAlertBanner: isError, showProgressBars: isLoading },
+    getRowId: (row) => String(row.id),
+    enableRowSelection: true,
+    onRowSelectionChange: setRowSelection,
+    state: { isLoading, showAlertBanner: isError, showProgressBars: isLoading, rowSelection },
     muiTableBodyRowProps: ({ row }) => ({
       sx: {
         backgroundColor: row.original?.moneyCollected ? "lightgreen" : "lightyellow",
@@ -1848,11 +2031,23 @@ const BillSupport = () => {
       : undefined,
     enableRowActions: true,
     renderRowActions: ({ row }) => (
-      <Box>
+      <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
         <Tooltip title="View Details">
-          <IconButton onClick={() => setViewReadingId(row.original.id)}>
-            <VisibilityIcon />
+          <IconButton size="small" onClick={() => setViewReadingId(row.original.id)}>
+            <VisibilityIcon fontSize="small" />
           </IconButton>
+        </Tooltip>
+        <Tooltip title={row.original?.moneyCollected ? "Cannot void: already collected" : "Void Bill (Revert to Reading)"}>
+          <span>
+            <IconButton
+              size="small"
+              color="error"
+              disabled={row.original?.moneyCollected || row.original?.isVoid || voidBillsMutation.isPending}
+              onClick={() => handleOpenVoidSingle(row.original)}
+            >
+              <CancelPresentationIcon fontSize="small" />
+            </IconButton>
+          </span>
         </Tooltip>
       </Box>
     ),
@@ -1864,97 +2059,88 @@ const BillSupport = () => {
       <Breadcrumb pageName="Bill Support" />
 
       <Grid container spacing={3} mt={1}>
-        {/* Billing Period Selection Panel (Core Trigger) */}
+        {/* Billing Period Selection Panel (Pro Period Picker) */}
         <Grid item xs={12}>
-          <Paper elevation={3} sx={{ padding: 3, borderRadius: 3, background: "linear-gradient(to right, #f8f9fa, #ffffff)" }}>
-            <Grid container spacing={3} alignItems="center">
-              <Grid item xs={12} md={10}>
-                {/* Year Select Row */}
-                <Box sx={{ mb: 2 }}>
-                  <Typography variant="subtitle2" sx={{ fontWeight: "bold", mb: 1, color: "grey.700" }}>
-                    Billing Year (በጀት ዓመት):
-                  </Typography>
-                  <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
-                    {yearOptions.map((year) => {
-                      const isSelected = String(selectedKifyaWerYear) === String(year);
-                      return (
-                        <Button
-                          key={year}
-                          variant={isSelected ? "contained" : "outlined"}
-                          size="small"
-                          onClick={() => setSelectedKifyaWerYear(String(year))}
-                          sx={{
-                            borderRadius: 3,
-                            px: 3,
-                            fontWeight: isSelected ? "bold" : "medium",
-                            textTransform: "none"
-                          }}
-                        >
-                          {year}
-                        </Button>
-                      );
-                    })}
-                  </Box>
-                </Box>
+          <Paper
+            elevation={2}
+            sx={{
+              p: 2.5,
+              borderRadius: 3,
+              background: "linear-gradient(135deg, #f8fafc 0%, #ffffff 100%)",
+              border: "1px solid",
+              borderColor: "divider",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              flexWrap: "wrap",
+              gap: 2,
+            }}
+          >
+            <Box sx={{ display: "flex", alignItems: "center", gap: 2, flexWrap: "wrap" }}>
+              <ProPeriodPicker
+                selectedMonth={selectedKifyaWerMonth}
+                selectedYear={selectedKifyaWerYear}
+                onPeriodChange={handlePeriodChange}
+                currentCycleMonth={currentCycleMonth}
+                currentCycleYear={currentCycleYear}
+                dbPeriods={dbPeriods}
+                disabled={isLoading}
+              />
+              <Button
+                variant="contained"
+                onClick={handleFilterClick}
+                disabled={!selectedKifyaWerMonth || !selectedKifyaWerYear || isLoading}
+                sx={{
+                  px: 3.5,
+                  height: 42,
+                  fontWeight: "bold",
+                  borderRadius: 2.5,
+                  boxShadow: "0 2px 8px rgba(25, 118, 210, 0.25)",
+                  textTransform: "none",
+                }}
+              >
+                {isLoading ? <CircularProgress size={20} color="inherit" /> : "Load Bills"}
+              </Button>
+            </Box>
 
-                {/* Month Select Grid */}
-                <Box>
-                  <Typography variant="subtitle2" sx={{ fontWeight: "bold", mb: 1, color: "grey.700" }}>
-                    Billing Month (የክፍያ ወር):
-                  </Typography>
-                  <Grid container spacing={1}>
-                    {ethiopianMonths.filter(m => m !== "ጳጉሜ").map((month) => {
-                      const isSelected = selectedKifyaWerMonth === month;
-                      return (
-                        <Grid item xs={4} sm={2} md={2} key={month}>
-                          <Button
-                            variant={isSelected ? "contained" : "outlined"}
-                            size="small"
-                            fullWidth
-                            onClick={() => setSelectedKifyaWerMonth(month)}
-                            sx={{
-                              borderRadius: 2,
-                              fontWeight: isSelected ? "bold" : "normal",
-                              textTransform: "none",
-                              py: 0.8
-                            }}
-                          >
-                            {month}
-                          </Button>
-                        </Grid>
-                      );
-                    })}
-                  </Grid>
-                </Box>
-              </Grid>
-
-              <Grid item xs={12} md={2} sx={{ display: "flex", justifyContent: { xs: "flex-start", md: "flex-end" } }}>
-                <Button
-                  variant="contained"
-                  onClick={handleFilterClick}
-                  disabled={!selectedKifyaWerMonth || !selectedKifyaWerYear || isLoading}
-                  sx={{
-                    px: 4,
-                    height: 50,
-                    fontWeight: "bold",
-                    borderRadius: 3,
-                    boxShadow: 3,
-                    width: "100%",
-                    minWidth: 150
-                  }}
-                >
-                  {isLoading ? <CircularProgress size={20} color="inherit" /> : "Load Bills"}
-                </Button>
-              </Grid>
-            </Grid>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
+              <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                Selected Period: <strong>{selectedKifyaWerMonth || "-"}, {selectedKifyaWerYear || "-"}</strong>
+              </Typography>
+            </Box>
           </Paper>
         </Grid>
 
         {/* Filters accordion Hub */}
         <Grid item xs={12}>
-          <Typography variant="subtitle1" sx={{ fontWeight: "bold", mb: 1, color: "grey.700" }}>
-            Filter Parameters:
-          </Typography>
+          <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 1.5, flexWrap: "wrap", gap: 1 }}>
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Typography variant="subtitle1" sx={{ fontWeight: "bold", color: "text.primary" }}>
+                Filter Parameters
+              </Typography>
+              {activeFiltersCount > 0 && (
+                <Chip
+                  size="small"
+                  color="primary"
+                  label={`${activeFiltersCount} active filter${activeFiltersCount > 1 ? "s" : ""}`}
+                  sx={{ fontWeight: 600 }}
+                />
+              )}
+            </Stack>
+
+            {activeFiltersCount > 0 && (
+              <Button
+                size="small"
+                variant="outlined"
+                color="secondary"
+                startIcon={<FilterAltOffIcon />}
+                onClick={handleClearAllFilters}
+                sx={{ borderRadius: 2, textTransform: "none", fontWeight: 600 }}
+              >
+                Clear All Filters ({activeFiltersCount})
+              </Button>
+            )}
+          </Box>
 
           <Accordion sx={{ borderRadius: "8px !important", mb: 1, boxShadow: 1 }}>
             <AccordionSummary expandIcon={<ExpandMoreIcon />}>
@@ -1965,7 +2151,7 @@ const BillSupport = () => {
             <AccordionDetails>
               <Grid container spacing={2}>
                 <Grid item xs={12} sm={6} md={3}>
-                  <FormControl size="small" fullWidth>
+                  <FormControl size="small" fullWidth sx={modernSelectSx}>
                     <InputLabel>Kebele</InputLabel>
                     <Select
                       value={selectedKebeleId}
@@ -1975,6 +2161,7 @@ const BillSupport = () => {
                         setSelectedKetenaId("");
                       }}
                       disabled={isKebelesLoading}
+                      MenuProps={modernMenuProps}
                     >
                       <MenuItem value=""><em>All Kebeles</em></MenuItem>
                       {kebeles.map((kebele) => (
@@ -1985,13 +2172,14 @@ const BillSupport = () => {
                 </Grid>
 
                 <Grid item xs={12} sm={6} md={3}>
-                  <FormControl size="small" fullWidth disabled={!selectedKebeleId}>
+                  <FormControl size="small" fullWidth sx={modernSelectSx}>
                     <InputLabel>Ketena</InputLabel>
                     <Select
                       value={selectedKetenaId}
                       label="Ketena"
                       onChange={(e) => setSelectedKetenaId(e.target.value)}
-                      disabled={isKetenasLoading || !selectedKebeleId}
+                      disabled={isKetenasLoading}
+                      MenuProps={modernMenuProps}
                     >
                       <MenuItem value=""><em>All Ketenas</em></MenuItem>
                       {ketenas.map((ketena) => (
@@ -2002,7 +2190,7 @@ const BillSupport = () => {
                 </Grid>
 
                 <Grid item xs={12} sm={6} md={3}>
-                  <FormControl size="small" fullWidth>
+                  <FormControl size="small" fullWidth sx={modernSelectSx}>
                     <InputLabel>Branch</InputLabel>
                     <Select
                       value={selectedBranchId}
@@ -2012,6 +2200,7 @@ const BillSupport = () => {
                         setSelectedReaderId("");
                       }}
                       disabled={isBranchesLoading}
+                      MenuProps={modernMenuProps}
                     >
                       <MenuItem value=""><em>All Branches</em></MenuItem>
                       {branches.map((branch) => (
@@ -2022,13 +2211,14 @@ const BillSupport = () => {
                 </Grid>
 
                 <Grid item xs={12} sm={6} md={3}>
-                  <FormControl size="small" fullWidth disabled={!selectedBranchId}>
+                  <FormControl size="small" fullWidth sx={modernSelectSx}>
                     <InputLabel>Assigned Reader</InputLabel>
                     <Select
                       value={selectedReaderId}
                       label="Assigned Reader"
                       onChange={(e) => setSelectedReaderId(e.target.value)}
-                      disabled={isReadersLoading || !selectedBranchId}
+                      disabled={isReadersLoading}
+                      MenuProps={modernMenuProps}
                     >
                       <MenuItem value=""><em>All Readers</em></MenuItem>
                       {readers.map((reader) => (
@@ -2039,13 +2229,14 @@ const BillSupport = () => {
                 </Grid>
 
                 <Grid item xs={12} sm={6} md={3}>
-                  <FormControl size="small" fullWidth>
+                  <FormControl size="small" fullWidth sx={modernSelectSx}>
                     <InputLabel>Customer Type</InputLabel>
                     <Select
                       value={selectedCustomerTypeId}
                       label="Customer Type"
                       onChange={(e) => setSelectedCustomerTypeId(e.target.value)}
                       disabled={isCustomerTypesLoading}
+                      MenuProps={modernMenuProps}
                     >
                       <MenuItem value=""><em>All Customer Types</em></MenuItem>
                       {customerTypes.map((ct) => (
@@ -2056,13 +2247,14 @@ const BillSupport = () => {
                 </Grid>
 
                 <Grid item xs={12} sm={6} md={3}>
-                  <FormControl size="small" fullWidth>
+                  <FormControl size="small" fullWidth sx={modernSelectSx}>
                     <InputLabel>Cashier</InputLabel>
                     <Select
                       value={selectedCashierId}
                       label="Cashier"
                       onChange={(e) => setSelectedCashierId(e.target.value)}
                       disabled={isCashiersLoading}
+                      MenuProps={modernMenuProps}
                     >
                       <MenuItem value=""><em>All Cashiers</em></MenuItem>
                       {cashiers.map((cashier) => (
@@ -2084,51 +2276,64 @@ const BillSupport = () => {
             <AccordionDetails>
               <Grid container spacing={2} alignItems="center">
                 <Grid item xs={12} sm={6} md={3}>
-                  <FormControl size="small" fullWidth>
+                  <FormControl size="small" fullWidth sx={modernSelectSx}>
                     <InputLabel>Money Collected</InputLabel>
                     <Select
                       value={filterMoneyCollected}
                       label="Money Collected"
                       onChange={(e) => setFilterMoneyCollected(e.target.value)}
+                      MenuProps={modernMenuProps}
                     >
                       <MenuItem value="all">All</MenuItem>
-                      <MenuItem value="true">Collected</MenuItem>
-                      <MenuItem value="false">Not Collected</MenuItem>
+                      <MenuItem value="true" sx={{ color: "success.main", fontWeight: 600 }}>
+                        ● Collected
+                      </MenuItem>
+                      <MenuItem value="false" sx={{ color: "warning.main", fontWeight: 600 }}>
+                        ○ Not Collected
+                      </MenuItem>
                     </Select>
                   </FormControl>
                 </Grid>
 
                 <Grid item xs={12} sm={6} md={3}>
-                  <FormControl size="small" fullWidth>
+                  <FormControl size="small" fullWidth sx={modernSelectSx}>
                     <InputLabel>Bank Sent</InputLabel>
                     <Select
                       value={filterBankSent}
                       label="Bank Sent"
                       onChange={(e) => setFilterBankSent(e.target.value)}
+                      MenuProps={modernMenuProps}
                     >
                       <MenuItem value="all">All</MenuItem>
-                      <MenuItem value="sent">Sent</MenuItem>
-                      <MenuItem value="not_sent">Not Sent</MenuItem>
+                      <MenuItem value="sent" sx={{ color: "primary.main", fontWeight: 600 }}>
+                        ● Sent to Bank
+                      </MenuItem>
+                      <MenuItem value="not_sent" sx={{ color: "text.secondary", fontWeight: 600 }}>
+                        ○ Not Sent
+                      </MenuItem>
                     </Select>
                   </FormControl>
                 </Grid>
 
                 <Grid item xs={12} sm={6} md={3}>
-                  <FormControl size="small" fullWidth>
+                  <FormControl size="small" fullWidth sx={modernSelectSx}>
                     <InputLabel>SMS Status</InputLabel>
                     <Select
                       value={filterSmsSent}
                       label="SMS Status"
                       onChange={(e) => setFilterSmsSent(e.target.value)}
+                      MenuProps={modernMenuProps}
                     >
                       <MenuItem value="all">All</MenuItem>
-                      <MenuItem value="sent">Sent</MenuItem>
-                      <MenuItem value="not_sent">Not Sent</MenuItem>
+                      <MenuItem value="sent" sx={{ color: "info.main", fontWeight: 600 }}>
+                        ● SMS Sent
+                      </MenuItem>
+                      <MenuItem value="not_sent" sx={{ color: "text.secondary", fontWeight: 600 }}>
+                        ○ Not Sent
+                      </MenuItem>
                     </Select>
                   </FormControl>
                 </Grid>
-
-
               </Grid>
             </AccordionDetails>
           </Accordion>
@@ -2145,15 +2350,17 @@ const BillSupport = () => {
                 <Grid item xs={12} md={3}>
                   <Typography variant="body2" sx={{ fontWeight: "bold", mb: 1 }}>Wuzif Months</Typography>
                   <Box sx={{ display: "flex", gap: 1 }}>
-                    <FormControl size="small" sx={{ minWidth: 80 }}>
+                    <FormControl size="small" sx={{ minWidth: 80, ...modernSelectSx }}>
                       <Select
                         value={wuzifMonthsOp}
                         onChange={(e) => setWuzifMonthsOp(e.target.value)}
+                        MenuProps={modernMenuProps}
+                        sx={{ fontWeight: "bold" }}
                       >
-                        <MenuItem value="eq">=</MenuItem>
+                        <MenuItem value="eq">{"="}</MenuItem>
                         <MenuItem value="lt">{"<"}</MenuItem>
-                        <MenuItem value="gte">≥</MenuItem>
-                        <MenuItem value="lte">≤</MenuItem>
+                        <MenuItem value="gte">{"≥"}</MenuItem>
+                        <MenuItem value="lte">{"≤"}</MenuItem>
                       </Select>
                     </FormControl>
                     <TextField
@@ -2163,6 +2370,7 @@ const BillSupport = () => {
                       value={wuzifMonthsVal}
                       onChange={(e) => setWuzifMonthsVal(e.target.value)}
                       inputProps={{ min: 0 }}
+                      sx={{ bgcolor: "#f8fafc", borderRadius: 2 }}
                       fullWidth
                     />
                   </Box>
@@ -2172,15 +2380,17 @@ const BillSupport = () => {
                 <Grid item xs={12} md={3}>
                   <Typography variant="body2" sx={{ fontWeight: "bold", mb: 1 }}>Zero Read Months</Typography>
                   <Box sx={{ display: "flex", gap: 1 }}>
-                    <FormControl size="small" sx={{ minWidth: 80 }}>
+                    <FormControl size="small" sx={{ minWidth: 80, ...modernSelectSx }}>
                       <Select
                         value={zeroReadingMonthsOp}
                         onChange={(e) => setZeroReadingMonthsOp(e.target.value)}
+                        MenuProps={modernMenuProps}
+                        sx={{ fontWeight: "bold" }}
                       >
-                        <MenuItem value="eq">=</MenuItem>
+                        <MenuItem value="eq">{"="}</MenuItem>
                         <MenuItem value="lt">{"<"}</MenuItem>
-                        <MenuItem value="gte">≥</MenuItem>
-                        <MenuItem value="lte">≤</MenuItem>
+                        <MenuItem value="gte">{"≥"}</MenuItem>
+                        <MenuItem value="lte">{"≤"}</MenuItem>
                       </Select>
                     </FormControl>
                     <TextField
@@ -2190,6 +2400,7 @@ const BillSupport = () => {
                       value={zeroReadingMonthsVal}
                       onChange={(e) => setZeroReadingMonthsVal(e.target.value)}
                       inputProps={{ min: 0 }}
+                      sx={{ bgcolor: "#f8fafc", borderRadius: 2 }}
                       fullWidth
                     />
                   </Box>
@@ -2199,15 +2410,17 @@ const BillSupport = () => {
                 <Grid item xs={12} md={3}>
                   <Typography variant="body2" sx={{ fontWeight: "bold", mb: 1 }}>Consumption</Typography>
                   <Box sx={{ display: "flex", gap: 1 }}>
-                    <FormControl size="small" sx={{ minWidth: 80 }}>
+                    <FormControl size="small" sx={{ minWidth: 80, ...modernSelectSx }}>
                       <Select
                         value={consumptionOp}
                         onChange={(e) => setConsumptionOp(e.target.value)}
+                        MenuProps={modernMenuProps}
+                        sx={{ fontWeight: "bold" }}
                       >
-                        <MenuItem value="eq">=</MenuItem>
+                        <MenuItem value="eq">{"="}</MenuItem>
                         <MenuItem value="lt">{"<"}</MenuItem>
-                        <MenuItem value="gte">≥</MenuItem>
-                        <MenuItem value="lte">≤</MenuItem>
+                        <MenuItem value="gte">{"≥"}</MenuItem>
+                        <MenuItem value="lte">{"≤"}</MenuItem>
                       </Select>
                     </FormControl>
                     <TextField
@@ -2217,6 +2430,7 @@ const BillSupport = () => {
                       value={consumptionVal}
                       onChange={(e) => setConsumptionVal(e.target.value)}
                       inputProps={{ min: 0 }}
+                      sx={{ bgcolor: "#f8fafc", borderRadius: 2 }}
                       fullWidth
                     />
                   </Box>
@@ -2226,15 +2440,17 @@ const BillSupport = () => {
                 <Grid item xs={12} md={3}>
                   <Typography variant="body2" sx={{ fontWeight: "bold", mb: 1 }}>Dry Waste (AdditionalHisab)</Typography>
                   <Box sx={{ display: "flex", gap: 1 }}>
-                    <FormControl size="small" sx={{ minWidth: 80 }}>
+                    <FormControl size="small" sx={{ minWidth: 80, ...modernSelectSx }}>
                       <Select
                         value={additionalHisabOp}
                         onChange={(e) => setAdditionalHisabOp(e.target.value)}
+                        MenuProps={modernMenuProps}
+                        sx={{ fontWeight: "bold" }}
                       >
-                        <MenuItem value="eq">=</MenuItem>
+                        <MenuItem value="eq">{"="}</MenuItem>
                         <MenuItem value="lt">{"<"}</MenuItem>
-                        <MenuItem value="gte">≥</MenuItem>
-                        <MenuItem value="lte">≤</MenuItem>
+                        <MenuItem value="gte">{"≥"}</MenuItem>
+                        <MenuItem value="lte">{"≤"}</MenuItem>
                       </Select>
                     </FormControl>
                     <TextField
@@ -2244,6 +2460,7 @@ const BillSupport = () => {
                       value={additionalHisabVal}
                       onChange={(e) => setAdditionalHisabVal(e.target.value)}
                       inputProps={{ min: 0 }}
+                      sx={{ bgcolor: "#f8fafc", borderRadius: 2 }}
                       fullWidth
                     />
                   </Box>
@@ -2318,6 +2535,18 @@ const BillSupport = () => {
                     startIcon={averageInitMutation.isPending ? <CircularProgress size={16} /> : null}
                   >
                     Init Avg Consumption
+                  </Button>
+                  <Button
+                    variant="contained"
+                    fullWidth
+                    size="small"
+                    color="error"
+                    disabled={isLoading || voidBillsMutation.isPending || !filteredData?.length}
+                    onClick={handleOpenVoidSelected}
+                    startIcon={voidBillsMutation.isPending ? <CircularProgress size={16} color="inherit" /> : <CancelPresentationIcon fontSize="small" />}
+                    sx={{ fontWeight: "bold", textTransform: "none", borderRadius: 2 }}
+                  >
+                    {selectedRows.length > 0 ? `Void Bills (${selectedRows.length})` : "Void Bills"}
                   </Button>
                 </CardContent>
               </Card>
@@ -2576,6 +2805,157 @@ const BillSupport = () => {
         open={!!viewReadingId}
         onClose={() => setViewReadingId(null)}
       />
+
+      {/* Void Bills Confirmation Dialog */}
+      <Dialog
+        open={isVoidModalOpen}
+        onClose={() => !voidBillsMutation.isPending && setIsVoidModalOpen(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle sx={{ display: "flex", alignItems: "center", gap: 1.5, pb: 1, bgcolor: "#fff5f5", borderBottom: "1px solid #fed7d7" }}>
+          <CancelPresentationIcon color="error" />
+          <Box>
+            <Typography variant="h6" component="div" sx={{ fontWeight: "bold", color: "#c53030", lineHeight: 1.2 }}>
+              Void Bills & Revert to Readings
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              Reverse bill generation and return records to unbilled readings
+            </Typography>
+          </Box>
+        </DialogTitle>
+        <DialogContent dividers sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 2 }}>
+          <Alert severity="info" sx={{ fontSize: "0.85rem" }}>
+            Reverting will remove the selected month&apos;s bill properties (calculated charges, tariffs, and invoice), resetting each record to <strong>isBillGenerated = false</strong>.
+            All meter reading data (consumption, readings, cycle) and customer arrears/wuzif history are completely preserved, and the records will immediately appear in <strong>Registered Readings (readingList)</strong> ready for <em>&quot;Generate Bill for Selected&quot;</em>.
+          </Alert>
+
+          {(() => {
+            const eligibleCount = billsToVoid.filter((b) => !b.moneyCollected && !b.isVoid).length;
+            const blockedCount = billsToVoid.length - eligibleCount;
+
+            return (
+              <>
+                <Stack direction="row" spacing={2} sx={{ bgcolor: "#f8fafc", p: 1.5, borderRadius: 1, border: "1px solid #e2e8f0" }}>
+                  <Box sx={{ flex: 1, textAlign: "center" }}>
+                    <Typography variant="caption" color="text.secondary">Total Selected</Typography>
+                    <Typography variant="h6" fontWeight="bold">{billsToVoid.length}</Typography>
+                  </Box>
+                  <Divider orientation="vertical" flexItem />
+                  <Box sx={{ flex: 1, textAlign: "center" }}>
+                    <Typography variant="caption" color="success.main" fontWeight="bold">Eligible to Void</Typography>
+                    <Typography variant="h6" fontWeight="bold" color="success.main">{eligibleCount}</Typography>
+                  </Box>
+                  <Divider orientation="vertical" flexItem />
+                  <Box sx={{ flex: 1, textAlign: "center" }}>
+                    <Typography variant="caption" color={blockedCount > 0 ? "error.main" : "text.secondary"} fontWeight={blockedCount > 0 ? "bold" : "normal"}>
+                      Blocked (Paid)
+                    </Typography>
+                    <Typography variant="h6" fontWeight="bold" color={blockedCount > 0 ? "error.main" : "text.secondary"}>
+                      {blockedCount}
+                    </Typography>
+                  </Box>
+                </Stack>
+
+                {blockedCount > 0 && (
+                  <Alert severity="warning" sx={{ fontSize: "0.825rem" }}>
+                    <strong>{blockedCount} bill(s)</strong> have already received payment or are void and cannot be reverted. They will be skipped automatically to safeguard accounting integrity.
+                  </Alert>
+                )}
+
+                <Box sx={{ mt: 1 }}>
+                  <Typography variant="subtitle2" sx={{ fontWeight: "bold", mb: 1 }}>
+                    Bills to be reverted ({billsToVoid.length}):
+                  </Typography>
+                  <Box
+                    sx={{
+                      maxHeight: 220,
+                      overflowY: "auto",
+                      border: "1px solid #e2e8f0",
+                      borderRadius: 1,
+                      p: 1,
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 1,
+                      bgcolor: "#ffffff",
+                    }}
+                  >
+                    {billsToVoid.map((bill, index) => {
+                      const isBlocked = bill.moneyCollected || bill.isVoid;
+                      const accNo = bill.customerAccountNumber || bill.accountNumber || "N/A";
+                      const custName = bill.customerName || bill.name || "Customer";
+                      const invNo = bill.invoiceNumber || "-";
+                      const amount = typeof bill.tekilalaTekefay === "number" ? bill.tekilalaTekefay.toFixed(2) : bill.tekilalaTekefay || "0.00";
+                      const cons = bill.consumption !== undefined ? bill.consumption : "-";
+
+                      return (
+                        <Box
+                          key={bill.id || index}
+                          sx={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            p: 1,
+                            borderRadius: 1,
+                            bgcolor: isBlocked ? "#fff5f5" : "#f0fdf4",
+                            border: `1px solid ${isBlocked ? "#fed7d7" : "#bbf7d0"}`,
+                          }}
+                        >
+                          <Box sx={{ minWidth: 0, flex: 1, pr: 1 }}>
+                            <Typography variant="body2" sx={{ fontWeight: "bold", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {custName} ({accNo})
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              Inv: {invNo} | Cons: {cons} m³ | Total: {amount} ETB
+                            </Typography>
+                          </Box>
+                          <Chip
+                            size="small"
+                            label={isBlocked ? "Paid / Skip" : "Ready to Void"}
+                            color={isBlocked ? "default" : "success"}
+                            variant={isBlocked ? "outlined" : "filled"}
+                            sx={{ fontWeight: "bold", fontSize: "0.7rem" }}
+                          />
+                        </Box>
+                      );
+                    })}
+                  </Box>
+                </Box>
+              </>
+            );
+          })()}
+        </DialogContent>
+        <DialogActions sx={{ p: 2, bgcolor: "#f8fafc" }}>
+          <Button
+            onClick={() => setIsVoidModalOpen(false)}
+            disabled={voidBillsMutation.isPending}
+            variant="outlined"
+            color="inherit"
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleConfirmVoidBills}
+            disabled={
+              voidBillsMutation.isPending ||
+              billsToVoid.filter((b) => !b.moneyCollected && !b.isVoid).length === 0
+            }
+            variant="contained"
+            color="error"
+            startIcon={
+              voidBillsMutation.isPending ? (
+                <CircularProgress size={16} color="inherit" />
+              ) : (
+                <CancelPresentationIcon fontSize="small" />
+              )
+            }
+          >
+            {voidBillsMutation.isPending
+              ? "Reverting..."
+              : `Confirm & Void (${billsToVoid.filter((b) => !b.moneyCollected && !b.isVoid).length})`}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog
         open={isCorrectionDialogOpen}

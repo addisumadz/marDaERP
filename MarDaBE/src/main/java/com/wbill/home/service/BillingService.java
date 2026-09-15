@@ -36,6 +36,7 @@ import jakarta.persistence.PersistenceContext;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
@@ -163,7 +164,7 @@ public class BillingService {
     public BillingCacheContext buildCacheContext() {
         CompanyProfile cp = getActiveCompanyProfile();
 
-        List<BillingTariff> allTariffs = tariffRepo.findAll();
+        List<BillingTariff> allTariffs = tariffRepo.findAllActive();
         Map<Integer, List<BillingTariff>> tariffsMap = new HashMap<>();
         if (allTariffs != null) {
             for (BillingTariff t : allTariffs) {
@@ -180,9 +181,11 @@ public class BillingService {
             }
         }
 
-        List<BillingMeterRent> allRents = meterRentRepo.findAll();
+        List<BillingMeterRent> allRents = meterRentRepo.findAllActive();
         Map<String, Double> rentsMap = new HashMap<>();
         if (allRents != null) {
+            // Sort by ID ascending so if multiple active entries exist, the latest active record (highest ID) takes precedence
+            allRents.sort(Comparator.comparingInt(BillingMeterRent::getId));
             for (BillingMeterRent r : allRents) {
                 if ("active".equalsIgnoreCase(r.getStatus()) && r.getBillingCustomerType() != null && r.getBillingMeterSize() != null) {
                     String key = r.getBillingCustomerType().getId() + "_" + r.getBillingMeterSize().getId();
@@ -191,16 +194,21 @@ public class BillingService {
             }
         }
 
-        List<BillingPenaltyTarif> allPenalties = penaltyTarifRepo.findAll();
+        // Only fetch and cache active (non-deleted) penalty tariffs
+        List<BillingPenaltyTarif> allPenalties = penaltyTarifRepo.findAllActive();
         Map<Integer, List<BillingPenaltyTarif>> penaltiesMap = new HashMap<>();
         if (allPenalties != null) {
             for (BillingPenaltyTarif p : allPenalties) {
-                if (p.getBillingCustomerType() != null) {
+                if ("active".equalsIgnoreCase(p.getDeleted()) && p.getBillingCustomerType() != null) {
                     penaltiesMap.computeIfAbsent(p.getBillingCustomerType().getId(), k -> new ArrayList<>()).add(p);
                 }
             }
             for (List<BillingPenaltyTarif> list : penaltiesMap.values()) {
-                list.sort((a, b) -> Integer.compare(a.getNumberOfMonth(), b.getNumberOfMonth()));
+                list.sort((a, b) -> {
+                    int monthCmp = Integer.compare(a.getNumberOfMonth(), b.getNumberOfMonth());
+                    if (monthCmp != 0) return monthCmp;
+                    return Integer.compare(b.getId(), a.getId()); // newest record first if duplicate month
+                });
             }
         }
 

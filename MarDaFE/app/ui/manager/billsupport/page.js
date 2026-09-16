@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useEffect, useCallback } from "react";
+import { useMemo, useState, useEffect, useCallback, useRef } from "react";
 import { MaterialReactTable, useMaterialReactTable } from "material-react-table";
 import {
   Box,
@@ -23,6 +23,7 @@ import {
   DialogContent,
   DialogActions,
   CircularProgress,
+  LinearProgress,
   Accordion,
   AccordionSummary,
   AccordionDetails,
@@ -47,6 +48,7 @@ import VisibilityIcon from "@mui/icons-material/Visibility";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import FilterAltOffIcon from "@mui/icons-material/FilterAltOff";
 import CancelPresentationIcon from "@mui/icons-material/CancelPresentation";
+import CloseIcon from "@mui/icons-material/Close";
 import ProPeriodPicker from "@/app/ui/components/ProPeriodPicker";
 import { ETH_MONTHS_AM } from "@/app/helpers/constants";
 import { ReadingService } from "../../../lib/ReadingService";
@@ -218,6 +220,29 @@ const BillSupport = () => {
   const [isDirectMsgDialogOpen, setIsDirectMsgDialogOpen] = useState(false);
   const [directMsgText, setDirectMsgText] = useState("");
   const [isDirectMsgSending, setIsDirectMsgSending] = useState(false);
+
+  // Pro Version Live SMS Dispatch Dashboard State
+  const [smsDispatchModalOpen, setSmsDispatchModalOpen] = useState(false);
+  const [smsDispatchStatus, setSmsDispatchStatus] = useState({
+    title: "SMS Dispatch Dashboard",
+    isSending: false,
+    totalQueued: 0,
+    processed: 0,
+    sent: 0,
+    failed: 0,
+    currentBatch: 0,
+    totalBatches: 0,
+    percent: 0,
+    logs: [],
+    isFinished: false,
+  });
+  const logContainerRef = useRef(null);
+
+  useEffect(() => {
+    if (logContainerRef.current) {
+      logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
+    }
+  }, [smsDispatchStatus.logs]);
 
   // Custom loading state for correction application
   const [isApplying, setIsApplying] = useState(false);
@@ -880,48 +905,135 @@ const BillSupport = () => {
         ? `${selectedKifyaWerMonth}-${selectedKifyaWerYear} `
         : "";
 
-    setIsBackendBulkSmsSending(true);
-    try {
-      // Batch processing in chunks of 500
-      const CHUNK_SIZE = 500;
-      let totalSent = 0;
-      let totalFailed = 0;
+    const CHUNK_SIZE = 500;
+    const totalBatches = Math.ceil(allIds.length / CHUNK_SIZE);
 
+    // Initialize Pro Live Dispatch Dashboard
+    setSmsDispatchModalOpen(true);
+    setSmsDispatchStatus({
+      title: "🚀 Water Bill SMS Notifications (SMPP / SMSC)",
+      isSending: true,
+      totalQueued: allIds.length,
+      processed: 0,
+      sent: 0,
+      failed: 0,
+      currentBatch: 0,
+      totalBatches,
+      percent: 0,
+      logs: [
+        {
+          time: new Date().toLocaleTimeString(),
+          message: `Dispatch job initialized for ${allIds.length.toLocaleString()} bills (Due Date: ${smsDueDateText || "N/A"}). Total batches: ${totalBatches}.`,
+          type: "info",
+        },
+      ],
+      isFinished: false,
+    });
+
+    setIsBackendBulkSmsSending(true);
+    let totalSent = 0;
+    let totalFailed = 0;
+    let processedCount = 0;
+
+    try {
       for (let i = 0; i < allIds.length; i += CHUNK_SIZE) {
         const chunk = allIds.slice(i, i + CHUNK_SIZE);
+        const batchNum = Math.floor(i / CHUNK_SIZE) + 1;
 
-        // Show progress toast if multiple chunks
-        if (allIds.length > CHUNK_SIZE) {
-          toast.info(`Sending batch ${Math.floor(i / CHUNK_SIZE) + 1} of ${Math.ceil(allIds.length / CHUNK_SIZE)}...`, { autoClose: 2000 });
-        }
+        setSmsDispatchStatus((prev) => ({
+          ...prev,
+          currentBatch: batchNum,
+          logs: [
+            ...prev.logs,
+            {
+              time: new Date().toLocaleTimeString(),
+              message: `📡 Transmitting Batch ${batchNum} of ${totalBatches} (${chunk.length} bills) to SMSC server...`,
+              type: "info",
+            },
+          ],
+        }));
 
         try {
           const result = await smsService.sendBulkBillSmsSilent(chunk, {
             smsDueDateText,
             monthYearPart,
           });
-          totalSent += result?.sent ?? 0;
-          totalFailed += result?.failed ?? 0;
+          const batchSent = result?.sent ?? 0;
+          const batchFailed = result?.failed ?? 0;
+          totalSent += batchSent;
+          totalFailed += batchFailed;
+          processedCount += chunk.length;
+          const currentPercent = Math.min(100, Math.round((processedCount / allIds.length) * 100));
+
+          setSmsDispatchStatus((prev) => ({
+            ...prev,
+            processed: processedCount,
+            sent: totalSent,
+            failed: totalFailed,
+            percent: currentPercent,
+            logs: [
+              ...prev.logs,
+              {
+                time: new Date().toLocaleTimeString(),
+                message: `✅ Batch ${batchNum} complete: ${batchSent} delivered successfully${batchFailed > 0 ? `, ${batchFailed} failed` : ""}. (Cumulative delivered: ${totalSent})`,
+                type: batchFailed > 0 ? "warning" : "success",
+              },
+            ],
+          }));
         } catch (errChunk) {
           console.error("Error sending chunk", i, errChunk);
-          totalFailed += chunk.length; // Assume all failed in this chunk if request fails
+          totalFailed += chunk.length;
+          processedCount += chunk.length;
+          const currentPercent = Math.min(100, Math.round((processedCount / allIds.length) * 100));
+
+          setSmsDispatchStatus((prev) => ({
+            ...prev,
+            processed: processedCount,
+            failed: totalFailed,
+            percent: currentPercent,
+            logs: [
+              ...prev.logs,
+              {
+                time: new Date().toLocaleTimeString(),
+                message: `❌ Batch ${batchNum} transmission error: ${errChunk?.message || "Connection timeout"}. ${chunk.length} bills flagged as failed.`,
+                type: "error",
+              },
+            ],
+          }));
         }
       }
 
-      if (totalSent > 0) {
-        const base = `SMS sending process finished. Total Sent: ${totalSent}.`;
-        const msg = totalFailed > 0 ? `${base} Failed: ${totalFailed}.` : base;
-        toast.success(msg);
-        refetch(); // Refresh to update SMS status flags
-      } else if (totalFailed > 0) {
-        toast.error(`SMS sending failed. All ${totalFailed} attempts failed.`);
-      } else {
-        toast.info("No SMS attempted (check if numbers exist).");
-      }
+      setSmsDispatchStatus((prev) => ({
+        ...prev,
+        isSending: false,
+        isFinished: true,
+        percent: 100,
+        logs: [
+          ...prev.logs,
+          {
+            time: new Date().toLocaleTimeString(),
+            message: `🎉 All ${totalBatches} batches dispatched! Grand Total: ${totalSent} delivered, ${totalFailed} failed.`,
+            type: totalFailed === 0 ? "success" : "warning",
+          },
+        ],
+      }));
 
+      refetch(); // Refresh to update SMS status flags
     } catch (error) {
       console.error("Error sending bulk SMS", error);
-      toast.error(error?.message || "Error sending bulk SMS.");
+      setSmsDispatchStatus((prev) => ({
+        ...prev,
+        isSending: false,
+        isFinished: true,
+        logs: [
+          ...prev.logs,
+          {
+            time: new Date().toLocaleTimeString(),
+            message: `💥 Fatal error: ${error?.message || "Internal server error"}`,
+            type: "error",
+          },
+        ],
+      }));
     } finally {
       setIsBackendBulkSmsSending(false);
     }
@@ -980,44 +1092,133 @@ const BillSupport = () => {
       return;
     }
 
-    setIsDirectMsgSending(true);
-    try {
-      const CHUNK_SIZE = 500;
-      let totalSent = 0;
-      let totalFailed = 0;
+    // Close the input dialog and open the Pro Dispatch Dashboard
+    setIsDirectMsgDialogOpen(false);
+    setDirectMsgText("");
 
+    const CHUNK_SIZE = 500;
+    const totalBatches = Math.ceil(allIds.length / CHUNK_SIZE);
+
+    setSmsDispatchModalOpen(true);
+    setSmsDispatchStatus({
+      title: "📢 Direct Broadcast Message (SMPP / SMSC)",
+      isSending: true,
+      totalQueued: allIds.length,
+      processed: 0,
+      sent: 0,
+      failed: 0,
+      currentBatch: 0,
+      totalBatches,
+      percent: 0,
+      logs: [
+        {
+          time: new Date().toLocaleTimeString(),
+          message: `Direct message broadcast initiated for ${allIds.length.toLocaleString()} recipients. Message preview: "${msg.substring(0, 40)}${msg.length > 40 ? "..." : ""}"`,
+          type: "info",
+        },
+      ],
+      isFinished: false,
+    });
+
+    setIsDirectMsgSending(true);
+    let totalSent = 0;
+    let totalFailed = 0;
+    let processedCount = 0;
+
+    try {
       for (let i = 0; i < allIds.length; i += CHUNK_SIZE) {
         const chunk = allIds.slice(i, i + CHUNK_SIZE);
+        const batchNum = Math.floor(i / CHUNK_SIZE) + 1;
 
-        if (allIds.length > CHUNK_SIZE) {
-          toast.info(`Sending batch ${Math.floor(i / CHUNK_SIZE) + 1} of ${Math.ceil(allIds.length / CHUNK_SIZE)}...`, { autoClose: 2000 });
-        }
+        setSmsDispatchStatus((prev) => ({
+          ...prev,
+          currentBatch: batchNum,
+          logs: [
+            ...prev.logs,
+            {
+              time: new Date().toLocaleTimeString(),
+              message: `📡 Transmitting Batch ${batchNum} of ${totalBatches} (${chunk.length} recipients) to SMSC server...`,
+              type: "info",
+            },
+          ],
+        }));
 
         try {
           const result = await smsService.sendDirectBulkSms(chunk, msg);
-          totalSent += result?.sent ?? 0;
-          totalFailed += result?.failed ?? 0;
+          const batchSent = result?.sent ?? 0;
+          const batchFailed = result?.failed ?? 0;
+          totalSent += batchSent;
+          totalFailed += batchFailed;
+          processedCount += chunk.length;
+          const currentPercent = Math.min(100, Math.round((processedCount / allIds.length) * 100));
+
+          setSmsDispatchStatus((prev) => ({
+            ...prev,
+            processed: processedCount,
+            sent: totalSent,
+            failed: totalFailed,
+            percent: currentPercent,
+            logs: [
+              ...prev.logs,
+              {
+                time: new Date().toLocaleTimeString(),
+                message: `✅ Batch ${batchNum} complete: ${batchSent} delivered successfully${batchFailed > 0 ? `, ${batchFailed} failed` : ""}. (Cumulative delivered: ${totalSent})`,
+                type: batchFailed > 0 ? "warning" : "success",
+              },
+            ],
+          }));
         } catch (errChunk) {
           console.error("Error sending direct message chunk", i, errChunk);
           totalFailed += chunk.length;
+          processedCount += chunk.length;
+          const currentPercent = Math.min(100, Math.round((processedCount / allIds.length) * 100));
+
+          setSmsDispatchStatus((prev) => ({
+            ...prev,
+            processed: processedCount,
+            failed: totalFailed,
+            percent: currentPercent,
+            logs: [
+              ...prev.logs,
+              {
+                time: new Date().toLocaleTimeString(),
+                message: `❌ Batch ${batchNum} transmission error: ${errChunk?.message || "Connection timeout"}. ${chunk.length} recipients failed.`,
+                type: "error",
+              },
+            ],
+          }));
         }
       }
 
-      if (totalSent > 0) {
-        const base = `Direct SMS sending finished. Total Sent: ${totalSent}.`;
-        const msgResult = totalFailed > 0 ? `${base} Failed: ${totalFailed}.` : base;
-        toast.success(msgResult);
-      } else if (totalFailed > 0) {
-        toast.error(`Direct SMS failed. All ${totalFailed} attempts failed.`);
-      } else {
-        toast.info("No SMS attempted (check if phone numbers exist).");
-      }
-
-      setIsDirectMsgDialogOpen(false);
-      setDirectMsgText("");
+      setSmsDispatchStatus((prev) => ({
+        ...prev,
+        isSending: false,
+        isFinished: true,
+        percent: 100,
+        logs: [
+          ...prev.logs,
+          {
+            time: new Date().toLocaleTimeString(),
+            message: `🎉 Direct message broadcast finished! Delivered: ${totalSent}, Failed: ${totalFailed}.`,
+            type: totalFailed === 0 ? "success" : "warning",
+          },
+        ],
+      }));
     } catch (error) {
       console.error("Error sending direct message", error);
-      toast.error(error?.message || "Error sending direct message.");
+      setSmsDispatchStatus((prev) => ({
+        ...prev,
+        isSending: false,
+        isFinished: true,
+        logs: [
+          ...prev.logs,
+          {
+            time: new Date().toLocaleTimeString(),
+            message: `💥 Fatal error: ${error?.message || "Direct SMS dispatch error"}`,
+            type: "error",
+          },
+        ],
+      }));
     } finally {
       setIsDirectMsgSending(false);
     }
@@ -3133,6 +3334,279 @@ const BillSupport = () => {
             startIcon={isDirectMsgSending ? <CircularProgress size={16} color="inherit" /> : null}
           >
             {isDirectMsgSending ? "Sending..." : "Send SMS"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Executive Pro Version Live Dispatch Status Modal */}
+      <Dialog
+        open={smsDispatchModalOpen}
+        onClose={() => {
+          if (!smsDispatchStatus.isSending) {
+            setSmsDispatchModalOpen(false);
+          }
+        }}
+        maxWidth="md"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 3,
+            overflow: "hidden",
+            boxShadow: "0 25px 50px -12px rgba(15, 23, 42, 0.35)",
+          },
+        }}
+      >
+        {/* Header with gradient and pulsing indicator */}
+        <DialogTitle
+          sx={{
+            m: 0,
+            p: 2.5,
+            background: "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)",
+            color: "#fff",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+          }}
+        >
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <Box
+              sx={{
+                width: 12,
+                height: 12,
+                borderRadius: "50%",
+                bgcolor: smsDispatchStatus.isSending ? "#10b981" : "#3b82f6",
+                boxShadow: smsDispatchStatus.isSending
+                  ? "0 0 0 4px rgba(16, 185, 129, 0.3)"
+                  : "none",
+                animation: smsDispatchStatus.isSending ? "pulse 1.5s infinite" : "none",
+                "@keyframes pulse": {
+                  "0%": { boxShadow: "0 0 0 0 rgba(16, 185, 129, 0.7)" },
+                  "70%": { boxShadow: "0 0 0 8px rgba(16, 185, 129, 0)" },
+                  "100%": { boxShadow: "0 0 0 0 rgba(16, 185, 129, 0)" },
+                },
+              }}
+            />
+            <Box>
+              <Typography variant="h6" fontWeight={700} sx={{ color: "#fff", fontSize: "1.1rem" }}>
+                {smsDispatchStatus.title}
+              </Typography>
+              <Typography variant="caption" sx={{ color: "#94a3b8" }}>
+                {smsDispatchStatus.isSending
+                  ? `⚡ Live Transmission Active — Batch ${smsDispatchStatus.currentBatch} of ${smsDispatchStatus.totalBatches}`
+                  : smsDispatchStatus.isFinished
+                    ? "✨ Dispatch Sequence Completed"
+                    : "Ready"}
+              </Typography>
+            </Box>
+          </Stack>
+
+          <IconButton
+            size="small"
+            onClick={() => setSmsDispatchModalOpen(false)}
+            disabled={smsDispatchStatus.isSending}
+            sx={{
+              color: "#94a3b8",
+              "&:hover": { color: "#fff", bgcolor: "rgba(255,255,255,0.1)" },
+            }}
+          >
+            <CloseIcon fontSize="small" />
+          </IconButton>
+        </DialogTitle>
+
+        <DialogContent sx={{ p: 3, bgcolor: "#f8fafc" }}>
+          {/* Executive Metrics Cards */}
+          <Grid container spacing={2} sx={{ mb: 3 }}>
+            <Grid item xs={6} sm={3}>
+              <Paper
+                elevation={0}
+                sx={{
+                  p: 2,
+                  borderRadius: 2,
+                  bgcolor: "#fff",
+                  border: "1px solid #e2e8f0",
+                  textAlign: "center",
+                }}
+              >
+                <Typography variant="caption" fontWeight={600} color="text.secondary">
+                  👥 TOTAL QUEUED
+                </Typography>
+                <Typography variant="h5" fontWeight={800} color="#1e293b" sx={{ mt: 0.5 }}>
+                  {smsDispatchStatus.totalQueued.toLocaleString()}
+                </Typography>
+              </Paper>
+            </Grid>
+
+            <Grid item xs={6} sm={3}>
+              <Paper
+                elevation={0}
+                sx={{
+                  p: 2,
+                  borderRadius: 2,
+                  bgcolor: "#fff",
+                  border: "1px solid #e2e8f0",
+                  textAlign: "center",
+                }}
+              >
+                <Typography variant="caption" fontWeight={600} color="primary">
+                  ⏳ PROCESSED
+                </Typography>
+                <Typography variant="h5" fontWeight={800} color="#2563eb" sx={{ mt: 0.5 }}>
+                  {smsDispatchStatus.processed.toLocaleString()}
+                </Typography>
+              </Paper>
+            </Grid>
+
+            <Grid item xs={6} sm={3}>
+              <Paper
+                elevation={0}
+                sx={{
+                  p: 2,
+                  borderRadius: 2,
+                  bgcolor: "#fff",
+                  border: "1px solid #e2e8f0",
+                  textAlign: "center",
+                }}
+              >
+                <Typography variant="caption" fontWeight={600} color="#10b981">
+                  ✅ DELIVERED
+                </Typography>
+                <Typography variant="h5" fontWeight={800} color="#059669" sx={{ mt: 0.5 }}>
+                  {smsDispatchStatus.sent.toLocaleString()}
+                </Typography>
+              </Paper>
+            </Grid>
+
+            <Grid item xs={6} sm={3}>
+              <Paper
+                elevation={0}
+                sx={{
+                  p: 2,
+                  borderRadius: 2,
+                  bgcolor: "#fff",
+                  border: "1px solid #e2e8f0",
+                  textAlign: "center",
+                }}
+              >
+                <Typography variant="caption" fontWeight={600} color={smsDispatchStatus.failed > 0 ? "error" : "text.secondary"}>
+                  ❌ FAILED
+                </Typography>
+                <Typography
+                  variant="h5"
+                  fontWeight={800}
+                  color={smsDispatchStatus.failed > 0 ? "#dc2626" : "#64748b"}
+                  sx={{ mt: 0.5 }}
+                >
+                  {smsDispatchStatus.failed.toLocaleString()}
+                </Typography>
+              </Paper>
+            </Grid>
+          </Grid>
+
+          {/* Progress Bar with Live Stats */}
+          <Box sx={{ mb: 3 }}>
+            <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
+              <Typography variant="body2" fontWeight={700} color="#1e293b">
+                Transmission Progress
+              </Typography>
+              <Typography variant="body2" fontWeight={800} color="#2563eb">
+                {smsDispatchStatus.percent}% ({smsDispatchStatus.processed.toLocaleString()} / {smsDispatchStatus.totalQueued.toLocaleString()})
+              </Typography>
+            </Stack>
+
+            <LinearProgress
+              variant="determinate"
+              value={smsDispatchStatus.percent}
+              sx={{
+                height: 12,
+                borderRadius: 6,
+                bgcolor: "#e2e8f0",
+                "& .MuiLinearProgress-bar": {
+                  borderRadius: 6,
+                  background:
+                    smsDispatchStatus.failed > 0
+                      ? "linear-gradient(90deg, #3b82f6 0%, #f59e0b 50%, #10b981 100%)"
+                      : "linear-gradient(90deg, #3b82f6 0%, #06b6d4 50%, #10b981 100%)",
+                },
+              }}
+            />
+          </Box>
+
+          {/* Real-time Activity Log Terminal */}
+          <Box>
+            <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
+              <Typography variant="subtitle2" fontWeight={700} color="#1e293b">
+                📜 Real-Time Dispatch Activity Log
+              </Typography>
+              <Chip
+                size="small"
+                label={smsDispatchStatus.isSending ? "STREAMING" : "IDLE"}
+                color={smsDispatchStatus.isSending ? "success" : "default"}
+                sx={{ height: 20, fontSize: "0.68rem", fontWeight: 700 }}
+              />
+            </Stack>
+
+            <Box
+              ref={logContainerRef}
+              sx={{
+                bgcolor: "#090d16",
+                borderRadius: 2,
+                p: 2,
+                border: "1px solid #1e293b",
+                maxHeight: 220,
+                minHeight: 140,
+                overflowY: "auto",
+                fontFamily: "monospace",
+                fontSize: "0.8rem",
+              }}
+            >
+              {smsDispatchStatus.logs.length === 0 ? (
+                <Typography variant="body2" sx={{ color: "#64748b" }}>
+                  Awaiting dispatch operations...
+                </Typography>
+              ) : (
+                smsDispatchStatus.logs.map((log, index) => {
+                  let color = "#93c5fd"; // info
+                  if (log.type === "success") color = "#4ade80";
+                  if (log.type === "warning") color = "#fbbf24";
+                  if (log.type === "error") color = "#f87171";
+
+                  return (
+                    <Box key={index} sx={{ py: 0.35, display: "flex", gap: 1.5, lineHeight: 1.5 }}>
+                      <Typography
+                        component="span"
+                        sx={{ color: "#64748b", fontFamily: "inherit", fontSize: "inherit", userSelect: "none" }}
+                      >
+                        [{log.time}]
+                      </Typography>
+                      <Typography
+                        component="span"
+                        sx={{ color, fontFamily: "inherit", fontSize: "inherit", wordBreak: "break-word" }}
+                      >
+                        {log.message}
+                      </Typography>
+                    </Box>
+                  );
+                })
+              )}
+            </Box>
+          </Box>
+        </DialogContent>
+
+        <DialogActions sx={{ p: 2, bgcolor: "#f1f5f9", borderTop: "1px solid #e2e8f0", justifyContent: "space-between" }}>
+          <Typography variant="caption" color="text.secondary">
+            {smsDispatchStatus.isSending
+              ? "⏳ Dispatching batches via SMSC server... please wait."
+              : "✅ Dispatch finished. You can safely close this status window."}
+          </Typography>
+
+          <Button
+            variant="contained"
+            color="primary"
+            onClick={() => setSmsDispatchModalOpen(false)}
+            disabled={smsDispatchStatus.isSending}
+            sx={{ textTransform: "none", fontWeight: 700, px: 3 }}
+          >
+            {smsDispatchStatus.isSending ? "Dispatching..." : "Done / Close Dashboard"}
           </Button>
         </DialogActions>
       </Dialog>

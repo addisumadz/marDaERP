@@ -65,6 +65,8 @@ public class ReadingService {
     private CompanyProfileRepository companyProfileRepository;
     @Autowired
     private SmsService smsService;
+    @Autowired
+    private SmsSettingService smsSettingService;
 
     @Transactional(readOnly = true)
     public List<BillingReadingDTO> getAllReadingsForList() {
@@ -2246,5 +2248,239 @@ public class ReadingService {
                 "skipped", skipped,
                 "message", voidedCount + " bill(s) successfully voided and reverted to registered readings."
         );
+    }
+
+    // ===== HTTP SMS Gateway Queue Preparation and Direct Sending =====
+
+    @Transactional(readOnly = true)
+    public java.util.List<BulkSmsExportItemDTO> prepareBillSmsQueueData(
+            java.util.List<Integer> readingIds,
+            String smsDueDateText,
+            String monthYearPart) {
+        if (readingIds == null || readingIds.isEmpty()) {
+            throw new IllegalArgumentException("readingIds cannot be empty");
+        }
+
+        java.util.List<BillingReading> readings = billingReadingRepository.findAllById(readingIds);
+        java.util.Map<Integer, BillingReading> byId = new java.util.HashMap<>();
+        for (BillingReading r : readings) {
+            if (r != null) {
+                byId.put(r.getId(), r);
+            }
+        }
+
+        java.util.List<BulkSmsExportItemDTO> queueItems = new java.util.ArrayList<>();
+        for (Integer id : readingIds) {
+            if (id == null) {
+                continue;
+            }
+            BillingReading reading = byId.get(id);
+            if (reading == null) {
+                continue;
+            }
+
+            String phoneRaw = null;
+            String accountNumber = null;
+            String customerName = null;
+            if (reading.getBillingCustomerInfo() != null) {
+                phoneRaw = reading.getBillingCustomerInfo().getPhoneNumber();
+                accountNumber = reading.getBillingCustomerInfo().getAccountNumber();
+                customerName = reading.getBillingCustomerInfo().getFullName();
+            }
+            String phone = normalizePhoneForSms(phoneRaw);
+            if (phone == null && phoneRaw != null) {
+                phone = phoneRaw.trim();
+            }
+
+            String message = buildBillSmsMessage(reading, smsDueDateText, monthYearPart);
+            String billMonth = reading.getKifyaWer() != null ? reading.getKifyaWer() : (monthYearPart != null ? monthYearPart.trim() : "");
+            Double totalAmount = reading.getTekilalaTekefay();
+            boolean alreadySent = reading.isEnableEditMeneshaReading();
+            String status = alreadySent ? "SENT" : "READY";
+
+            queueItems.add(new BulkSmsExportItemDTO(
+                    reading.getId(),
+                    accountNumber != null ? accountNumber : "",
+                    customerName != null ? customerName : "",
+                    phone != null ? phone : "",
+                    message != null ? message : "",
+                    billMonth != null ? billMonth : "",
+                    totalAmount != null ? totalAmount : 0.0,
+                    alreadySent,
+                    status
+            ));
+        }
+
+        return queueItems;
+    }
+
+    @Transactional
+    public java.util.Map<String, Object> sendBillSmsViaGateway(
+            java.util.List<Integer> readingIds,
+            String gatewayUrl,
+            String apiKey,
+            String smsDueDateText,
+            String monthYearPart,
+            java.util.List<com.wbill.home.dto.GatewayBulkSmsRequestDTO.CustomSmsItemDTO> customItems) {
+
+        if ((readingIds == null || readingIds.isEmpty()) && (customItems == null || customItems.isEmpty())) {
+            throw new IllegalArgumentException("readingIds or customItems cannot be empty");
+        }
+
+        java.util.List<SmsService.BulkSmsRequest> requests = new java.util.ArrayList<>();
+        java.util.Map<Integer, BillingReading> readingsById = new java.util.HashMap<>();
+
+        if (readingIds != null && !readingIds.isEmpty()) {
+            java.util.List<BillingReading> readings = billingReadingRepository.findAllById(readingIds);
+            for (BillingReading r : readings) {
+                if (r != null) {
+                    readingsById.put(r.getId(), r);
+                }
+            }
+
+            // Auto-resolve city SMS gateway settings if not provided
+            if (apiKey == null || apiKey.trim().isEmpty()) {
+                Integer detectedCityId = null;
+                for (BillingReading r : readingsById.values()) {
+                    if (r != null && r.getBillingCustomerInfo() != null && r.getBillingCustomerInfo().getCityId() != null) {
+                        detectedCityId = r.getBillingCustomerInfo().getCityId();
+                        break;
+                    }
+                }
+                Optional<com.wbill.home.dto.SmsSettingDTO> optSetting = smsSettingService.getSettingForCity(detectedCityId);
+                if (optSetting.isPresent()) {
+                    apiKey = optSetting.get().getApiKey();
+                    if (gatewayUrl == null || gatewayUrl.trim().isEmpty()) {
+                        gatewayUrl = optSetting.get().getGatewayUrl();
+                    }
+                }
+            }
+
+            for (Integer id : readingIds) {
+                if (id == null) continue;
+                BillingReading reading = readingsById.get(id);
+                if (reading == null) continue;
+
+                String phoneRaw = null;
+                if (reading.getBillingCustomerInfo() != null) {
+                    phoneRaw = reading.getBillingCustomerInfo().getPhoneNumber();
+                }
+                String phone = normalizePhoneForSms(phoneRaw);
+                if (phone == null && phoneRaw != null) {
+                    phone = phoneRaw.trim();
+                }
+                if (phone == null || phone.isEmpty()) {
+                    continue;
+                }
+
+                String message = buildBillSmsMessage(reading, smsDueDateText, monthYearPart);
+                if (message == null || message.isEmpty()) {
+                    continue;
+                }
+
+                requests.add(new SmsService.BulkSmsRequest(id, phone, message));
+            }
+        }
+
+        if (customItems != null && !customItems.isEmpty()) {
+            for (com.wbill.home.dto.GatewayBulkSmsRequestDTO.CustomSmsItemDTO ci : customItems) {
+                if (ci == null) continue;
+                String phone = ci.getPhoneNumber();
+                String message = ci.getMessage();
+                if (phone != null && !phone.trim().isEmpty() && message != null && !message.trim().isEmpty()) {
+                    requests.add(new SmsService.BulkSmsRequest(ci.getReadingId(), phone, message));
+                }
+            }
+        }
+
+        if (requests.isEmpty()) {
+            return java.util.Map.of(
+                    "total", 0,
+                    "sent", 0,
+                    "failed", 0,
+                    "results", java.util.Collections.emptyList(),
+                    "message", "No valid SMS requests could be prepared (check phone numbers)"
+            );
+        }
+
+        java.util.List<SmsService.BulkSmsResult> results = smsService.sendBulkSmsViaHttpGateway(requests, gatewayUrl, apiKey);
+
+        int sent = 0;
+        int failed = 0;
+        java.util.List<java.util.Map<String, Object>> itemizedResults = new java.util.ArrayList<>();
+
+        for (SmsService.BulkSmsResult res : results) {
+            if (res == null) continue;
+            java.util.Map<String, Object> itemMap = new java.util.HashMap<>();
+            itemMap.put("readingId", res.getReadingId());
+            itemMap.put("phoneNumber", res.getPhoneNumber());
+            itemMap.put("success", res.isSuccess());
+            itemMap.put("error", res.getError());
+            itemizedResults.add(itemMap);
+
+            if (res.isSuccess()) {
+                sent++;
+                Integer rId = res.getReadingId();
+                if (rId != null) {
+                    BillingReading r = readingsById.get(rId);
+                    if (r == null) {
+                        r = billingReadingRepository.findById(rId).orElse(null);
+                    }
+                    if (r != null) {
+                        r.setEnableEditMeneshaReading(true);
+                        r.setModifiedDate(new Date());
+                        billingReadingRepository.save(r);
+                    }
+                }
+            } else {
+                failed++;
+            }
+        }
+
+        java.util.Map<String, Object> response = new java.util.HashMap<>();
+        response.put("total", requests.size());
+        response.put("sent", sent);
+        response.put("failed", failed);
+        response.put("results", itemizedResults);
+        return response;
+    }
+
+    @Transactional
+    public java.util.Map<String, Object> sendSingleBillSmsViaGateway(
+            Integer readingId,
+            String phoneNumber,
+            String message,
+            String gatewayUrl,
+            String apiKey) {
+
+        if ((apiKey == null || apiKey.trim().isEmpty()) && readingId != null) {
+            BillingReading r = billingReadingRepository.findById(readingId).orElse(null);
+            Integer cityId = (r != null && r.getBillingCustomerInfo() != null) ? r.getBillingCustomerInfo().getCityId() : null;
+            Optional<com.wbill.home.dto.SmsSettingDTO> optSetting = smsSettingService.getSettingForCity(cityId);
+            if (optSetting.isPresent()) {
+                apiKey = optSetting.get().getApiKey();
+                if (gatewayUrl == null || gatewayUrl.trim().isEmpty()) {
+                    gatewayUrl = optSetting.get().getGatewayUrl();
+                }
+            }
+        }
+
+        SmsService.BulkSmsResult res = smsService.sendSmsViaHttpGateway(gatewayUrl, apiKey, readingId, phoneNumber, message);
+
+        if (res.isSuccess() && readingId != null) {
+            BillingReading r = billingReadingRepository.findById(readingId).orElse(null);
+            if (r != null) {
+                r.setEnableEditMeneshaReading(true);
+                r.setModifiedDate(new Date());
+                billingReadingRepository.save(r);
+            }
+        }
+
+        java.util.Map<String, Object> response = new java.util.HashMap<>();
+        response.put("readingId", readingId);
+        response.put("phoneNumber", res.getPhoneNumber());
+        response.put("success", res.isSuccess());
+        response.put("error", res.getError());
+        return response;
     }
 }

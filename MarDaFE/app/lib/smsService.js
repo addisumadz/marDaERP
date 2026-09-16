@@ -61,4 +61,84 @@ export class SmsService {
     });
     return res.data;
   }
+
+  async prepareSmsQueue(readingIds, smsMeta = {}) {
+    const token = getAccesToken();
+    const payload = { readingIds, ...smsMeta };
+    const res = await axios.post(`${commonUrl}sms/prepare-queue`, payload, {
+      headers: authHeader(token),
+      timeout: 120000,
+    });
+    return res.data;
+  }
+
+  async sendGatewayBulkSms(payload) {
+    const token = getAccesToken();
+    const res = await axios.post(`${commonUrl}sms/send-gateway-bulk`, payload, {
+      headers: authHeader(token),
+      timeout: 180000,
+    });
+    return res.data;
+  }
+
+  async sendGatewaySingleSms(payload) {
+    const token = getAccesToken();
+    const res = await axios.post(`${commonUrl}sms/send-gateway-single`, payload, {
+      headers: authHeader(token),
+      timeout: 30000,
+    });
+    return res.data;
+  }
+
+  async testGatewaySms(payload) {
+    const token = getAccesToken();
+    const res = await axios.post(`${commonUrl}sms/test-gateway`, payload, {
+      headers: authHeader(token),
+      timeout: 30000,
+    });
+    return res.data;
+  }
+
+  // ================== SMS_Setting Table Endpoints ==================
+
+  async getSmsSettings() {
+    const token = getAccesToken();
+    const res = await axios.get(`${commonUrl}sms-settings`, {
+      headers: authHeader(token),
+    });
+    return res.data;
+  }
+
+  async getActiveSmsSettings() {
+    const token = getAccesToken();
+    const res = await axios.get(`${commonUrl}sms-settings/active`, {
+      headers: authHeader(token),
+    });
+    return res.data;
+  }
+
+  async getSmsSettingByCity(cityId) {
+    const token = getAccesToken();
+    const res = await axios.get(`${commonUrl}sms-settings/by-city/${cityId}`, {
+      headers: authHeader(token),
+    });
+    return res.data;
+  }
+
+  async saveSmsSetting(data) {
+    const token = getAccesToken();
+    const res = await axios.post(`${commonUrl}sms-settings`, data, {
+      headers: authHeader(token),
+    });
+    return res.data;
+  }
+
+  async deleteSmsSetting(id) {
+    const token = getAccesToken();
+    const res = await axios.delete(`${commonUrl}sms-settings/${id}`, {
+      headers: authHeader(token),
+    });
+    return res.data;
+  }
 }
+

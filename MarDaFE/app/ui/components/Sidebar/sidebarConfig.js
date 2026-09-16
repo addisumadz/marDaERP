@@ -17,6 +17,7 @@ import {
     LifeBuoy,
     Upload,
     Send,
+    MessageSquare,
     Building,
     Landmark,
     LayoutDashboard,
@@ -190,6 +191,11 @@ export const menuGroups = [
                         icon: LifeBuoy,
                     },
                     {
+                        title: "የቢል SMS መላኪያ",
+                        path: "/ui/manager/SendBillSms",
+                        icon: MessageSquare,
+                    },
+                    {
                         title: "ዓመታዊ ሪፖርት",
                         path: "/ui/manager/yearlyReport",
                         icon: BarChart3,
@@ -241,6 +247,11 @@ export const menuGroups = [
                         title: "Send To MardaArif",
                         path: "/ui/manager/SendToMardaArif",
                         icon: Send,
+                    },
+                    {
+                        title: "Send Bill SMS",
+                        path: "/ui/manager/SendBillSms",
+                        icon: MessageSquare,
                     },
                     {
                         title: "Bank Import MardaArif",

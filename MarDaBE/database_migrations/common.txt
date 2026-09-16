@@ -1,4 +1,19 @@
+# 1. Kill any lingering Antigravity Java language server processes
+Get-CimInstance Win32_Process -Filter "name = 'java.exe'" | Where-Object { $_.CommandLine -like "*redhat.java*" } | Stop-Process -Force
 
+# 2. Remove the corrupted global and workspace caches
+Remove-Item "$env:APPDATA\Antigravity IDE\User\globalStorage\redhat.java" -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item "$env:APPDATA\Antigravity IDE\User\workspaceStorage\372e11b136f27441e3821c7e6f2292f1\redhat.java" -Recurse -Force -ErrorAction SilentlyContinue
+
+
+
+
+SmppSessionConfiguration config = new SmppSessionConfiguration();
+config.setHost("10.204.181.70");   // Ethio Telecom SMSC internal IP (requires VPN/APN)
+config.setPort(5019);              // Ethio Telecom SMPP port
+config.setSystemId("8581");        // SMPP username / System ID
+config.setPassword("Wtw@1921");    // SMPP password
+private static final String SENDER_NAME = "WoldiaWater";
 
 
 

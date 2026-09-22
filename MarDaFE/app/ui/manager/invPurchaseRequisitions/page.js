@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { toast } from "react-toastify";
@@ -7,6 +7,11 @@ import invPurchaseRequisitionService from "../../../lib/invPurchaseRequisitionSe
 import workflowService from "../../../lib/workflowService";
 import invStoreService from "../../../lib/invStoreService";
 import invItemService from "../../../lib/invItemService";
+import invCategoryService from "../../../lib/invCategoryService";
+import invUserStoreService from "../../../lib/invUserStoreService";
+import { UserAccountService } from "../../../lib/userAccountService";
+
+const userService = new UserAccountService();
 import {
   FileText,
   FileCheck,
@@ -28,7 +33,13 @@ import {
   Building2,
   AlertCircle,
   Loader2,
-  Printer
+  Printer,
+  Search,
+  ChevronDown,
+  Tag,
+  Package,
+  PackageSearch,
+  Filter
 } from "lucide-react";
 import { generatePurchaseRequisitionPdf } from "./purchaseRequisitionPdf";
 
@@ -135,6 +146,355 @@ function ApprovalStepper({ status, templateSteps = [], currentStep = null, rejec
   );
 }
 
+/* ─── Searchable Item Selection Dropdown Component ─────────── */
+function SearchableItemSelect({
+  items = [],
+  categories = [],
+  selectedItemId = "",
+  lineCategoryId = "",
+  onSelect,
+  onCategoryFilterChange,
+  hasError = false,
+  disabled = false,
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [internalCategoryFilter, setInternalCategoryFilter] = useState(lineCategoryId || "");
+  const containerRef = useRef(null);
+  const searchInputRef = useRef(null);
+
+  // Keep internal category filter aligned with line category if provided
+  useEffect(() => {
+    setInternalCategoryFilter(lineCategoryId || "");
+  }, [lineCategoryId]);
+
+  // Click outside to close
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleClickOutside = (e) => {
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [isOpen]);
+
+  // Auto-focus search input when opened
+  useEffect(() => {
+    if (isOpen) {
+      const timer = setTimeout(() => {
+        searchInputRef.current?.focus();
+      }, 50);
+      return () => clearTimeout(timer);
+    } else {
+      setSearchQuery("");
+    }
+  }, [isOpen]);
+
+  // Close on Escape key
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e) => {
+      if (e.key === "Escape") {
+        setIsOpen(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen]);
+
+  // Find currently selected item
+  const selectedItem = useMemo(() => {
+    if (!selectedItemId) return null;
+    return items.find((i) => String(i.id) === String(selectedItemId)) || null;
+  }, [items, selectedItemId]);
+
+  // Filter items by category & search query
+  const filteredItems = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return items.filter((item) => {
+      // Category filter check
+      if (internalCategoryFilter) {
+        const itemCatId = item.category?.id ?? item.categoryId;
+        if (String(itemCatId) !== String(internalCategoryFilter)) {
+          return false;
+        }
+      }
+      // Query filter check
+      if (!q) return true;
+      const code = (item.itemCode || "").toLowerCase();
+      const name = (item.itemName || "").toLowerCase();
+      const nameAm = (item.itemNameAm || "").toLowerCase();
+      const desc = (item.description || "").toLowerCase();
+      return code.includes(q) || name.includes(q) || nameAm.includes(q) || desc.includes(q);
+    });
+  }, [items, internalCategoryFilter, searchQuery]);
+
+  // Limit visible items to prevent DOM lag on very large catalogs
+  const visibleItems = useMemo(() => filteredItems.slice(0, 80), [filteredItems]);
+
+  const handleSelect = (item) => {
+    onSelect(item);
+    setIsOpen(false);
+  };
+
+  const handleClear = (e) => {
+    e.stopPropagation();
+    onSelect(null);
+  };
+
+  const handleCategoryPillClick = (e, catId) => {
+    e.stopPropagation();
+    setInternalCategoryFilter(catId);
+    if (onCategoryFilterChange) {
+      onCategoryFilterChange(catId);
+    }
+  };
+
+  return (
+    <div ref={containerRef} className="relative w-full">
+      {/* Trigger Button */}
+      {selectedItem ? (
+        <div
+          onClick={() => !disabled && setIsOpen((prev) => !prev)}
+          className={`w-full px-2.5 py-1.5 border rounded-lg flex items-center justify-between cursor-pointer transition-all shadow-xs ${
+            hasError
+              ? "border-red-500 ring-1 ring-red-500 bg-red-50/20"
+              : isOpen
+              ? "border-indigo-500 ring-2 ring-indigo-500/20 bg-white dark:bg-gray-700"
+              : "border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 hover:border-indigo-400"
+          } ${disabled ? "opacity-60 cursor-not-allowed" : ""}`}
+        >
+          <div className="flex items-center gap-1.5 min-w-0 flex-1">
+            <span className="font-mono text-xs font-bold px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 shrink-0">
+              {selectedItem.itemCode}
+            </span>
+            <span className="text-xs font-medium text-gray-900 dark:text-white truncate">
+              {selectedItem.itemName}
+              {selectedItem.itemNameAm && (
+                <span className="text-gray-500 text-[11px] font-normal ml-1">
+                  ({selectedItem.itemNameAm})
+                </span>
+              )}
+            </span>
+            {selectedItem.category?.categoryName && (
+              <span className="hidden sm:inline-block px-1.5 py-0.2 rounded text-[10px] bg-gray-100 dark:bg-gray-600 text-gray-600 dark:text-gray-300 shrink-0">
+                {selectedItem.category.categoryName}
+              </span>
+            )}
+            {(selectedItem.unitOfMeasure?.unitCode || selectedItem.unitOfMeasure?.unitName) && (
+              <span className="hidden md:inline-block text-[10px] text-gray-400 shrink-0">
+                • {selectedItem.unitOfMeasure?.unitCode || selectedItem.unitOfMeasure?.unitName}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-1 shrink-0 ml-1.5">
+            <button
+              type="button"
+              onClick={handleClear}
+              className="p-1 rounded-md text-gray-400 hover:text-red-500 hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
+              title="Clear selection"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+            <ChevronDown className={`w-3.5 h-3.5 text-gray-400 transition-transform ${isOpen ? "rotate-180 text-indigo-600" : ""}`} />
+          </div>
+        </div>
+      ) : (
+        <div
+          onClick={() => !disabled && setIsOpen(true)}
+          className={`w-full px-2.5 py-2 border rounded-lg flex items-center justify-between cursor-pointer transition-all shadow-xs ${
+            hasError
+              ? "border-red-500 ring-1 ring-red-500 bg-red-50/20"
+              : isOpen
+              ? "border-indigo-500 ring-2 ring-indigo-500/20 bg-white dark:bg-gray-700"
+              : "border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 hover:border-indigo-400"
+          } ${disabled ? "opacity-60 cursor-not-allowed" : ""}`}
+        >
+          <div className="flex items-center gap-2 min-w-0 text-gray-400">
+            <Search className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+            <span className="text-xs truncate">
+              {internalCategoryFilter
+                ? "Search item in category... (እቃ ይምረጡ)"
+                : "Search or select item... (እቃ ይምረጡ)"}
+            </span>
+          </div>
+          <ChevronDown className={`w-3.5 h-3.5 text-gray-400 transition-transform ${isOpen ? "rotate-180 text-indigo-600" : ""}`} />
+        </div>
+      )}
+
+      {/* Floating Popover Panel */}
+      {isOpen && (
+        <div className="absolute left-0 right-0 top-full mt-1 z-50 bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden animate-in fade-in zoom-in-95 duration-150 min-w-[300px]">
+          {/* Search & Category Filter Header */}
+          <div className="p-2.5 border-b border-gray-100 dark:border-gray-700 bg-gray-50/70 dark:bg-gray-700/50 space-y-2">
+            {/* Search Input */}
+            <div className="relative">
+              <Search className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-gray-400" />
+              <input
+                ref={searchInputRef}
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search by code (e.g. PIPE), name, or Amharic..."
+                className="w-full pl-8 pr-7 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-2 top-2 p-0.5 rounded text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            {/* Category Filter Pills inside Popover */}
+            {categories && categories.length > 0 && (
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 text-[11px] scrollbar-none">
+                <button
+                  type="button"
+                  onClick={(e) => handleCategoryPillClick(e, "")}
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-medium whitespace-nowrap transition-colors ${
+                    !internalCategoryFilter
+                      ? "bg-indigo-600 text-white shadow-xs"
+                      : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
+                  }`}
+                >
+                  All Categories ({items.length})
+                </button>
+                {categories.map((c) => {
+                  const catCount = items.filter((i) => (i.category?.id ?? i.categoryId) === c.id).length;
+                  const isCatActive = String(internalCategoryFilter) === String(c.id);
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={(e) => handleCategoryPillClick(e, String(c.id))}
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-medium whitespace-nowrap transition-colors ${
+                        isCatActive
+                          ? "bg-indigo-600 text-white shadow-xs"
+                          : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
+                      }`}
+                    >
+                      {c.categoryName} {catCount > 0 ? `(${catCount})` : ""}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Items List */}
+          <div className="max-h-56 overflow-y-auto divide-y divide-gray-100 dark:divide-gray-700/50">
+            {visibleItems.length > 0 ? (
+              visibleItems.map((item) => {
+                const isItemActive = String(selectedItemId) === String(item.id);
+                const itemCatName = item.category?.categoryName ||
+                  categories.find(c => c.id === (item.category?.id ?? item.categoryId))?.categoryName;
+                const uom = item.unitOfMeasure?.unitCode || item.unitOfMeasure?.unitName;
+                return (
+                  <div
+                    key={item.id}
+                    onClick={() => handleSelect(item)}
+                    className={`p-2.5 cursor-pointer flex items-center justify-between transition-colors ${
+                      isItemActive
+                        ? "bg-indigo-50 dark:bg-indigo-900/40"
+                        : "hover:bg-indigo-50/60 dark:hover:bg-indigo-900/20"
+                    }`}
+                  >
+                    <div className="min-w-0 flex-1 pr-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-mono text-xs font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 px-1.5 py-0.5 rounded border border-indigo-200/50 dark:border-indigo-800/50">
+                          {item.itemCode}
+                        </span>
+                        <span className="text-xs font-semibold text-gray-900 dark:text-white truncate">
+                          {item.itemName}
+                        </span>
+                        {item.itemNameAm && (
+                          <span className="text-[11px] text-gray-500 dark:text-gray-400">
+                            ({item.itemNameAm})
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 text-[10px] text-gray-500 dark:text-gray-400 mt-1">
+                        {itemCatName && (
+                          <span className="px-1.5 py-0.2 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 font-medium">
+                            {itemCatName}
+                          </span>
+                        )}
+                        {uom && (
+                          <span>Unit: <strong className="text-gray-700 dark:text-gray-300">{uom}</strong></span>
+                        )}
+                        {item.defaultUnitCost && Number(item.defaultUnitCost) > 0 && (
+                          <span className="font-mono text-emerald-600 dark:text-emerald-400">
+                            Est. Cost: ETB {Number(item.defaultUnitCost).toFixed(2)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="shrink-0">
+                      {isItemActive && (
+                        <Check className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            ) : (
+              <div className="p-6 text-center text-xs text-gray-500 dark:text-gray-400 space-y-2">
+                <PackageSearch className="w-7 h-7 mx-auto text-gray-400 opacity-60" />
+                <p>
+                  No items found
+                  {searchQuery && (
+                    <span> matching <strong className="text-gray-700 dark:text-gray-300">"{searchQuery}"</strong></span>
+                  )}
+                  {internalCategoryFilter && (
+                    <span> in this category</span>
+                  )}
+                </p>
+                {(searchQuery || internalCategoryFilter) && (
+                  <div className="flex items-center justify-center gap-2 pt-1">
+                    {searchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => setSearchQuery("")}
+                        className="px-2 py-1 text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline font-medium"
+                      >
+                        Clear search
+                      </button>
+                    )}
+                    {internalCategoryFilter && (
+                      <button
+                        type="button"
+                        onClick={(e) => handleCategoryPillClick(e, "")}
+                        className="px-2 py-1 text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline font-medium"
+                      >
+                        Show all categories
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Footer Info */}
+          <div className="px-3 py-1.5 bg-gray-50 dark:bg-gray-700/40 border-t border-gray-100 dark:border-gray-700 text-[10px] text-gray-500 dark:text-gray-400 flex items-center justify-between">
+            <span>
+              Showing {visibleItems.length} of {filteredItems.length} items
+              {filteredItems.length > 80 ? " (type to narrow down)" : ""}
+            </span>
+            <span className="hidden sm:inline">Press Esc to close</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ─── Main Page ──────────────────────────────────────────── */
 export default function InvPurchaseRequisitionsPage() {
   const { data: session } = useSession();
@@ -147,6 +507,10 @@ export default function InvPurchaseRequisitionsPage() {
   const [templateSteps, setTemplateSteps] = useState([]);
   const [stores, setStores] = useState([]);
   const [items, setItems] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [myStores, setMyStores] = useState([]);
+  const [assignedStore, setAssignedStore] = useState(null);
+  const [currentUserBranch, setCurrentUserBranch] = useState(null);
   const [loading, setLoading] = useState(true);
 
   // Modals
@@ -168,14 +532,17 @@ export default function InvPurchaseRequisitionsPage() {
   const [form, setForm] = useState({
     storeId: "",
     remarks: "",
-    lines: [{ itemId: "", requestedQuantity: "", estimatedUnitCost: "", purpose: "" }]
+    lines: [{ categoryId: "", itemId: "", requestedQuantity: "", estimatedUnitCost: "", purpose: "" }]
   });
   const [formErrors, setFormErrors] = useState({});
 
   /* ── Role helpers with Admin Override ── */
   const normalizedRoles = userRoles.map(r => String(r || "").replace(/^ROLE_/i, "").toLowerCase());
   const isSuperAdmin = normalizedRoles.some(r => ["billzgjt", "systemadmin", "admin"].includes(r));
-  const isRequester = isSuperAdmin || normalizedRoles.some(r =>
+  const isMainOffice = currentUserBranch?.branchCode?.toUpperCase() === "MO" ||
+    (currentUserBranch?.branchName && currentUserBranch.branchName.toLowerCase().includes("main"));
+  const isMainOfficeOrAdmin = isSuperAdmin || isMainOffice;
+  const isRequester = isSuperAdmin || isMainOffice || normalizedRoles.some(r =>
     ["m_branch_store", "m_gebi_officer", "inv_storekeeper", "inv_manager"].includes(r)
   );
 
@@ -186,14 +553,51 @@ export default function InvPurchaseRequisitionsPage() {
   }, []);
 
   useEffect(() => {
+    if (session?.user?.id && !currentUserBranch) {
+      userService.getUserById(session.user.id).then(userProfile => {
+        if (userProfile && userProfile.branchId) {
+          const storeInBranch = stores.find(s => s.branch?.id === userProfile.branchId);
+          setCurrentUserBranch({
+            id: userProfile.branchId,
+            branchCode: storeInBranch?.branch?.branchCode || "",
+            branchName: userProfile.branchName || storeInBranch?.branch?.branchDescription || ""
+          });
+        }
+      }).catch(() => {});
+    }
+  }, [session?.user?.id, stores, currentUserBranch]);
+
+  useEffect(() => {
     loadData();
   }, [page, filterStatus, filterStore]);
 
   const loadLookups = async () => {
     try {
-      const [st, it] = await Promise.all([invStoreService.getAllActive(), invItemService.getAllActive()]);
+      const [st, it, cats, mySt, userProfile] = await Promise.all([
+        invStoreService.getAllActive(),
+        invItemService.getAllActive(),
+        invCategoryService.getAllActive().catch(() => []),
+        invUserStoreService.getMyStores().catch(() => []),
+        session?.user?.id ? userService.getUserById(session.user.id).catch(() => null) : null
+      ]);
       setStores(st || []);
       setItems(it || []);
+      setCategories(cats || []);
+
+      const activeUserStores = (mySt || []).filter(s => s.isActive !== false && s.store);
+      setMyStores(activeUserStores);
+
+      const primary = activeUserStores.find(s => s.isPrimary)?.store || activeUserStores[0]?.store || null;
+      setAssignedStore(primary);
+
+      if (userProfile && userProfile.branchId) {
+        const storeInBranch = (st || []).find(s => s.branch?.id === userProfile.branchId);
+        setCurrentUserBranch({
+          id: userProfile.branchId,
+          branchCode: storeInBranch?.branch?.branchCode || "",
+          branchName: userProfile.branchName || storeInBranch?.branch?.branchDescription || ""
+        });
+      }
     } catch {}
   };
 
@@ -244,7 +648,7 @@ export default function InvPurchaseRequisitionsPage() {
   /* ── Line item management ── */
   const addLine = () => setForm({
     ...form,
-    lines: [...form.lines, { itemId: "", requestedQuantity: "", estimatedUnitCost: "", purpose: "" }]
+    lines: [...form.lines, { categoryId: "", itemId: "", requestedQuantity: "", estimatedUnitCost: "", purpose: "" }]
   });
   const removeLine = (idx) => {
     const updatedLines = form.lines.filter((_, i) => i !== idx);
@@ -270,10 +674,54 @@ export default function InvPurchaseRequisitionsPage() {
     }
   };
 
+  const handleItemSelect = (idx, selectedItem) => {
+    const lines = [...form.lines];
+    if (!selectedItem) {
+      lines[idx].itemId = "";
+      setForm({ ...form, lines });
+      return;
+    }
+    lines[idx].itemId = String(selectedItem.id);
+    const catId = selectedItem.category?.id ?? selectedItem.categoryId;
+    if (catId) {
+      lines[idx].categoryId = String(catId);
+    }
+    // Pre-fill estimated unit cost if empty or 0
+    if ((!lines[idx].estimatedUnitCost || Number(lines[idx].estimatedUnitCost) === 0) && selectedItem.defaultUnitCost) {
+      lines[idx].estimatedUnitCost = String(selectedItem.defaultUnitCost);
+    }
+    setForm({ ...form, lines });
+
+    if (formErrors.lines?.[idx]?.itemId) {
+      const newErrors = { ...formErrors };
+      if (newErrors.lines?.[idx]) {
+        const lineErr = { ...newErrors.lines[idx] };
+        delete lineErr.itemId;
+        newErrors.lines[idx] = lineErr;
+      }
+      setFormErrors(newErrors);
+    }
+  };
+
+  const handleLineCategoryChange = (idx, newCatId) => {
+    const lines = [...form.lines];
+    lines[idx].categoryId = newCatId;
+    // If current selected item does not belong to newCatId (and newCatId is not empty), clear item
+    if (newCatId && lines[idx].itemId) {
+      const currentItem = items.find(i => String(i.id) === String(lines[idx].itemId));
+      const currentCatId = currentItem ? (currentItem.category?.id ?? currentItem.categoryId) : null;
+      if (currentItem && String(currentCatId) !== String(newCatId)) {
+        lines[idx].itemId = "";
+      }
+    }
+    setForm({ ...form, lines });
+  };
+
   /* ── Validation ── */
   const validateForm = () => {
     const errs = {};
-    if (!form.storeId) {
+    const effectiveStoreId = form.storeId || (assignedStore ? String(assignedStore.id) : "");
+    if (!effectiveStoreId) {
       errs.storeId = "Please select a target receiving store";
     }
     if (!form.lines || form.lines.length === 0) {
@@ -306,6 +754,26 @@ export default function InvPurchaseRequisitionsPage() {
   };
 
   /* ── Creation ── */
+  const openCreateModal = () => {
+    let defaultStoreId = "";
+    if (assignedStore) {
+      defaultStoreId = String(assignedStore.id);
+    } else if (currentUserBranch?.id) {
+      const branchStores = stores.filter(s => s.branch?.id === currentUserBranch.id);
+      if (branchStores.length > 0) {
+        defaultStoreId = String(branchStores[0].id);
+      }
+    }
+
+    setForm({
+      storeId: defaultStoreId,
+      remarks: "",
+      lines: [{ categoryId: "", itemId: "", requestedQuantity: "", estimatedUnitCost: "", purpose: "" }]
+    });
+    setFormErrors({});
+    setModalOpen(true);
+  };
+
   const handleCreate = async () => {
     const errs = validateForm();
     if (Object.keys(errs).length > 0) {
@@ -317,11 +785,16 @@ export default function InvPurchaseRequisitionsPage() {
       return;
     }
 
+    if (!isSuperAdmin && !assignedStore && !form.storeId) {
+      toast.error("No store assigned to your account. Please configure at /ui/manager/invUserStore");
+      return;
+    }
+
     const validLines = form.lines.filter(l => l.itemId && l.requestedQuantity && Number(l.requestedQuantity) > 0);
     setSubmitting(true);
     try {
       await invPurchaseRequisitionService.create({
-        storeId: Number(form.storeId),
+        storeId: Number(form.storeId || assignedStore?.id),
         remarks: form.remarks,
         lines: validLines.map(l => ({
           itemId: Number(l.itemId),
@@ -332,7 +805,7 @@ export default function InvPurchaseRequisitionsPage() {
       });
       toast.success("Requisition created successfully");
       setModalOpen(false);
-      setForm({ storeId: "", remarks: "", lines: [{ itemId: "", requestedQuantity: "", estimatedUnitCost: "", purpose: "" }] });
+      setForm({ storeId: "", remarks: "", lines: [{ categoryId: "", itemId: "", requestedQuantity: "", estimatedUnitCost: "", purpose: "" }] });
       setFormErrors({});
       loadData();
     } catch (e) {
@@ -485,7 +958,7 @@ export default function InvPurchaseRequisitionsPage() {
         </div>
         {isRequester && (
           <button
-            onClick={() => setModalOpen(true)}
+            onClick={openCreateModal}
             className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-md transition-all font-medium"
           >
             <Plus className="w-4 h-4" /> New Requisition
@@ -506,8 +979,14 @@ export default function InvPurchaseRequisitionsPage() {
           onChange={(e) => { setFilterStore(e.target.value); setPage(0); }}
           className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm"
         >
-          <option value="">All Stores</option>
-          {stores.map(s => <option key={s.id} value={s.id}>{s.storeName}</option>)}
+          <option value="">{isMainOfficeOrAdmin ? "All Stores" : "All Branch Stores"}</option>
+          {(isMainOfficeOrAdmin
+            ? stores
+            : (currentUserBranch?.id
+                ? stores.filter(s => s.branch?.id === currentUserBranch.id)
+                : (myStores.length > 0 ? myStores.map(ms => ms.store) : stores)
+              )
+          ).filter(Boolean).map(s => <option key={s.id} value={s.id}>{s.storeName}</option>)}
         </select>
         <select
           value={filterStatus}
@@ -669,35 +1148,62 @@ export default function InvPurchaseRequisitionsPage() {
 
       {/* ─── Create Requisition Modal ──────────────────────── */}
       {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-3xl mx-4 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-99999 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 pt-8 sm:pt-14 overflow-y-auto">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-5xl mx-4 max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700 sticky top-0 bg-white dark:bg-gray-800 z-10">
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">New Purchase Requisition</h2>
-              <button onClick={() => setModalOpen(false)} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400">
+                  <FileText className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white">New Purchase Requisition</h2>
+                  <p className="text-xs text-gray-500">Create a material / goods requisition for approval</p>
+                </div>
+              </div>
+              <button onClick={() => setModalOpen(false)} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg text-gray-400 hover:text-gray-600">
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="p-6 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+            <div className="p-6 space-y-5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Store <span className="text-red-500">*</span>
+                    {assignedStore && !isSuperAdmin && (
+                      <span className="text-xs text-indigo-600 dark:text-indigo-400 ml-2 font-normal">
+                        (Assigned Store)
+                      </span>
+                    )}
                   </label>
                   <select
                     value={form.storeId}
+                    disabled={!isSuperAdmin && Boolean(assignedStore)}
                     onChange={(e) => {
                       setForm({ ...form, storeId: e.target.value });
                       if (formErrors.storeId) {
                         setFormErrors({ ...formErrors, storeId: null });
                       }
                     }}
-                    className={`w-full px-3 py-2 border rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm transition-colors ${
+                    className={`w-full px-3 py-2 border rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-xs transition-colors ${
+                      !isSuperAdmin && Boolean(assignedStore) ? "opacity-75 cursor-not-allowed bg-gray-100 dark:bg-gray-800" : ""
+                    } ${
                       formErrors.storeId ? "border-red-500 ring-1 ring-red-500 bg-red-50/20" : "border-gray-300 dark:border-gray-600"
                     }`}
                   >
                     <option value="">Select Store</option>
-                    {stores.map(s => <option key={s.id} value={s.id}>{s.storeName}</option>)}
+                    {(isMainOfficeOrAdmin
+                      ? stores
+                      : (currentUserBranch?.id
+                          ? stores.filter(s => s.branch?.id === currentUserBranch.id)
+                          : (myStores.length > 0 ? myStores.map(ms => ms.store) : stores)
+                        )
+                    ).filter(Boolean).map(s => <option key={s.id} value={s.id}>{s.storeName}</option>)}
                   </select>
+                  {!isSuperAdmin && !assignedStore && !currentUserBranch?.id && (
+                    <p className="text-xs text-amber-600 dark:text-amber-400 mt-1 flex items-center gap-1">
+                      <AlertCircle className="w-3.5 h-3.5" /> No store or branch assigned to your account.
+                    </p>
+                  )}
                   {formErrors.storeId && (
                     <p className="text-xs text-red-600 dark:text-red-400 mt-1 flex items-center gap-1">
                       <AlertCircle className="w-3.5 h-3.5" /> {formErrors.storeId}
@@ -710,7 +1216,7 @@ export default function InvPurchaseRequisitionsPage() {
                     value={form.remarks}
                     onChange={(e) => setForm({ ...form, remarks: e.target.value })}
                     placeholder="Optional purpose / remarks"
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-xs"
                   />
                 </div>
               </div>
@@ -722,102 +1228,199 @@ export default function InvPurchaseRequisitionsPage() {
                 </div>
               )}
 
-              <h3 className="font-semibold text-gray-900 dark:text-white pt-2 border-t border-gray-200 dark:border-gray-700">Line Items</h3>
-              {form.lines.map((line, idx) => (
-                <div key={idx} className="grid grid-cols-12 gap-2 items-start bg-gray-50 dark:bg-gray-700/30 rounded-lg p-3">
-                  <div className="col-span-4">
-                    <label className="block text-xs text-gray-500 mb-1">
-                      Item <span className="text-red-500">*</span>
-                    </label>
-                    <select
-                      value={line.itemId}
-                      onChange={(e) => updateLine(idx, "itemId", e.target.value)}
-                      className={`w-full px-2 py-1.5 text-sm border rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors ${
-                        formErrors.lines?.[idx]?.itemId ? "border-red-500 ring-1 ring-red-500 bg-red-50/20" : "border-gray-300 dark:border-gray-600"
-                      }`}
+              {/* Line Items Header & Cost Summary */}
+              {(() => {
+                const totalEstimatedRequisition = form.lines.reduce((sum, l) => {
+                  const q = Number(l.requestedQuantity) || 0;
+                  const c = Number(l.estimatedUnitCost) || 0;
+                  return sum + (q * c);
+                }, 0);
+
+                return (
+                  <div className="space-y-3 pt-2 border-t border-gray-200 dark:border-gray-700">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div>
+                        <h3 className="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                          <Package className="w-4 h-4 text-indigo-600 dark:text-indigo-400" /> Line Items ({form.lines.length})
+                        </h3>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          Filter by category or search directly by item code / name
+                        </p>
+                      </div>
+                      {totalEstimatedRequisition > 0 && (
+                        <div className="bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/50 px-3 py-1.5 rounded-lg flex items-center gap-2 self-start sm:self-auto">
+                          <span className="text-xs text-emerald-700 dark:text-emerald-300 font-medium">Est. Total:</span>
+                          <span className="text-sm font-bold font-mono text-emerald-700 dark:text-emerald-300">
+                            ETB {totalEstimatedRequisition.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="space-y-3">
+                      {form.lines.map((line, idx) => (
+                        <div
+                          key={idx}
+                          className="bg-gray-50/70 dark:bg-gray-700/30 rounded-xl p-3.5 border border-gray-200 dark:border-gray-700/60 space-y-2.5 transition-all shadow-xs"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-semibold text-gray-600 dark:text-gray-300 flex items-center gap-1.5">
+                              <span className="w-5 h-5 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 flex items-center justify-center text-[10px] font-bold">
+                                {idx + 1}
+                              </span>
+                              Line Item #{idx + 1}
+                            </span>
+                            {form.lines.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => removeLine(idx)}
+                                className="p-1 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/30 text-red-500 transition-colors flex items-center gap-1 text-xs"
+                                title="Remove Line"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                                <span className="hidden sm:inline">Remove</span>
+                              </button>
+                            )}
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-start">
+                            {/* Item Category Filter */}
+                            <div className="md:col-span-3">
+                              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1 flex items-center gap-1">
+                                <Tag className="w-3 h-3 text-indigo-500" /> Category
+                              </label>
+                              <select
+                                value={line.categoryId || ""}
+                                onChange={(e) => handleLineCategoryChange(idx, e.target.value)}
+                                className="w-full px-2.5 py-2 text-xs border rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-colors shadow-xs"
+                              >
+                                <option value="">All Categories ({items.length})</option>
+                                {categories.map((c) => {
+                                  const count = items.filter(i => (i.category?.id ?? i.categoryId) === c.id).length;
+                                  return (
+                                    <option key={c.id} value={c.id}>
+                                      {c.categoryName} {count > 0 ? `(${count})` : ""}
+                                    </option>
+                                  );
+                                })}
+                              </select>
+                            </div>
+
+                            {/* Searchable Item Selection */}
+                            <div className="md:col-span-5">
+                              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1 flex items-center justify-between">
+                                <span className="flex items-center gap-1">
+                                  <Package className="w-3 h-3 text-indigo-500" /> Item <span className="text-red-500">*</span>
+                                </span>
+                                {line.itemId && (
+                                  <span className="text-[10px] text-gray-500">
+                                    {items.find(i => String(i.id) === String(line.itemId))?.unitOfMeasure?.unitCode
+                                      ? `Unit: ${items.find(i => String(i.id) === String(line.itemId))?.unitOfMeasure?.unitCode}`
+                                      : ""}
+                                  </span>
+                                )}
+                              </label>
+                              <SearchableItemSelect
+                                items={items}
+                                categories={categories}
+                                selectedItemId={line.itemId}
+                                lineCategoryId={line.categoryId}
+                                onSelect={(item) => handleItemSelect(idx, item)}
+                                onCategoryFilterChange={(catId) => handleLineCategoryChange(idx, catId)}
+                                hasError={Boolean(formErrors.lines?.[idx]?.itemId)}
+                              />
+                              {formErrors.lines?.[idx]?.itemId && (
+                                <p className="text-[11px] text-red-600 dark:text-red-400 mt-1 flex items-center gap-1">
+                                  <AlertCircle className="w-3 h-3" /> {formErrors.lines[idx].itemId}
+                                </p>
+                              )}
+                            </div>
+
+                            {/* Quantity */}
+                            <div className="md:col-span-2">
+                              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                Qty <span className="text-red-500">*</span>
+                              </label>
+                              <input
+                                type="number"
+                                min="1"
+                                value={line.requestedQuantity}
+                                onChange={(e) => updateLine(idx, "requestedQuantity", e.target.value)}
+                                placeholder="0"
+                                className={`w-full px-2.5 py-2 text-xs border rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono text-right shadow-xs transition-colors ${
+                                  formErrors.lines?.[idx]?.requestedQuantity
+                                    ? "border-red-500 ring-1 ring-red-500 bg-red-50/20"
+                                    : "border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                                }`}
+                              />
+                              {formErrors.lines?.[idx]?.requestedQuantity && (
+                                <p className="text-[11px] text-red-600 dark:text-red-400 mt-1 flex items-center gap-1">
+                                  <AlertCircle className="w-3 h-3" /> {formErrors.lines[idx].requestedQuantity}
+                                </p>
+                              )}
+                            </div>
+
+                            {/* Estimated Unit Cost */}
+                            <div className="md:col-span-2">
+                              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                Est. Cost <span className="text-red-500">*</span>
+                              </label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={line.estimatedUnitCost}
+                                onChange={(e) => updateLine(idx, "estimatedUnitCost", e.target.value)}
+                                placeholder="0.00"
+                                className={`w-full px-2.5 py-2 text-xs border rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono text-right shadow-xs transition-colors ${
+                                  formErrors.lines?.[idx]?.estimatedUnitCost
+                                    ? "border-red-500 ring-1 ring-red-500 bg-red-50/20"
+                                    : "border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                                }`}
+                              />
+                              {formErrors.lines?.[idx]?.estimatedUnitCost && (
+                                <p className="text-[11px] text-red-600 dark:text-red-400 mt-1 flex items-center gap-1">
+                                  <AlertCircle className="w-3 h-3" /> {formErrors.lines[idx].estimatedUnitCost}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Purpose / Remarks for line */}
+                          <div>
+                            <input
+                              value={line.purpose}
+                              onChange={(e) => updateLine(idx, "purpose", e.target.value)}
+                              placeholder="Usage purpose / remarks for this item (optional)"
+                              className="w-full px-2.5 py-1.5 text-xs border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder:text-gray-400 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={addLine}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 rounded-lg transition-colors border border-indigo-200/50 dark:border-indigo-800/50"
                     >
-                      <option value="">Select Item</option>
-                      {items.map(i => <option key={i.id} value={i.id}>{i.itemCode} — {i.itemName}</option>)}
-                    </select>
-                    {formErrors.lines?.[idx]?.itemId && (
-                      <p className="text-[11px] text-red-600 dark:text-red-400 mt-1">{formErrors.lines[idx].itemId}</p>
-                    )}
+                      <Plus className="w-3.5 h-3.5" /> Add Another Item Line
+                    </button>
                   </div>
-                  <div className="col-span-2">
-                    <label className="block text-xs text-gray-500 mb-1">
-                      Qty <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="number"
-                      min="1"
-                      value={line.requestedQuantity}
-                      onChange={(e) => updateLine(idx, "requestedQuantity", e.target.value)}
-                      className={`w-full px-2 py-1.5 text-sm border rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono text-right transition-colors ${
-                        formErrors.lines?.[idx]?.requestedQuantity ? "border-red-500 ring-1 ring-red-500 bg-red-50/20" : "border-gray-300 dark:border-gray-600"
-                      }`}
-                    />
-                    {formErrors.lines?.[idx]?.requestedQuantity && (
-                      <p className="text-[11px] text-red-600 dark:text-red-400 mt-1">{formErrors.lines[idx].requestedQuantity}</p>
-                    )}
-                  </div>
-                  <div className="col-span-2">
-                    <label className="block text-xs text-gray-500 mb-1">
-                      Est. Cost <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      value={line.estimatedUnitCost}
-                      onChange={(e) => updateLine(idx, "estimatedUnitCost", e.target.value)}
-                      className={`w-full px-2 py-1.5 text-sm border rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono text-right transition-colors ${
-                        formErrors.lines?.[idx]?.estimatedUnitCost ? "border-red-500 ring-1 ring-red-500 bg-red-50/20" : "border-gray-300 dark:border-gray-600"
-                      }`}
-                    />
-                    {formErrors.lines?.[idx]?.estimatedUnitCost && (
-                      <p className="text-[11px] text-red-600 dark:text-red-400 mt-1">{formErrors.lines[idx].estimatedUnitCost}</p>
-                    )}
-                  </div>
-                  <div className="col-span-3">
-                    <label className="block text-xs text-gray-500 mb-1">Purpose</label>
-                    <input
-                      value={line.purpose}
-                      onChange={(e) => updateLine(idx, "purpose", e.target.value)}
-                      placeholder="Usage purpose"
-                      className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    />
-                  </div>
-                  <div className="col-span-1 pt-6">
-                    {form.lines.length > 1 && (
-                      <button
-                        onClick={() => removeLine(idx)}
-                        className="p-1.5 rounded-lg hover:bg-red-50 text-red-500 transition-colors"
-                        title="Remove Line"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
-              <button
-                onClick={addLine}
-                className="text-sm text-indigo-600 hover:text-indigo-700 font-medium"
-              >
-                + Add Line
-              </button>
+                );
+              })()}
             </div>
             <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/30 sticky bottom-0">
               <button
                 onClick={() => setModalOpen(false)}
-                className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg"
+                className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg text-sm"
               >
                 Cancel
               </button>
               <button
                 onClick={handleCreate}
                 disabled={submitting}
-                className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-md font-medium disabled:opacity-50 flex items-center gap-2"
+                className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-md font-medium disabled:opacity-50 flex items-center gap-2 text-sm"
               >
                 {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
                 {submitting ? "Creating..." : "Create Requisition"}
@@ -829,7 +1432,7 @@ export default function InvPurchaseRequisitionsPage() {
 
       {/* ─── Detail Modal with Stepper & Chronological Audit Trail ─ */}
       {detailModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+        <div className="fixed inset-0 z-99999 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 pt-8 sm:pt-14 overflow-y-auto">
           <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-3xl mx-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
               <div className="flex items-center gap-3">
@@ -1036,7 +1639,7 @@ export default function InvPurchaseRequisitionsPage() {
 
       {/* ─── Approval Modal with Remarks ─────────────────────── */}
       {approveModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+        <div className="fixed inset-0 z-99999 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 pt-8 sm:pt-14 overflow-y-auto">
           <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
             <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-green-50 dark:bg-green-900/20">
               <h2 className="text-lg font-bold text-green-700 dark:text-green-300 flex items-center gap-2">
@@ -1085,7 +1688,7 @@ export default function InvPurchaseRequisitionsPage() {
 
       {/* ─── Reject Modal with Mandatory Reason ──────────────── */}
       {rejectModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+        <div className="fixed inset-0 z-99999 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 pt-8 sm:pt-14 overflow-y-auto">
           <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
             <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-red-50 dark:bg-red-900/20">
               <h2 className="text-lg font-bold text-red-600 flex items-center gap-2">

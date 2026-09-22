@@ -7,9 +7,11 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import jakarta.persistence.*;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 @Entity
 @Table(name = "inv_purchase_requisition")
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 public class InvPurchaseRequisition implements Serializable {
     private static final long serialVersionUID = 1L;
 
@@ -22,6 +24,7 @@ public class InvPurchaseRequisition implements Serializable {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "store_id", nullable = false)
+    @JsonIgnoreProperties({"hibernateLazyInitializer", "handler", "branch", "storeKeeper", "manager"})
     private InvStore store;
 
     @Column(name = "requested_by", nullable = false, length = 100)

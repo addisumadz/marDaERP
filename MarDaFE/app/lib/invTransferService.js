@@ -34,9 +34,15 @@ class InvTransferService {
     return res.data;
   }
 
-  async approve(id) {
+  async updateLines(id, lines) {
     const token = getAccesToken();
-    const res = await axios.put(`${commonUrl}inv-transfers/${id}/approve`, {}, { headers: authHeader(token) });
+    const res = await axios.put(`${commonUrl}inv-transfers/${id}/update-lines`, { lines }, { headers: authHeader(token) });
+    return res.data;
+  }
+
+  async approve(id, data = {}) {
+    const token = getAccesToken();
+    const res = await axios.put(`${commonUrl}inv-transfers/${id}/approve`, data, { headers: authHeader(token) });
     return res.data;
   }
 

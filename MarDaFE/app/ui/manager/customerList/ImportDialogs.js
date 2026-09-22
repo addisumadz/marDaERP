@@ -167,14 +167,41 @@ const ImportDialogs = ({
     });
   }, [updateGpsMatchedCustomers, gpsSortField, gpsSortOrder]);
 
+  const handleExportSkippedRows = (skippedRows) => {
+    if (!skippedRows?.length) return;
+    const rows = skippedRows.map((r, i) => ({
+      "#": r.rowNum || i + 1,
+      "Account Number": r.accountNumber || "N/A",
+      "Error Details":
+        r.message ||
+        r.reason ||
+        (typeof r.error === "string" ? r.error : JSON.stringify(r.error)) ||
+        "Unknown error",
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Skipped_Errors");
+    XLSX.writeFile(wb, `Import_Errors_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  };
+
   // Helper to render skipped rows table
   const renderSkippedRows = (skippedRows) => {
     if (!skippedRows?.length) return null;
     return (
       <Box>
-        <Typography variant="h6" gutterBottom>
-          Skipped Rows
-        </Typography>
+        <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 1 }}>
+          <Typography variant="h6">
+            Skipped / Errored Rows ({skippedRows.length})
+          </Typography>
+          <Button
+            size="small"
+            variant="outlined"
+            color="error"
+            onClick={() => handleExportSkippedRows(skippedRows)}
+          >
+            Export Errors to Excel
+          </Button>
+        </Box>
         <TableContainer component={Paper} sx={{ maxHeight: 400, overflow: "auto" }}>
           <Table size="small" stickyHeader>
             <TableHead>
@@ -883,28 +910,6 @@ const ImportDialogs = ({
         </DialogActions>
       </Dialog>
 
-      {/* Basic Deactivation Confirmation (legacy) */}
-      {deactivatingCustomerId && (
-        <Dialog
-          open={!!deactivatingCustomerId}
-          onClose={onCancelDeactivation}
-        >
-          <DialogTitle>Confirm Deactivation</DialogTitle>
-          <DialogContent>
-            Are you sure you want to deactivate this customer?
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={onCancelDeactivation}>Cancel</Button>
-            <Button
-              color="error"
-              onClick={onConfirmDeactivation}
-              disabled={isDeactivating}
-            >
-              Deactivate
-            </Button>
-          </DialogActions>
-        </Dialog>
-      )}
     </>
   );
 };

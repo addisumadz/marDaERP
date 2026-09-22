@@ -65,9 +65,27 @@ public class InvStockTransferController {
         catch (Exception e) { return ResponseEntity.badRequest().body(java.util.Collections.singletonMap("message", e.getMessage() != null ? e.getMessage() : e.toString())); }
     }
 
+    @PutMapping("/{id}/update-lines")
+    public ResponseEntity<?> updateLines(@PathVariable long id, @RequestBody Map<String, Object> body, Principal principal) {
+        try {
+            String username = principal != null ? principal.getName() : "system";
+            List<Map<String, Object>> lineData = (List<Map<String, Object>>) body.get("lines");
+            return ResponseEntity.ok(service.updateLines(id, lineData, username));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(java.util.Collections.singletonMap("message", e.getMessage() != null ? e.getMessage() : e.toString()));
+        }
+    }
+
     @PutMapping("/{id}/approve")
-    public ResponseEntity<?> approve(@PathVariable long id, Principal principal) {
-        try { return ResponseEntity.ok(service.approve(id, principal != null ? principal.getName() : "system")); }
+    public ResponseEntity<?> approve(@PathVariable long id, @RequestBody(required = false) Map<String, Object> body, Principal principal) {
+        try {
+            String username = principal != null ? principal.getName() : "system";
+            if (body != null && body.containsKey("lines")) {
+                List<Map<String, Object>> lineData = (List<Map<String, Object>>) body.get("lines");
+                service.updateLines(id, lineData, username);
+            }
+            return ResponseEntity.ok(service.approve(id, username));
+        }
         catch (Exception e) { return ResponseEntity.badRequest().body(java.util.Collections.singletonMap("message", e.getMessage() != null ? e.getMessage() : e.toString())); }
     }
 

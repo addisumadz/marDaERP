@@ -1,4 +1,31 @@
 
+
+---- mardaarif 
+
+-- MardaArif send/cancel/paid flags
+ALTER TABLE billing_reading ADD COLUMN is_send_to_bank_mardaarif TINYINT(1) DEFAULT 0 NULL;
+ALTER TABLE billing_reading ADD COLUMN is_bank_canceled_mardaarif TINYINT(1) DEFAULT 0 NULL;
+ALTER TABLE billing_reading ADD COLUMN is_mardaarif_paid TINYINT(1) DEFAULT 0 NULL;
+
+-- MardaArif payment tracking fields
+ALTER TABLE billing_reading ADD COLUMN m_bank_paid_agent_id VARCHAR(255) NULL;
+ALTER TABLE billing_reading ADD COLUMN m_bank_paid_confirmation_code VARCHAR(255) NULL;
+ALTER TABLE billing_reading ADD COLUMN m_money_collected_date DATE NULL;
+ALTER TABLE billing_reading ADD COLUMN m_bank_due_date DATE NULL;
+ALTER TABLE billing_reading ADD COLUMN m_bank_upload_date DATE NULL;
+
+-- MardaArif bank relationship (foreign key to billing_banks)
+ALTER TABLE billing_reading ADD COLUMN m_billing_bank_id INT NULL;
+ALTER TABLE billing_reading ADD CONSTRAINT fk_billing_reading_m_billing_bank FOREIGN KEY (m_billing_bank_id) REFERENCES billing_banks(id);
+
+
+
+-- MardaArif API connection configuration
+ALTER TABLE company_profile ADD COLUMN m_company_uri VARCHAR(200) NULL;
+ALTER TABLE company_profile ADD COLUMN m_company_file_url VARCHAR(100) NULL;
+ALTER TABLE company_profile ADD COLUMN m_company_key VARCHAR(400) NULL;
+
+
 -------------------------------- finance UPDATE
 ALTER TABLE billing_reading ADD COLUMN reader_gps VARCHAR(255) NULL AFTER bill_description_bank;
 
@@ -165,20 +192,20 @@ ON fnc_journal_entry (billing_month);
 
 ALTER TABLE `billing_reading`
   ADD COLUMN `m_billing_additional_payment_1_value` DOUBLE NULL DEFAULT NULL AFTER `techemari_kfya`,
-  ADD COLUMN `m_billing_additional_payment_1_value_lable` DOUBLE NULL DEFAULT NULL AFTER `m_billing_additional_payment_1_value`,
+  ADD COLUMN `m_billing_additional_payment_1_value_lable` VARCHAR(255) NULL DEFAULT NULL AFTER `m_billing_additional_payment_1_value`,
   ADD COLUMN `m_billing_additional_payment_2_value` DOUBLE NULL DEFAULT NULL AFTER `m_billing_additional_payment_1_value_lable`,
-  ADD COLUMN `m_billing_additional_payment_2_value_lable` DOUBLE NULL DEFAULT NULL AFTER `m_billing_additional_payment_2_value`,
+  ADD COLUMN `m_billing_additional_payment_2_value_lable` VARCHAR(255) NULL DEFAULT NULL AFTER `m_billing_additional_payment_2_value`,
   ADD COLUMN `m_billing_additional_payment_1_wuzif` DOUBLE NULL DEFAULT NULL AFTER `m_billing_additional_payment_2_value_lable`,
   ADD COLUMN `m_billing_additional_payment_2_wuzif` DOUBLE NULL DEFAULT NULL AFTER `m_billing_additional_payment_1_wuzif`;
 
 
 ALTER TABLE `company_profile`
-  ADD COLUMN `m_billing_additional_payment_1_value_lable` DOUBLE NULL DEFAULT NULL AFTER `m_company_key`,
+  ADD COLUMN `m_billing_additional_payment_1_value_lable` VARCHAR(200) NULL DEFAULT NULL AFTER `m_company_key`,
   ADD COLUMN `m_billing_additional_payment_1_value` DOUBLE NULL DEFAULT NULL AFTER `m_billing_additional_payment_1_value_lable`,
-  ADD COLUMN `m_billing_additional_payment_1_value_option` DOUBLE NULL DEFAULT NULL AFTER `m_billing_additional_payment_1_value`,
-  ADD COLUMN `m_billing_additional_payment_2_value_lable` DOUBLE NULL DEFAULT NULL AFTER `m_billing_additional_payment_1_value_option`,
+  ADD COLUMN `m_billing_additional_payment_1_value_option` VARCHAR(50) NULL DEFAULT NULL AFTER `m_billing_additional_payment_1_value`,
+  ADD COLUMN `m_billing_additional_payment_2_value_lable` VARCHAR(200) NULL DEFAULT NULL AFTER `m_billing_additional_payment_1_value_option`,
   ADD COLUMN `m_billing_additional_payment_2_value` DOUBLE NULL DEFAULT NULL AFTER `m_billing_additional_payment_2_value_lable`,
-  ADD COLUMN `m_billing_additional_payment_2_value_option` DOUBLE NULL DEFAULT NULL AFTER `m_billing_additional_payment_2_value`;
+  ADD COLUMN `m_billing_additional_payment_2_value_option` VARCHAR(50) NULL DEFAULT NULL AFTER `m_billing_additional_payment_2_value`;
 
 
 

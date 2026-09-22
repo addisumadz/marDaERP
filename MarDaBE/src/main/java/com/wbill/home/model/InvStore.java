@@ -3,9 +3,11 @@ package com.wbill.home.model;
 import java.io.Serializable;
 import java.time.LocalDateTime;
 import jakarta.persistence.*;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 @Entity
 @Table(name = "inv_store")
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 public class InvStore implements Serializable {
     private static final long serialVersionUID = 1L;
 
@@ -24,6 +26,7 @@ public class InvStore implements Serializable {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "branch_id")
+    @JsonIgnoreProperties({"hibernateLazyInitializer", "handler", "branchKebele"})
     private Branch branch;
 
     @Column(name = "is_main_store", nullable = false)
@@ -31,10 +34,12 @@ public class InvStore implements Serializable {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "store_keeper_id")
+    @JsonIgnoreProperties({"hibernateLazyInitializer", "handler", "branch", "userRole", "password", "signature", "photo", "registeredBy", "modifiedBy"})
     private UserAccount storeKeeper;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "manager_id")
+    @JsonIgnoreProperties({"hibernateLazyInitializer", "handler", "branch", "userRole", "password", "signature", "photo", "registeredBy", "modifiedBy"})
     private UserAccount manager;
 
     @Column(name = "location", length = 200)

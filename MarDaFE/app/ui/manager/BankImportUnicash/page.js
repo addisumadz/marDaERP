@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState, useEffect, useRef } from "react";
+import { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import {
   MaterialReactTable,
   useMaterialReactTable,
@@ -28,11 +28,18 @@ import {
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import Breadcrumb from "@/app/ui/components/Breadcrumbs/Breadcrumb";
+import ProPeriodPicker from "@/app/ui/components/ProPeriodPicker";
+import { ETH_MONTHS_AM } from "@/app/helpers/constants";
+import { ReadingService } from "@/app/lib/ReadingService";
+import { CampanyProfileService } from "@/app/lib/campanyProfileService";
 import bankUnicashService from "@/app/lib/bankUnicashService";
 import billingBanksService from "@/app/lib/billingBanksService";
 import { UnicashPaymentImportService } from "@/app/lib/unicashPaymentImportService";
 import EtDatePicker from "mui-ethiopian-datepicker";
 var ethiopianDate = require("ethiopian-date");
+
+const readingService = new ReadingService();
+const companyProfileService = new CampanyProfileService();
 
 const unicashPaymentImportService = new UnicashPaymentImportService();
 
@@ -78,8 +85,10 @@ const BankImportUnicash = () => {
   ];
   const [selectedKifyaWerMonth, setSelectedKifyaWerMonth] = useState("");
   const [selectedKifyaWerYear, setSelectedKifyaWerYear] = useState("");
+  const [currentCycleMonth, setCurrentCycleMonth] = useState("");
+  const [currentCycleYear, setCurrentCycleYear] = useState("");
   const currentGregorianDate = new Date();
-  const [ethYear] = ethiopianDate.toEthiopian(
+  const [ethYear, ethMonth] = ethiopianDate.toEthiopian(
     currentGregorianDate.getFullYear(),
     currentGregorianDate.getMonth() + 1,
     currentGregorianDate.getDate()
@@ -89,6 +98,54 @@ const BankImportUnicash = () => {
     for (let i = ethYear - 5; i <= ethYear + 1; i++) years.push(i);
     return years;
   }, [ethYear]);
+
+  const { data: companyProfile } = useQuery({
+    queryKey: ["bank_import_unicash_companyProfile"],
+    queryFn: () => companyProfileService.getCampanyProfile(),
+    staleTime: 15 * 60 * 1000,
+  });
+
+  const { data: dbPeriods = [] } = useQuery({
+    queryKey: ["distinctKifyaWer"],
+    queryFn: () => readingService.getDistinctKifyaWerList(),
+    staleTime: 15 * 60 * 1000,
+  });
+
+  const handlePeriodChange = useCallback((newMonth, newYear) => {
+    setSelectedKifyaWerMonth(newMonth);
+    setSelectedKifyaWerYear(String(newYear));
+  }, []);
+
+  useEffect(() => {
+    if (companyProfile && companyProfile.activeReadingDate) {
+      try {
+        const activeDate = new Date(companyProfile.activeReadingDate);
+        if (!isNaN(activeDate.getTime())) {
+          const [eYear, eMonth] = ethiopianDate.toEthiopian(
+            activeDate.getFullYear(),
+            activeDate.getMonth() + 1,
+            activeDate.getDate()
+          );
+          const monthIndex = Math.min(eMonth, 12) - 1;
+          const cycleMonth = ETH_MONTHS_AM[monthIndex];
+          setCurrentCycleMonth(cycleMonth);
+          setCurrentCycleYear(String(eYear));
+          setSelectedKifyaWerMonth((prev) => prev || cycleMonth);
+          setSelectedKifyaWerYear((prev) => prev || String(eYear));
+          return;
+        }
+      } catch (e) {
+        console.error("Error parsing activeReadingDate:", e);
+      }
+    }
+
+    const monthIndex = Math.min(ethMonth || 1, 12) - 1;
+    const cycleMonth = ETH_MONTHS_AM[monthIndex];
+    setCurrentCycleMonth(cycleMonth);
+    setCurrentCycleYear(String(ethYear));
+    setSelectedKifyaWerMonth((prev) => prev || cycleMonth);
+    setSelectedKifyaWerYear((prev) => prev || String(ethYear));
+  }, [companyProfile, ethYear, ethMonth]);
 
   // Format a JS Date to YYYY-MM-DD (Gregorian) for API calls
   const formatDateGC = (d) => {
@@ -591,37 +648,16 @@ const BankImportUnicash = () => {
             <Typography variant="h6" gutterBottom>
               Step 2: Process CSV Data
             </Typography>
-            <Box sx={{ display: "flex", gap: 2, alignItems: "center", mb: 2 }}>
-              <FormControl sx={{ minWidth: 180 }} size="small">
-                <InputLabel id="kifyaWer-month-label">Month (EC)</InputLabel>
-                <Select
-                  labelId="kifyaWer-month-label"
-                  label="Month (EC)"
-                  value={selectedKifyaWerMonth}
-                  onChange={(e) => setSelectedKifyaWerMonth(e.target.value)}
-                >
-                  {ethiopianMonths.map((m) => (
-                    <MenuItem key={m} value={m}>
-                      {m}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-              <FormControl sx={{ minWidth: 140 }} size="small">
-                <InputLabel id="kifyaWer-year-label">Year (EC)</InputLabel>
-                <Select
-                  labelId="kifyaWer-year-label"
-                  label="Year (EC)"
-                  value={selectedKifyaWerYear}
-                  onChange={(e) => setSelectedKifyaWerYear(e.target.value)}
-                >
-                  {yearOptions.map((y) => (
-                    <MenuItem key={y} value={y}>
-                      {y}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
+            <Box sx={{ mb: 2 }}>
+              <ProPeriodPicker
+                selectedMonth={selectedKifyaWerMonth}
+                selectedYear={selectedKifyaWerYear}
+                onPeriodChange={handlePeriodChange}
+                currentCycleMonth={currentCycleMonth}
+                currentCycleYear={currentCycleYear}
+                dbPeriods={dbPeriods}
+                disabled={processing}
+              />
             </Box>
             <Button
               variant="contained"

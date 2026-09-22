@@ -89,7 +89,10 @@ public class WebSecurityConfig {
                     "http://196.189.51.123",
                     "http://196.189.51.123:9000",
                     "http://196.190.220.35:3001",
-                    "http://10.116.212.31:9000");
+                    "http://10.116.212.31:9000",
+                    "http://196.189.236.14:9000",
+                    "http://196.189.236.14:3000",
+                    "http://196.189.236.14");
         }
         configuration.setAllowedOriginPatterns(origins);
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));

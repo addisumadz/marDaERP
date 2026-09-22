@@ -5,7 +5,7 @@ import { toast } from "react-toastify";
 import customNewLineConnectionService from "../../../lib/custom_newLineConnectionService";
 import { generateCostEstimationPdf } from "./customNewLinePdf";
 
-export default function CustomMaterialSurveyModal({ isOpen, onClose, onSuccess, request }) {
+export default function CustomMaterialSurveyModal({ isOpen, onClose, onSuccess, request, onRejectSurvey }) {
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [commonMaterials, setCommonMaterials] = useState([]);
@@ -876,7 +876,20 @@ export default function CustomMaterialSurveyModal({ isOpen, onClose, onSuccess, 
           <span className="text-xs text-gray-500 font-mono">
             {items.length} እቃዎች | ጠቅላላ ተከፋይ: ETB {totals.totalPayable.toFixed(2)}
           </span>
-          <div className="flex gap-3">
+          <div className="flex items-center gap-2.5">
+            {onRejectSurvey && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onRejectSurvey(request);
+                }}
+                disabled={submitting}
+                className="px-3 py-2 text-xs font-bold text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 dark:bg-red-950/40 dark:hover:bg-red-900/50 rounded-lg border border-red-200 dark:border-red-800 transition-colors"
+              >
+                ያልተፈቀደ / አይቻልም (ውድቅ አድርግ)
+              </button>
+            )}
             <button
               type="button"
               onClick={onClose}

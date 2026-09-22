@@ -1,7 +1,20 @@
 "use client";
-import { useMemo, useState, useRef, useCallback } from "react";
+import { useMemo, useState, useRef, useCallback, useEffect } from "react";
 import { MaterialReactTable, useMaterialReactTable } from "material-react-table";
-import { Box, Grid, Paper, Typography, Tooltip, IconButton, Tabs, Tab, Snackbar, Alert, Dialog, DialogTitle, DialogContent, DialogActions, Button } from "@mui/material";
+import {
+  Box,
+  Grid,
+  Paper,
+  Typography,
+  Tooltip,
+  IconButton,
+  Tabs,
+  Tab,
+  Snackbar,
+  Alert,
+  Chip,
+  Button,
+} from "@mui/material";
 import * as XLSX from "xlsx";
 
 import {
@@ -13,59 +26,152 @@ import {
 } from "@tanstack/react-query";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
+
 import { CustomerService } from "../../../lib/customerService";
 import { DropdownService } from "../../../lib/dropdownService";
+import { ReadingService } from "../../../lib/ReadingService";
 import Breadcrumb from "@/app/ui/components/Breadcrumbs/Breadcrumb";
+import ConfirmDialog from "@/app/ui/components/ConfirmDialog";
+import { amharicFuzzyFilter } from "../../../lib/amharicFuzzyFilter";
+import { generateWordVariants } from "../../../lib/amharicSearchUtils";
+import { transliterateToAmharic } from "../../../helpers/amharicInput";
+import EthiopianCalendarConverterPure from "../../../lib/ethiopianCalendarConverterPure";
+
+// Modals
 import ViewCustomerModal from "./ViewCustomerModal";
 import CustomerFormModal from "./CustomerFormModal";
 import MetersModal from "./MetersModal";
 import CustomerStatusModal from "./CustomerStatusModal";
-import EditIcon from "@mui/icons-material/Edit";
-import DeleteIcon from "@mui/icons-material/Delete";
-import AddIcon from "@mui/icons-material/Add";
-import VisibilityIcon from "@mui/icons-material/Visibility";
-import { amharicFuzzyFilter } from "../../../lib/amharicFuzzyFilter";
-import EthiopianCalendarConverterPure from "../../../lib/ethiopianCalendarConverterPure";
-import { ReadingService } from "../../../lib/ReadingService";
-import { useEffect } from "react";
+import BulkActionsDialogs from "./BulkActionsDialogs";
+import ImportDialogs from "./ImportDialogs";
 
 // Sub-components
 import ErrorBoundary from "./ErrorBoundary";
 import CustomerFilters from "./CustomerFilters";
 import CustomerBillsPanel from "./CustomerBillsPanel";
-import BulkActionsDialogs from "./BulkActionsDialogs";
-import ImportDialogs from "./ImportDialogs";
 import CustomerToolbar from "./CustomerToolbar";
 
-// Single module-level service instances (no duplicates)
+// Icons
+import EditIcon from "@mui/icons-material/Edit";
+import DeleteIcon from "@mui/icons-material/Delete";
+import AddIcon from "@mui/icons-material/Add";
+import VisibilityIcon from "@mui/icons-material/Visibility";
+import AssignmentIndIcon from "@mui/icons-material/AssignmentInd";
+import CleaningServicesIcon from "@mui/icons-material/CleaningServices";
+import PaymentsIcon from "@mui/icons-material/Payments";
+import DownloadIcon from "@mui/icons-material/Download";
+import PeopleIcon from "@mui/icons-material/People";
+import PersonOffIcon from "@mui/icons-material/PersonOff";
+import AccountBalanceWalletIcon from "@mui/icons-material/AccountBalanceWallet";
+import WarningIcon from "@mui/icons-material/Warning";
+import SpeedIcon from "@mui/icons-material/Speed";
+
+// Service instances
 const readingService = new ReadingService();
 const customerService = new CustomerService();
 const dropdownService = new DropdownService();
+
+// =========================================================================
+// PRO-LEVEL BILINGUAL SEARCH FILTERS (AMHARIC + ENGLISH + GLOBAL SEARCH)
+// =========================================================================
+
+const bilingualNameFilter = (row, columnId, filterValue) => {
+  if (!row || !row.original || !filterValue) return false;
+  const q = String(filterValue).trim();
+  if (!q) return true;
+
+  const amharic = String(row.original.fullName || "").trim();
+  const english = String(row.original.fullNameEng || "").trim();
+  const qLower = q.toLowerCase();
+
+  // 1. Direct English substring match
+  if (english.toLowerCase().includes(qLower)) return true;
+
+  // 2. Direct Amharic substring match
+  if (amharic.toLowerCase().includes(qLower)) return true;
+
+  // 3. Transliterate English phonetically to Amharic and check Amharic name
+  try {
+    const transliterated = transliterateToAmharic(q, "phonetic");
+    if (transliterated && amharic.includes(transliterated)) return true;
+  } catch (e) {}
+
+  // 4. Amharic fuzzy / variants match
+  try {
+    const normalized = amharic.replace(/\s+/g, "").toLowerCase();
+    const variants = generateWordVariants(q.replace(/\s+/g, "").toLowerCase());
+    if (variants.some((v) => normalized.includes(v))) return true;
+  } catch (e) {}
+
+  return false;
+};
+
+const bilingualGlobalFilter = (row, columnIds, filterValue) => {
+  if (!filterValue) return true;
+  const q = String(filterValue).trim().toLowerCase();
+  if (!q) return true;
+
+  const c = row.original;
+  if (!c) return false;
+
+  // 1. Account Number
+  if (c.accountNumber && String(c.accountNumber).toLowerCase().includes(q)) return true;
+
+  // 2. English Name
+  if (c.fullNameEng && String(c.fullNameEng).toLowerCase().includes(q)) return true;
+
+  // 3. Amharic Name (plain, transliterated, and fuzzy variants)
+  if (c.fullName) {
+    const amharicLower = String(c.fullName).toLowerCase();
+    if (amharicLower.includes(q)) return true;
+    try {
+      const transliterated = transliterateToAmharic(q, "phonetic");
+      if (transliterated && amharicLower.includes(transliterated)) return true;
+    } catch (e) {}
+    try {
+      const normalized = amharicLower.replace(/\s+/g, "");
+      const variants = generateWordVariants(q.replace(/\s+/g, ""));
+      if (variants.some((v) => normalized.includes(v))) return true;
+    } catch (e) {}
+  }
+
+  // 4. Phone Number
+  if (c.phoneNumber && String(c.phoneNumber).toLowerCase().includes(q)) return true;
+
+  // 5. Meter Number
+  if (c.meterNumber && String(c.meterNumber).toLowerCase().includes(q)) return true;
+
+  // 6. National ID / House Number
+  if (c.nationalIdNumber && String(c.nationalIdNumber).toLowerCase().includes(q)) return true;
+  if (c.houseNumber && String(c.houseNumber).toLowerCase().includes(q)) return true;
+
+  return false;
+};
 
 const CustomerList = () => {
   const queryClient = useQueryClient();
 
   // =====================================================================
-  // STATE DECLARATIONS (all grouped at top)
+  // STATE DECLARATIONS
   // =====================================================================
 
   // Customer selection & tabs
   const [viewedCustomerId, setViewedCustomerId] = useState(null);
   const [rowSelection, setRowSelection] = useState({});
   const [selectedCustomerId, setSelectedCustomerId] = useState(null);
-  const [activeCustomerTab, setActiveCustomerTab] = useState(0);
+  const [activeCustomerTab, setActiveCustomerTab] = useState(0); // 0=Active, 1=Deleted
   const [activeBillTab, setActiveBillTab] = useState(0);
 
   // Modals
   const [isCreateModalOpen, setCreateModalOpen] = useState(false);
   const [editingCustomerId, setEditingCustomerId] = useState(null);
-  const [deactivatingCustomerId, setDeactivatingCustomerId] = useState(null);
   const [isMetersOpen, setMetersOpen] = useState(false);
+  const [metersCustomerId, setMetersCustomerId] = useState(null);
   const [statusModalOpen, setStatusModalOpen] = useState(false);
   const [statusModalMode, setStatusModalMode] = useState(null);
   const [statusCustomerId, setStatusCustomerId] = useState(null);
 
-  // Complete Delete confirmation (replaces window.confirm)
+  // Complete Delete confirmation
   const [completeDeleteDialogOpen, setCompleteDeleteDialogOpen] = useState(false);
   const [completeDeleteCustomerId, setCompleteDeleteCustomerId] = useState(null);
 
@@ -78,6 +184,7 @@ const CustomerList = () => {
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
   const [assignScope, setAssignScope] = useState("");
   const [assignReaderId, setAssignReaderId] = useState("");
+  const [bulkBranchId, setBulkBranchId] = useState("");
 
   // Filters
   const [selectedCustomerTypeId, setSelectedCustomerTypeId] = useState("");
@@ -93,7 +200,7 @@ const CustomerList = () => {
   const [filterHasDryWaste, setFilterHasDryWaste] = useState("");
   const [filterHasAdditionalPayment, setFilterHasAdditionalPayment] = useState("");
 
-  // Import/Update
+  // Import/Update Dialogs
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [importResult, setImportResult] = useState(null);
   const [confirmImportOpen, setConfirmImportOpen] = useState(false);
@@ -140,7 +247,8 @@ const CustomerList = () => {
     if (dateValue instanceof Date) return dateValue;
     if (typeof dateValue === "string") {
       try {
-        return new Date(dateValue);
+        const d = new Date(dateValue);
+        if (!isNaN(d.getTime())) return d;
       } catch (error) {
         return null;
       }
@@ -148,7 +256,20 @@ const CustomerList = () => {
     return null;
   };
 
-  // Unified filter change handler
+  const parseFilterDate = (val) => {
+    if (!val) return null;
+    if (val instanceof Date) return val;
+    if (typeof val === "string") {
+      const d = new Date(val);
+      if (!isNaN(d.getTime())) return d;
+      try {
+        const parsed = EthiopianCalendarConverterPure.fromEthiopianInputValue(val);
+        if (parsed instanceof Date && !isNaN(parsed.getTime())) return parsed;
+      } catch (e) {}
+    }
+    return null;
+  };
+
   const handleFilterChange = useCallback((filterName, value) => {
     const setters = {
       selectedCustomerTypeId: setSelectedCustomerTypeId,
@@ -182,6 +303,8 @@ const CustomerList = () => {
     setFilterMeterChanged("");
     setFilterHasDryWaste("");
     setFilterHasAdditionalPayment("");
+    setAssignScope("");
+    setRowSelection({});
   }, []);
 
   const handleCloseSnackbar = () => {
@@ -222,12 +345,13 @@ const CustomerList = () => {
   });
 
   const { data: readers = [], isLoading: isReadersLoading } = useQuery({
-    queryKey: ["readers", selectedBranchId],
+    queryKey: ["readers", selectedBranchId || bulkBranchId],
     queryFn: () => {
-      if (!selectedBranchId) return [];
-      return dropdownService.getReadersByBranch(selectedBranchId);
+      const bId = selectedBranchId || bulkBranchId;
+      if (!bId) return [];
+      return dropdownService.getReadersByBranch(bId);
     },
-    enabled: !!selectedBranchId,
+    enabled: !!(selectedBranchId || bulkBranchId),
     refetchOnWindowFocus: false,
   });
 
@@ -241,7 +365,6 @@ const CustomerList = () => {
     refetchOnWindowFocus: false,
   });
 
-  // Cached fetchers for child modals
   const getKetenasByKebeleCached = async (kebeleId) => {
     if (!kebeleId) return [];
     return queryClient.fetchQuery({
@@ -270,8 +393,7 @@ const CustomerList = () => {
   } = useQuery({
     queryKey: ["customers-all"],
     queryFn: async () => {
-      const data = await customerService.getAllCustomers();
-      return data;
+      return customerService.getAllCustomers();
     },
     keepPreviousData: true,
     staleTime: 5 * 60 * 1000,
@@ -299,7 +421,7 @@ const CustomerList = () => {
     enabled: !!editingCustomerId,
   });
 
-  // Combined bill data
+  // Combined bill data for selected customer
   const {
     data: combinedBillData,
     isLoading: isBillsLoading,
@@ -314,13 +436,51 @@ const CustomerList = () => {
     staleTime: 0,
     cacheTime: 0,
     refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-    refetchOnMount: false,
   });
 
   // =====================================================================
-  // COMPUTED DATA
+  // COMPUTED DATA & EXECUTIVE KPIS
   // =====================================================================
+
+  const kpiStats = useMemo(() => {
+    let totalActive = 0;
+    let totalDeleted = 0;
+    let totalCompleteDeleted = 0;
+    let totalPrepaid = 0;
+    let totalArrears = 0;
+    let unassignedReaders = 0;
+    let hasDryWasteCount = 0;
+
+    (allCustomers || []).forEach((c) => {
+      if (c.completeDeleted === "deleted") {
+        totalCompleteDeleted++;
+      } else if (c.status === "deleted") {
+        totalDeleted++;
+      } else {
+        totalActive++;
+      }
+
+      const prepaid = Number(c.customerBalanceBirr || c.prepaidBirrCurrentBalance || 0);
+      if (prepaid > 0) totalPrepaid += prepaid;
+
+      const arrears = Number(c.oldKfyaAndPenaltyTotal || 0);
+      if (arrears > 0) totalArrears += arrears;
+
+      if (!c.assignedReaderId) unassignedReaders++;
+      if (Number(c.additionalMonthlyPayment || 0) > 0) hasDryWasteCount++;
+    });
+
+    return {
+      totalActive,
+      totalDeleted,
+      totalCompleteDeleted,
+      totalCount: (allCustomers || []).length,
+      totalPrepaid,
+      totalArrears,
+      unassignedReaders,
+      hasDryWasteCount,
+    };
+  }, [allCustomers]);
 
   const activeCustomers = useMemo(
     () => (allCustomers || []).filter((c) => c.status === "active"),
@@ -336,19 +496,29 @@ const CustomerList = () => {
     let result = activeCustomerTab === 0 ? [...activeCustomers] : [...deletedCustomers];
 
     if (selectedCustomerTypeId) {
-      result = result.filter((c) => c.customerTypeId && String(c.customerTypeId) === String(selectedCustomerTypeId));
+      result = result.filter(
+        (c) => c.customerTypeId && String(c.customerTypeId) === String(selectedCustomerTypeId)
+      );
     }
     if (selectedKebeleId) {
-      result = result.filter((c) => c.addressStreetsId && String(c.addressStreetsId) === String(selectedKebeleId));
+      result = result.filter(
+        (c) => c.addressStreetsId && String(c.addressStreetsId) === String(selectedKebeleId)
+      );
     }
     if (selectedKetenaId) {
-      result = result.filter((c) => c.addressKetenaId && String(c.addressKetenaId) === String(selectedKetenaId));
+      result = result.filter(
+        (c) => c.addressKetenaId && String(c.addressKetenaId) === String(selectedKetenaId)
+      );
     }
     if (selectedBranchId) {
-      result = result.filter((c) => c.branchsId && String(c.branchsId) === String(selectedBranchId));
+      result = result.filter(
+        (c) => c.branchsId && String(c.branchsId) === String(selectedBranchId)
+      );
     }
     if (selectedReaderId) {
-      result = result.filter((c) => c.assignedReaderId && String(c.assignedReaderId) === String(selectedReaderId));
+      result = result.filter(
+        (c) => c.assignedReaderId && String(c.assignedReaderId) === String(selectedReaderId)
+      );
     }
     if (filterOldPenalty === "true") {
       result = result.filter((c) => c.oldHasPenalty === true);
@@ -356,20 +526,25 @@ const CustomerList = () => {
       result = result.filter((c) => c.oldHasPenalty === false);
     }
     if (filterRegistrationDateFrom || filterRegistrationDateTo) {
-      result = result.filter((c) => {
-        const regDate = c.registeredDate;
-        if (!regDate) return false;
-        let customerDate = typeof regDate === "string" ? new Date(regDate) : regDate instanceof Date ? regDate : null;
-        if (!customerDate) return false;
-        if (filterRegistrationDateFrom instanceof Date && customerDate < filterRegistrationDateFrom) return false;
-        if (filterRegistrationDateTo instanceof Date && customerDate > filterRegistrationDateTo) return false;
-        return true;
-      });
+      const fromDate = parseFilterDate(filterRegistrationDateFrom);
+      const toDate = parseFilterDate(filterRegistrationDateTo);
+      if (fromDate || toDate) {
+        result = result.filter((c) => {
+          const regDate = c.registeredDate;
+          if (!regDate) return false;
+          const cDate =
+            typeof regDate === "string" ? new Date(regDate) : regDate instanceof Date ? regDate : null;
+          if (!cDate || isNaN(cDate.getTime())) return false;
+          if (fromDate && cDate < fromDate) return false;
+          if (toDate && cDate > toDate) return false;
+          return true;
+        });
+      }
     }
     if (filterHasPrepaid === "true") {
-      result = result.filter((c) => c.prepaidBirrCurrentBalance > 0);
+      result = result.filter((c) => (c.customerBalanceBirr || c.prepaidBirrCurrentBalance) > 0);
     } else if (filterHasPrepaid === "false") {
-      result = result.filter((c) => c.prepaidBirrCurrentBalance <= 0);
+      result = result.filter((c) => (c.customerBalanceBirr || c.prepaidBirrCurrentBalance) <= 0);
     }
     if (filterMeterChanged === "true") {
       result = result.filter((c) => c.isInitializedSecondTime === true);
@@ -388,22 +563,59 @@ const CustomerList = () => {
     }
     return result;
   }, [
-    activeCustomers, deletedCustomers, activeCustomerTab,
-    selectedCustomerTypeId, selectedKebeleId, selectedKetenaId,
-    selectedBranchId, selectedReaderId, filterOldPenalty,
-    filterRegistrationDateFrom, filterRegistrationDateTo,
-    filterHasPrepaid, filterMeterChanged, filterHasDryWaste,
+    activeCustomers,
+    deletedCustomers,
+    activeCustomerTab,
+    selectedCustomerTypeId,
+    selectedKebeleId,
+    selectedKetenaId,
+    selectedBranchId,
+    selectedReaderId,
+    filterOldPenalty,
+    filterRegistrationDateFrom,
+    filterRegistrationDateTo,
+    filterHasPrepaid,
+    filterMeterChanged,
+    filterHasDryWaste,
     filterHasAdditionalPayment,
   ]);
 
-  const paginatedData = useMemo(() => {
-    const start = pagination.pageIndex * pagination.pageSize;
-    const end = start + pagination.pageSize;
-    return {
-      content: filteredCustomers.slice(start, end),
-      totalElements: filteredCustomers.length,
-    };
-  }, [filteredCustomers, pagination.pageIndex, pagination.pageSize]);
+  const selectedIdsList = useMemo(() => Object.keys(rowSelection || {}), [rowSelection]);
+  const selectedCount = selectedIdsList.length;
+
+  const targetCustomerCount = useMemo(() => {
+    if (selectedCount > 0) return selectedCount;
+    if (assignScope === "visible") {
+      const start = pagination.pageIndex * pagination.pageSize;
+      const end = start + pagination.pageSize;
+      return filteredCustomers.slice(start, end).length;
+    }
+    if (assignScope === "all") return filteredCustomers.length;
+    return 0;
+  }, [selectedCount, assignScope, pagination, filteredCustomers]);
+
+  const canUpdateDryWaste = selectedCount > 0 || Boolean(assignScope);
+
+  const selectedCustomerObj = useMemo(() => {
+    if (!selectedCustomerId) return null;
+    return (allCustomers || []).find((c) => String(c.id) === String(selectedCustomerId)) || null;
+  }, [selectedCustomerId, allCustomers]);
+
+  const statusCustomerObj = useMemo(() => {
+    if (!statusCustomerId) return null;
+    return (allCustomers || []).find((c) => String(c.id) === String(statusCustomerId)) || null;
+  }, [statusCustomerId, allCustomers]);
+
+  // Keep single selected customer synced with rowSelection
+  useEffect(() => {
+    const ids = Object.keys(rowSelection || {});
+    if (ids.length === 1) {
+      setSelectedCustomerId(ids[0]);
+    } else {
+      setSelectedCustomerId(null);
+    }
+    setActiveBillTab(0);
+  }, [rowSelection]);
 
   // =====================================================================
   // MUTATIONS
@@ -436,7 +648,7 @@ const CustomerList = () => {
     onError: (error) => toast.error(`Error: ${error.response?.data?.message || error.message}`),
   });
 
-  const { mutateAsync: activateCustomer } = useMutation({
+  const { mutateAsync: activateCustomer, isLoading: isActivating } = useMutation({
     mutationFn: customerService.activateCustomer,
     onSuccess: () => {
       queryClient.invalidateQueries(["customers-all"]);
@@ -458,21 +670,13 @@ const CustomerList = () => {
   // EVENT HANDLERS
   // =====================================================================
 
-  const handleBillTabChange = (event, newValue) => {
-    setActiveBillTab(newValue);
-  };
-
   const handleCustomerTabChange = (event, newValue) => {
     setActiveCustomerTab(newValue);
     setPagination((prev) => ({ ...prev, pageIndex: 0 }));
+    setRowSelection({});
+    setSelectedCustomerId(null);
     setActiveBillTab(0);
   };
-
-  useEffect(() => {
-    const selectedIds = Object.keys(rowSelection);
-    setSelectedCustomerId(selectedIds.length === 1 ? selectedIds[0] : null);
-    setActiveBillTab(0);
-  }, [rowSelection]);
 
   const handleCreateSubmit = async (data) => {
     await createCustomer(data);
@@ -483,8 +687,138 @@ const CustomerList = () => {
     await updateCustomer({ id: editingCustomerId, data });
   };
 
-  // --- Import handlers ---
-  const handleFileUpload = async (event) => {
+  // Helper to extract target IDs for bulk actions
+  const getTargetCustomerIds = () => {
+    const explicitIds = Object.keys(rowSelection || {}).map(Number);
+    if (explicitIds.length > 0) return explicitIds;
+
+    if (assignScope === "visible") {
+      const start = pagination.pageIndex * pagination.pageSize;
+      const end = start + pagination.pageSize;
+      return filteredCustomers.slice(start, end).map((c) => Number(c.id));
+    }
+    if (assignScope === "all") {
+      return filteredCustomers.map((c) => Number(c.id));
+    }
+    return [];
+  };
+
+  // Bulk Actions
+  const handleConfirmAssignReader = async () => {
+    const targetIds = getTargetCustomerIds();
+    if (!assignReaderId || targetIds.length === 0) {
+      setSnackbar({
+        open: true,
+        message: "Please select a reader and at least one customer.",
+        severity: "warning",
+      });
+      return;
+    }
+    try {
+      await customerService.assignReaderBulk({
+        readerId: Number(assignReaderId),
+        customerIds: targetIds,
+      });
+      setAssignDialogOpen(false);
+      setRowSelection({});
+      refetchCustomersAll();
+      setSnackbar({
+        open: true,
+        message: `Successfully assigned reader to ${targetIds.length} customers.`,
+        severity: "success",
+      });
+    } catch (e) {
+      setSnackbar({ open: true, message: "Failed to assign reader.", severity: "error" });
+    }
+  };
+
+  const handleConfirmBulkAdditionalPayment = async () => {
+    const targetIds = getTargetCustomerIds();
+    if (targetIds.length === 0) {
+      setSnackbar({ open: true, message: "No customers selected.", severity: "warning" });
+      return;
+    }
+    const amountNumber = parseFloat(bulkAdditionalPaymentValue);
+    if (Number.isNaN(amountNumber) || amountNumber < 0) {
+      setSnackbar({ open: true, message: "Enter a valid non-negative amount.", severity: "warning" });
+      return;
+    }
+    try {
+      await customerService.updateAdditionalMonthlyPaymentBulk({
+        amount: amountNumber,
+        customerIds: targetIds,
+      });
+      setBulkAdditionalPaymentOpen(false);
+      setBulkAdditionalPaymentValue("");
+      setRowSelection({});
+      refetchCustomersAll();
+      setSnackbar({
+        open: true,
+        message: `Updated dry waste fee for ${targetIds.length} customers.`,
+        severity: "success",
+      });
+    } catch (error) {
+      setSnackbar({ open: true, message: "Failed to update dry waste fee.", severity: "error" });
+    }
+  };
+
+  const handleConfirmBulkTechemari = async () => {
+    const targetIds = getTargetCustomerIds();
+    if (targetIds.length === 0) {
+      setSnackbar({ open: true, message: "No customers selected.", severity: "warning" });
+      return;
+    }
+    const amountNumber = parseFloat(techemariKfyaValue);
+    if (Number.isNaN(amountNumber) || amountNumber < 0) {
+      setSnackbar({ open: true, message: "Enter a valid non-negative amount.", severity: "warning" });
+      return;
+    }
+    try {
+      await customerService.updateTechemariBulk({
+        fieldName: techemariNameValue,
+        amount: amountNumber,
+        customerIds: targetIds,
+      });
+      setBulkTechemariOpen(false);
+      setTechemariNameValue("");
+      setTechemariKfyaValue("");
+      setRowSelection({});
+      refetchCustomersAll();
+      setSnackbar({
+        open: true,
+        message: `Updated additional fee for ${targetIds.length} customers.`,
+        severity: "success",
+      });
+    } catch (error) {
+      const errorMsg =
+        error.response?.data?.message || error.message || "Failed to update additional fee.";
+      setSnackbar({ open: true, message: errorMsg, severity: "error" });
+    }
+  };
+
+  // Status Change
+  const handleStatusConfirm = async (payload) => {
+    if (!statusCustomerId) return;
+    try {
+      if (payload.status === "deleted") {
+        const { billingTerminationReasonId, terminationRemark } = payload;
+        await deactivateCustomer({
+          id: statusCustomerId,
+          data: { billingTerminationReasonId, terminationRemark },
+        });
+      } else if (payload.status === "active") {
+        await activateCustomer(statusCustomerId);
+      }
+      setStatusModalOpen(false);
+      setStatusCustomerId(null);
+      setStatusModalMode(null);
+    } catch (e) {
+      // Handled in mutation onError
+    }
+  };
+
+  // Excel Import / Update
+  const handleFileUpload = (event) => {
     const file = event.target.files[0];
     if (!file) return;
     setSelectedFile(file);
@@ -507,12 +841,7 @@ const CustomerList = () => {
     }
   };
 
-  const handleImportClick = () => fileInputRef.current?.click();
-  const handleCancelImport = () => { setConfirmImportOpen(false); setSelectedFile(null); };
-  const handleCloseImportDialog = () => { setImportDialogOpen(false); setImportResult(null); };
-
-  // --- Update handlers ---
-  const handleUpdateFileUpload = async (event) => {
+  const handleUpdateFileUpload = (event) => {
     const file = event.target.files[0];
     if (!file) return;
     setSelectedUpdateFile(file);
@@ -535,25 +864,10 @@ const CustomerList = () => {
     }
   };
 
-  const handleUpdateClick = () => updateFileInputRef.current?.click();
-  const handleCancelUpdate = () => { setConfirmUpdateOpen(false); setSelectedUpdateFile(null); };
-  const handleCloseUpdateDialog = () => { setUpdateDialogOpen(false); setUpdateResult(null); };
-
-  // --- Update Customer Reader handlers ---
-  const handleUpdateReaderModalClose = () => {
-    setUpdateReaderModalOpen(false);
-    setUpdateReaderBranchId("");
-    setUpdateReaderReaderId("");
-    setUpdateReaderFile(null);
-    setUpdateReaderMatchedCustomers([]);
-    setUpdateReaderNotFound([]);
-    setUpdateReaderProcessing(false);
-    setUpdateReaderSaving(false);
-  };
-
+  // Update Customer Reader via Excel
   const handleProcessReaderExcel = () => {
     if (!updateReaderFile) {
-      setSnackbar({ open: true, message: "Please upload an Excel file first.", severity: "warning" });
+      setSnackbar({ open: true, message: "Upload an Excel file first.", severity: "warning" });
       return;
     }
     setUpdateReaderProcessing(true);
@@ -573,7 +887,11 @@ const CustomerList = () => {
           .filter((v) => v.length > 0);
 
         if (accountNumbers.length === 0) {
-          setSnackbar({ open: true, message: "No account numbers found in column B.", severity: "warning" });
+          setSnackbar({
+            open: true,
+            message: "No account numbers found in column B.",
+            severity: "warning",
+          });
           setUpdateReaderProcessing(false);
           return;
         }
@@ -612,30 +930,28 @@ const CustomerList = () => {
     setUpdateReaderSaving(true);
     try {
       const customerIds = updateReaderMatchedCustomers.map((c) => Number(c.id));
-      await customerService.assignReaderBulk({ readerId: Number(updateReaderReaderId), customerIds });
-      setSnackbar({ open: true, message: `Successfully assigned reader to ${customerIds.length} customers.`, severity: "success" });
-      handleUpdateReaderModalClose();
+      await customerService.assignReaderBulk({
+        readerId: Number(updateReaderReaderId),
+        customerIds,
+      });
+      setSnackbar({
+        open: true,
+        message: `Successfully assigned reader to ${customerIds.length} customers.`,
+        severity: "success",
+      });
+      setUpdateReaderModalOpen(false);
       refetchCustomersAll();
     } catch (err) {
-      setSnackbar({ open: true, message: "Failed to assign reader to customers.", severity: "error" });
+      setSnackbar({ open: true, message: "Failed to assign reader.", severity: "error" });
     } finally {
       setUpdateReaderSaving(false);
     }
   };
 
-  // --- Update GPS handlers ---
-  const handleUpdateGpsModalClose = () => {
-    setUpdateGpsModalOpen(false);
-    setUpdateGpsFile(null);
-    setUpdateGpsMatchedCustomers([]);
-    setUpdateGpsNotFound([]);
-    setUpdateGpsProcessing(false);
-    setUpdateGpsSaving(false);
-  };
-
+  // Update Customer GPS (supports ID or Account Number)
   const handleProcessGpsJson = () => {
     if (!updateGpsFile) {
-      setSnackbar({ open: true, message: "Please upload a JSON file first.", severity: "warning" });
+      setSnackbar({ open: true, message: "Upload a JSON file first.", severity: "warning" });
       return;
     }
     setUpdateGpsProcessing(true);
@@ -646,41 +962,43 @@ const CustomerList = () => {
     reader.onload = (e) => {
       try {
         let parsedData = JSON.parse(e.target.result);
-        // Support: array [...], single object {...}, or object with an array property { key: [...] }
         let jsonData;
         if (Array.isArray(parsedData)) {
           jsonData = parsedData;
         } else if (parsedData && typeof parsedData === "object") {
-          // Check if it's a wrapper object with an array value
           const arrayProp = Object.values(parsedData).find((v) => Array.isArray(v));
-          if (arrayProp) {
-            jsonData = arrayProp;
-          } else {
-            // Single object — wrap in array
-            jsonData = [parsedData];
-          }
+          jsonData = arrayProp ? arrayProp : [parsedData];
         } else {
           setSnackbar({ open: true, message: "Invalid JSON format.", severity: "error" });
           setUpdateGpsProcessing(false);
           return;
         }
 
-        // Build a lookup map from allCustomers: id -> customer
-        const customerMap = new Map();
+        const customerMapById = new Map();
+        const customerMapByAccount = new Map();
         (allCustomers || []).forEach((c) => {
-          customerMap.set(Number(c.id), c);
+          if (c.id) customerMapById.set(Number(c.id), c);
+          if (c.accountNumber) customerMapByAccount.set(String(c.accountNumber).trim(), c);
         });
 
         const matched = [];
         const notFound = [];
 
         jsonData.forEach((entry) => {
-          const id = Number(entry.customer_info_id);
-          const lat = entry.latitude;
-          const lng = entry.longitude;
-          if (!id || lat === undefined || lng === undefined) return;
+          const id = Number(entry.customer_info_id || entry.id || entry.customerId);
+          const acc = entry.accountNumber || entry.account_number || entry.account;
+          const lat = entry.latitude ?? entry.lat;
+          const lng = entry.longitude ?? entry.lng;
 
-          const customer = customerMap.get(id);
+          if (lat === undefined || lng === undefined) return;
+
+          let customer = null;
+          if (id && customerMapById.has(id)) {
+            customer = customerMapById.get(id);
+          } else if (acc && customerMapByAccount.has(String(acc).trim())) {
+            customer = customerMapByAccount.get(String(acc).trim());
+          }
+
           if (customer) {
             let rawOldGps = customer.locationCoordination;
             let oldGpsFormatted = "-";
@@ -692,14 +1010,14 @@ const CustomerList = () => {
             }
 
             matched.push({
-              customerId: id,
+              customerId: customer.id,
               accountNumber: customer.accountNumber || "-",
               fullName: customer.fullName || customer.fullNameEng || "-",
               oldGps: oldGpsFormatted,
               newGps: `${lat},${lng}`,
             });
           } else {
-            notFound.push(id);
+            notFound.push(id || acc || "Unknown");
           }
         });
 
@@ -717,7 +1035,11 @@ const CustomerList = () => {
   const handleSaveUpdateGps = async () => {
     const diffEntries = updateGpsMatchedCustomers.filter((c) => c.oldGps !== c.newGps);
     if (diffEntries.length === 0) {
-      setSnackbar({ open: true, message: "No GPS changes to update. All coordinates are the same.", severity: "warning" });
+      setSnackbar({
+        open: true,
+        message: "No GPS changes to update. All coordinates are identical.",
+        severity: "warning",
+      });
       return;
     }
     setUpdateGpsSaving(true);
@@ -727,8 +1049,12 @@ const CustomerList = () => {
         locationCoordination: c.newGps,
       }));
       await customerService.updateGpsBulk(entries);
-      setSnackbar({ open: true, message: `Successfully updated GPS for ${entries.length} customers.`, severity: "success" });
-      handleUpdateGpsModalClose();
+      setSnackbar({
+        open: true,
+        message: `Successfully updated GPS for ${entries.length} customers.`,
+        severity: "success",
+      });
+      setUpdateGpsModalOpen(false);
       refetchCustomersAll();
     } catch (err) {
       setSnackbar({ open: true, message: "Failed to update GPS coordinates.", severity: "error" });
@@ -737,226 +1063,188 @@ const CustomerList = () => {
     }
   };
 
-  // --- Bulk operation handlers ---
-  const handleConfirmBulkAdditionalPayment = async () => {
-    const explicitSelectedIds = Object.keys(rowSelection || {}).map((id) => Number(id));
-    let targetIds = explicitSelectedIds;
-    if (targetIds.length === 0 && assignScope) {
-      targetIds = assignScope === "visible"
-        ? (paginatedData.content || []).map((c) => Number(c.id))
-        : (filteredCustomers || []).map((c) => Number(c.id));
-    }
-    if (targetIds.length === 0) {
-      setSnackbar({ open: true, message: "No customers to update. Select rows or adjust Scope/filters.", severity: "warning" });
-      return;
-    }
-    const amountNumber = parseFloat(bulkAdditionalPaymentValue);
-    if (Number.isNaN(amountNumber)) {
-      setSnackbar({ open: true, message: "Enter a valid amount.", severity: "warning" });
-      return;
-    }
-    if (amountNumber < 0) {
-      setSnackbar({ open: true, message: "Amount cannot be negative.", severity: "warning" });
-      return;
-    }
-    try {
-      await customerService.updateAdditionalMonthlyPaymentBulk({ amount: amountNumber, customerIds: targetIds });
-      setBulkAdditionalPaymentOpen(false);
-      setBulkAdditionalPaymentValue("");
-      setRowSelection({});
-      refetchCustomersAll();
-      setSnackbar({ open: true, message: "Additional monthly payment updated.", severity: "success" });
-    } catch (error) {
-      setSnackbar({ open: true, message: "Failed to update additional payment.", severity: "error" });
-    }
-  };
+  // Excel Export
+  const handleExportExcel = useCallback(
+    (recordsToExport = null) => {
+      const list =
+        recordsToExport ||
+        (selectedCount > 0
+          ? filteredCustomers.filter((c) => rowSelection[c.id])
+          : filteredCustomers);
 
-  const handleConfirmBulkTechemari = async () => {
-    const explicitSelectedIds = Object.keys(rowSelection || {}).map((id) => Number(id));
-    let targetIds = explicitSelectedIds;
-    if (targetIds.length === 0 && assignScope) {
-      targetIds = assignScope === "visible"
-        ? (paginatedData.content || []).map((c) => Number(c.id))
-        : (filteredCustomers || []).map((c) => Number(c.id));
-    }
-    if (targetIds.length === 0) {
-      setSnackbar({ open: true, message: "No customers to update. Select rows or adjust Scope/filters.", severity: "warning" });
-      return;
-    }
-    const amountNumber = parseFloat(techemariKfyaValue);
-    if (Number.isNaN(amountNumber)) {
-      setSnackbar({ open: true, message: "Enter a valid amount.", severity: "warning" });
-      return;
-    }
-    if (amountNumber < 0) {
-      setSnackbar({ open: true, message: "Amount cannot be negative.", severity: "warning" });
-      return;
-    }
-    try {
-      await customerService.updateTechemariBulk({ fieldName: techemariNameValue, amount: amountNumber, customerIds: targetIds });
-      setBulkTechemariOpen(false);
-      setTechemariNameValue("");
-      setTechemariKfyaValue("");
-      setRowSelection({});
-      refetchCustomersAll();
-      setSnackbar({ open: true, message: "Additional Fee updated.", severity: "success" });
-    } catch (error) {
-      const errorMsg = error.response?.data?.message || error.message || "Failed to update additional fee.";
-      setSnackbar({ open: true, message: errorMsg, severity: "error" });
-    }
-  };
-
-  const handleConfirmAssignReader = async () => {
-    try {
-      const explicitSelectedIds = Object.keys(rowSelection || {}).map((id) => Number(id));
-      let targetIds = explicitSelectedIds;
-      if (targetIds.length === 0 && assignScope) {
-        targetIds = assignScope === "visible"
-          ? (paginatedData.content || []).map((c) => Number(c.id))
-          : (filteredCustomers || []).map((c) => Number(c.id));
-      }
-      if (!assignReaderId || targetIds.length === 0) {
-        setSnackbar({ open: true, message: "Select a reader and some customers (by selecting rows or via Scope).", severity: "warning" });
+      if (!list || list.length === 0) {
+        setSnackbar({ open: true, message: "No customer records to export.", severity: "warning" });
         return;
       }
-      await customerService.assignReaderBulk({ readerId: Number(assignReaderId), customerIds: targetIds });
-      setAssignDialogOpen(false);
-      setSnackbar({ open: true, message: "Assigned reader successfully.", severity: "success" });
-      setRowSelection({});
-      refetchCustomersAll();
-    } catch (e) {
-      setSnackbar({ open: true, message: "Failed to assign reader.", severity: "error" });
-    }
-  };
-
-  // --- Status change handler ---
-  const handleStatusConfirm = async (payload) => {
-    if (!statusCustomerId) return;
-    try {
-      if (payload.status === "deleted") {
-        const { billingTerminationReasonId, terminationRemark } = payload;
-        await deactivateCustomer({ id: statusCustomerId, data: { billingTerminationReasonId, terminationRemark } });
-      } else if (payload.status === "active") {
-        await activateCustomer(statusCustomerId);
-      }
-      setStatusModalOpen(false);
-      setStatusCustomerId(null);
-      setStatusModalMode(null);
-    } catch (e) {
-      // toast handled in mutation onError
-    }
-  };
-
-  // --- Excel Export ---
-  const handleExportExcel = useCallback(() => {
-    if (!filteredCustomers || filteredCustomers.length === 0) {
-      setSnackbar({ open: true, message: "No data to export.", severity: "warning" });
-      return;
-    }
-    const exportData = filteredCustomers.map((c, idx) => ({
-      "#": idx + 1,
-      "Account Number": c.accountNumber || "",
-      "Full Name": c.fullName || "",
-      "English Name": c.fullNameEng || "",
-      "Phone Number": c.phoneNumber || "",
-      "Status": c.status || "",
-      "Meter Number": c.meterNumber || "",
-      "Initial Reading": c.initialReading || 0,
-      "Dry Waste": c.additionalMonthlyPayment || 0,
-      "Prepaid Balance": c.prepaidBirrCurrentBalance || 0,
-      "Additional Fee Name": c.techemariFieldName || "",
-      "Additional Fee": c.techemariKfya || 0,
-      "Has Old Penalty": c.oldHasPenalty ? "Yes" : "No",
-      "Old Penalty Total": c.oldKfyaAndPenaltyTotal || 0,
-      "Old Penalty Months": c.oldPenlityNumberOfMonths || 0,
-    }));
-    const ws = XLSX.utils.json_to_sheet(exportData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Customers");
-    const tabName = activeCustomerTab === 0 ? "Active" : "Deleted";
-    XLSX.writeFile(wb, `Customers_${tabName}_${new Date().toISOString().slice(0, 10)}.xlsx`);
-    setSnackbar({ open: true, message: `Exported ${exportData.length} customers.`, severity: "success" });
-  }, [filteredCustomers, activeCustomerTab]);
-
-  // --- Scope change handler ---
-  const handleAssignScopeChange = useCallback((value) => {
-    setAssignScope(value);
-    if (!value) {
-      setRowSelection({});
-    }
-    // Note: table-level row selection for 'visible'/'all' is handled in the table config
-  }, []);
+      const exportData = list.map((c, idx) => ({
+        "#": idx + 1,
+        "Account Number": c.accountNumber || "",
+        "Full Name": c.fullName || "",
+        "English Name": c.fullNameEng || "",
+        "Phone Number": c.phoneNumber || "",
+        Status: c.status || "",
+        "Meter Number": c.meterNumber || "",
+        "Initial Reading": c.initialReading || 0,
+        "Dry Waste Fee": c.additionalMonthlyPayment || 0,
+        "Prepaid Balance": c.customerBalanceBirr || c.prepaidBirrCurrentBalance || 0,
+        "Additional Fee Name": c.techemariFieldName || "",
+        "Additional Fee Amount": c.techemariKfya || 0,
+        "Has Old Penalty": c.oldHasPenalty ? "Yes" : "No",
+        "Old Arrears Total": c.oldKfyaAndPenaltyTotal || 0,
+        "Registered Date (EC)": c.registeredDateEthiopianAmharic || c.registeredDateEthiopian || "",
+      }));
+      const ws = XLSX.utils.json_to_sheet(exportData);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Customers");
+      const tabName = activeCustomerTab === 0 ? "Active" : "Deleted";
+      XLSX.writeFile(wb, `Customers_${tabName}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+      setSnackbar({
+        open: true,
+        message: `Exported ${exportData.length} customers to Excel.`,
+        severity: "success",
+      });
+    },
+    [filteredCustomers, rowSelection, selectedCount, activeCustomerTab]
+  );
 
   // =====================================================================
-  // TABLE CONFIGURATION
+  // TABLE CONFIGURATION (BILINGUAL COLUMNS & ADVANCED SEARCH)
   // =====================================================================
 
   const columns = useMemo(
     () => [
       {
         header: "#",
-        size: 20,
+        size: 30,
         Cell: ({ row, table }) => {
           const pageIndex = table.getState().pagination.pageIndex;
           const pageSize = table.getState().pagination.pageSize;
           return pageIndex * pageSize + row.index + 1;
         },
       },
-      { accessorKey: "accountNumber", header: "Account Number", filterFn: "amharicFuzzy" },
-      { accessorKey: "fullName", header: "Full Name", filterFn: "amharicFuzzy" },
-      { accessorKey: "fullNameEng", header: "English Name", filterFn: "amharicFuzzy" },
-      { accessorKey: "phoneNumber", header: "Phone Number", filterFn: "amharicFuzzy" },
       {
-        accessorKey: "registeredDate",
-        header: "Registered Date EC",
-        Cell: ({ row }) => {
-          const ethiopianDate = row.original.registeredDateEthiopian;
-          if (ethiopianDate) return ethiopianDate;
-          const ethiopianDateAmharic = row.original.registeredDateEthiopianAmharic;
-          if (ethiopianDateAmharic) return ethiopianDateAmharic;
-          const gregorianDate = row.original.registeredDate;
-          if (gregorianDate) {
-            try {
-              return EthiopianCalendarConverterPure.formatEthiopianDate(
-                EthiopianCalendarConverterPure.gregorianToEthiopian(gregorianDate),
-                "dd/MM/yyyy"
-              );
-            } catch (error) {
-              return gregorianDate;
-            }
-          }
-          const year = row.original.registeredYear;
-          const month = row.original.registeredMonth;
-          if (year && month) return `${month}/${year}`;
-          return "-";
+        accessorKey: "accountNumber",
+        header: "Account Number",
+        filterFn: "contains",
+        Cell: ({ cell }) => (
+          <Typography variant="body2" sx={{ fontWeight: 800, color: "primary.main" }}>
+            {cell.getValue() || "—"}
+          </Typography>
+        ),
+      },
+      {
+        accessorKey: "fullName",
+        header: "Full Name (ሙሉ ስም)",
+        filterFn: "bilingualName", // Searches BOTH Amharic & English
+        Cell: ({ row }) => (
+          <Box>
+            <Typography variant="body2" sx={{ fontWeight: 700 }}>
+              {row.original.fullName || "—"}
+            </Typography>
+            {row.original.fullNameEng && (
+              <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+                {row.original.fullNameEng}
+              </Typography>
+            )}
+          </Box>
+        ),
+      },
+      {
+        accessorKey: "fullNameEng",
+        header: "English Name",
+        filterFn: "contains",
+        Cell: ({ cell }) => (
+          <Typography variant="body2" color="text.secondary">
+            {cell.getValue() || "—"}
+          </Typography>
+        ),
+      },
+      {
+        accessorKey: "phoneNumber",
+        header: "Phone Number",
+        filterFn: "contains",
+        Cell: ({ cell }) => cell.getValue() || "—",
+      },
+      {
+        accessorKey: "addressStreetsId",
+        header: "Kebele",
+        Cell: ({ cell }) => {
+          const k = (kebeles || []).find((x) => String(x.id) === String(cell.getValue()));
+          return k?.name || cell.getValue() || "—";
         },
       },
-      { accessorKey: "status", header: "Status" },
+      {
+        accessorKey: "meterNumber",
+        header: "Meter Number",
+        filterFn: "contains",
+        Cell: ({ cell }) => (
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+            <SpeedIcon fontSize="inherit" color="action" />
+            <span>{cell.getValue() || "—"}</span>
+          </Box>
+        ),
+      },
+      {
+        accessorKey: "customerBalanceBirr",
+        header: "Prepaid Deposit",
+        Cell: ({ row }) => {
+          const val = Number(
+            row.original.customerBalanceBirr || row.original.prepaidBirrCurrentBalance || 0
+          );
+          return val > 0 ? (
+            <Chip label={`${val.toLocaleString()} ETB`} size="small" color="success" variant="outlined" sx={{ fontWeight: 700 }} />
+          ) : (
+            "—"
+          );
+        },
+      },
+      {
+        accessorKey: "registeredDate",
+        header: "Reg. Date (EC)",
+        Cell: ({ row }) => {
+          return (
+            row.original.registeredDateEthiopianAmharic ||
+            row.original.registeredDateEthiopian ||
+            "—"
+          );
+        },
+      },
+      {
+        accessorKey: "status",
+        header: "Status",
+        Cell: ({ row }) => {
+          const isComplete = row.original.completeDeleted === "deleted";
+          const isActive = row.original.status === "active";
+          return (
+            <Chip
+              size="small"
+              label={isComplete ? "Complete Deleted" : isActive ? "Active" : "Terminated"}
+              color={isComplete ? "default" : isActive ? "success" : "error"}
+              sx={{ fontWeight: 700 }}
+            />
+          );
+        },
+      },
     ],
-    []
+    [kebeles]
   );
-
-  const hasExplicitSelection = Object.keys(rowSelection || {}).length > 0;
-  const hasScopeTargets =
-    assignScope === "visible"
-      ? (paginatedData.content || []).length > 0
-      : assignScope === "all"
-        ? filteredCustomers.length > 0
-        : false;
-  const canUpdateDryWaste = hasExplicitSelection || hasScopeTargets;
 
   const table = useMaterialReactTable({
     columns,
     data: filteredCustomers,
-    filterFns: { amharicFuzzy: amharicFuzzyFilter },
+    filterFns: {
+      amharicFuzzy: amharicFuzzyFilter,
+      bilingualName: bilingualNameFilter,
+    },
+    globalFilterFn: bilingualGlobalFilter, // Enables common search across English, Amharic, Account, Phone, Meter
     initialState: {
       showColumnFilters: true,
-      showGlobalFilter: true, // ENABLED: global search
+      showGlobalFilter: true,
       pagination: { pageIndex: 0, pageSize: 10 },
     },
     manualPagination: false,
     enableColumnFilterModes: true,
-    columnFilterModeOptions: ["contains", "startsWith", "equals", "fuzzy", "amharicFuzzy"],
+    columnFilterModeOptions: ["contains", "startsWith", "equals", "fuzzy", "bilingualName"],
     enableRowNumbers: true,
     rowNumberMode: "original",
     state: {
@@ -978,19 +1266,27 @@ const CustomerList = () => {
       const isCompletelyDeleted = row.original.completeDeleted === "deleted";
 
       return (
-        <Box sx={{ display: "flex", gap: "0.5rem" }}>
-          <Tooltip title="View Customer Details">
-            <IconButton size="small" onClick={() => setViewedCustomerId(row.original.id)}>
+        <Box sx={{ display: "flex", gap: "0.25rem" }}>
+          <Tooltip title="View 360 Customer Profile">
+            <IconButton
+              size="small"
+              onClick={() => setViewedCustomerId(row.original.id)}
+              color="primary"
+            >
               <VisibilityIcon fontSize="small" />
             </IconButton>
           </Tooltip>
-          <Tooltip title="Edit Customer">
-            <IconButton size="small" onClick={() => setEditingCustomerId(row.original.id)}>
+          <Tooltip title="Edit Customer Information">
+            <IconButton
+              size="small"
+              onClick={() => setEditingCustomerId(row.original.id)}
+              color="info"
+            >
               <EditIcon fontSize="small" />
             </IconButton>
           </Tooltip>
           {isActive ? (
-            <Tooltip title="Deactivate Customer">
+            <Tooltip title="Deactivate / Terminate Customer">
               <IconButton
                 color="error"
                 size="small"
@@ -1006,9 +1302,9 @@ const CustomerList = () => {
           ) : (
             <>
               {!isCompletelyDeleted && (
-                <Tooltip title="Activate Customer">
+                <Tooltip title="Reactivate Customer">
                   <IconButton
-                    color="primary"
+                    color="success"
                     size="small"
                     onClick={() => {
                       setStatusCustomerId(row.original.id);
@@ -1021,7 +1317,7 @@ const CustomerList = () => {
                 </Tooltip>
               )}
               {!isCompletelyDeleted && (
-                <Tooltip title="Complete Delete">
+                <Tooltip title="Permanent Complete Delete">
                   <IconButton
                     color="error"
                     size="small"
@@ -1042,17 +1338,32 @@ const CustomerList = () => {
     },
     renderTopToolbarCustomActions: () => (
       <CustomerToolbar
-        onCreate={() => { setEditingCustomerId(null); setCreateModalOpen(true); }}
-        onImportClick={handleImportClick}
-        onUpdateClick={handleUpdateClick}
+        onCreate={() => {
+          setEditingCustomerId(null);
+          setCreateModalOpen(true);
+        }}
+        onImportClick={() => fileInputRef.current?.click()}
+        onUpdateClick={() => updateFileInputRef.current?.click()}
         onUpdateReaderOpen={() => setUpdateReaderModalOpen(true)}
         onUpdateGpsOpen={() => setUpdateGpsModalOpen(true)}
         onRefresh={() => refetchCustomersAll()}
-        onExportExcel={handleExportExcel}
+        onExportExcel={() => handleExportExcel()}
         isFetching={isFetching}
         selectedCustomerId={selectedCustomerId}
-        onOpenMeters={() => setMetersOpen(true)}
-        onOpenAssignReader={() => { setAssignReaderId(""); setAssignDialogOpen(true); }}
+        selectedCount={selectedCount}
+        onClearSelection={() => {
+          setRowSelection({});
+          setAssignScope("");
+        }}
+        onOpenMeters={() => {
+          setMetersCustomerId(selectedCustomerId);
+          setMetersOpen(true);
+        }}
+        onOpenAssignReader={() => {
+          setAssignReaderId("");
+          setBulkBranchId(selectedBranchId || "");
+          setAssignDialogOpen(true);
+        }}
         onOpenBulkPayment={() => setBulkAdditionalPaymentOpen(true)}
         onOpenBulkTechemari={() => setBulkTechemariOpen(true)}
         canUpdateDryWaste={canUpdateDryWaste}
@@ -1063,7 +1374,7 @@ const CustomerList = () => {
       />
     ),
     muiToolbarAlertBannerProps: isCustomersError
-      ? { color: "error", children: "Error loading data" }
+      ? { color: "error", children: "Error loading customer records from server" }
       : undefined,
   });
 
@@ -1074,161 +1385,381 @@ const CustomerList = () => {
   return (
     <>
       <ToastContainer autoClose={5000} hideProgressBar theme="colored" />
-      <Breadcrumb pageName="Customer List" />
+      <Breadcrumb pageName="Customer Management" />
 
-      <Grid container spacing={2} mt={3}>
-        <Grid item xs={12}>
-          <Paper elevation={3} sx={{ padding: 2 }}>
-            {/* Active/Deleted Tabs */}
-            <Box sx={{ borderBottom: 1, borderColor: "divider", mb: 2 }}>
-              <Tabs
-                value={activeCustomerTab}
-                onChange={handleCustomerTabChange}
-                aria-label="customer status tabs"
-              >
-                <Tab label="Active" />
-                <Tab label="Deleted" />
-              </Tabs>
-            </Box>
-
-            {/* Filters */}
-            <CustomerFilters
-              selectedCustomerTypeId={selectedCustomerTypeId}
-              selectedKebeleId={selectedKebeleId}
-              selectedKetenaId={selectedKetenaId}
-              selectedBranchId={selectedBranchId}
-              selectedReaderId={selectedReaderId}
-              filterOldPenalty={filterOldPenalty}
-              filterRegistrationDateFrom={filterRegistrationDateFrom}
-              filterRegistrationDateTo={filterRegistrationDateTo}
-              filterHasPrepaid={filterHasPrepaid}
-              filterMeterChanged={filterMeterChanged}
-              filterHasDryWaste={filterHasDryWaste}
-              filterHasAdditionalPayment={filterHasAdditionalPayment}
-              assignScope={assignScope}
-              onFilterChange={handleFilterChange}
-              onClearAll={handleClearAllFilters}
-              onAssignScopeChange={(value) => {
-                setAssignScope(value);
-                if (!value) {
-                  table.setRowSelection({});
-                } else if (value === "visible") {
-                  const next = {};
-                  table.getRowModel().rows.forEach((r) => { next[r.id] = true; });
-                  table.setRowSelection(next);
-                } else if (value === "all") {
-                  const next = {};
-                  table.getFilteredRowModel().rows.forEach((r) => { next[r.id] = true; });
-                  table.setRowSelection(next);
-                }
-              }}
-              customerTypes={customerTypes}
-              kebeles={kebeles}
-              ketenas={ketenas}
-              branches={branches}
-              readers={readers}
-              isCustomerTypesLoading={isCustomerTypesLoading}
-              isKebelesLoading={isKebelesLoading}
-              isKetenasLoading={isKetenasLoading}
-              isBranchesLoading={isBranchesLoading}
-              isReadersLoading={isReadersLoading}
-              formatEthiopianDateForPicker={formatEthiopianDateForPicker}
-            />
-
-            {/* Counts */}
-            <Box sx={{ display: "flex", justifyContent: "flex-end", mb: 1 }}>
-              <Typography variant="body2" color="text.secondary">
-                Filtered: {filteredCustomers.length.toLocaleString()} (
-                Active: {activeCustomers.length.toLocaleString()},
-                Deleted: {deletedCustomers.length.toLocaleString()}
-                )
+      {/* EXECUTIVE KPI METRIC CARDS */}
+      <Grid container spacing={2} sx={{ mt: 1, mb: 2 }}>
+        <Grid item xs={12} sm={6} md={3}>
+          <Paper
+            variant="outlined"
+            sx={{
+              p: 2,
+              borderRadius: 2,
+              bgcolor: "background.paper",
+              borderLeft: "4px solid",
+              borderColor: "primary.main",
+            }}
+          >
+            <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
+                Active Consumers
               </Typography>
+              <PeopleIcon color="primary" />
             </Box>
+            <Typography variant="h5" sx={{ fontWeight: 800, mt: 1 }}>
+              {kpiStats.totalActive.toLocaleString()}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              Total Database: {kpiStats.totalCount.toLocaleString()}
+            </Typography>
+          </Paper>
+        </Grid>
 
-            {/* Customer Table */}
-            <MaterialReactTable table={table} />
+        <Grid item xs={12} sm={6} md={3}>
+          <Paper
+            variant="outlined"
+            sx={{
+              p: 2,
+              borderRadius: 2,
+              bgcolor: "background.paper",
+              borderLeft: "4px solid",
+              borderColor: "error.main",
+            }}
+          >
+            <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
+                Terminated / Inactive
+              </Typography>
+              <PersonOffIcon color="error" />
+            </Box>
+            <Typography variant="h5" sx={{ fontWeight: 800, mt: 1, color: "error.main" }}>
+              {kpiStats.totalDeleted.toLocaleString()}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              Complete Deleted: {kpiStats.totalCompleteDeleted.toLocaleString()}
+            </Typography>
+          </Paper>
+        </Grid>
+
+        <Grid item xs={12} sm={6} md={3}>
+          <Paper
+            variant="outlined"
+            sx={{
+              p: 2,
+              borderRadius: 2,
+              bgcolor: "background.paper",
+              borderLeft: "4px solid",
+              borderColor: "success.main",
+            }}
+          >
+            <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
+                Prepaid Balances
+              </Typography>
+              <AccountBalanceWalletIcon color="success" />
+            </Box>
+            <Typography variant="h5" sx={{ fontWeight: 800, mt: 1, color: "success.main" }}>
+              {kpiStats.totalPrepaid.toLocaleString(undefined, {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              Total consumer deposits (ETB)
+            </Typography>
+          </Paper>
+        </Grid>
+
+        <Grid item xs={12} sm={6} md={3}>
+          <Paper
+            variant="outlined"
+            sx={{
+              p: 2,
+              borderRadius: 2,
+              bgcolor: "background.paper",
+              borderLeft: "4px solid",
+              borderColor: "warning.main",
+            }}
+          >
+            <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
+                Unassigned Readers
+              </Typography>
+              <WarningIcon color="warning" />
+            </Box>
+            <Typography variant="h5" sx={{ fontWeight: 800, mt: 1, color: "warning.dark" }}>
+              {kpiStats.unassignedReaders.toLocaleString()}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              Requires mobile reader assignment
+            </Typography>
           </Paper>
         </Grid>
       </Grid>
 
-      {/* Bills Panel */}
+      {/* MAIN CONTAINER */}
+      <Paper elevation={2} sx={{ p: 2, borderRadius: 2 }}>
+        {/* Active vs Deleted Customer Status Tabs */}
+        <Box sx={{ borderBottom: 1, borderColor: "divider", mb: 2 }}>
+          <Tabs
+            value={activeCustomerTab}
+            onChange={handleCustomerTabChange}
+            aria-label="customer status tabs"
+          >
+            <Tab
+              label={`Active Consumers (${activeCustomers.length.toLocaleString()})`}
+              sx={{ fontWeight: 700, textTransform: "none" }}
+            />
+            <Tab
+              label={`Terminated / Deleted (${deletedCustomers.length.toLocaleString()})`}
+              sx={{ fontWeight: 700, textTransform: "none" }}
+            />
+          </Tabs>
+        </Box>
+
+        {/* RESPONSIVE FILTER BAR */}
+        <CustomerFilters
+          selectedCustomerTypeId={selectedCustomerTypeId}
+          selectedKebeleId={selectedKebeleId}
+          selectedKetenaId={selectedKetenaId}
+          selectedBranchId={selectedBranchId}
+          selectedReaderId={selectedReaderId}
+          filterOldPenalty={filterOldPenalty}
+          filterRegistrationDateFrom={filterRegistrationDateFrom}
+          filterRegistrationDateTo={filterRegistrationDateTo}
+          filterHasPrepaid={filterHasPrepaid}
+          filterMeterChanged={filterMeterChanged}
+          filterHasDryWaste={filterHasDryWaste}
+          filterHasAdditionalPayment={filterHasAdditionalPayment}
+          assignScope={assignScope}
+          onFilterChange={handleFilterChange}
+          onClearAll={handleClearAllFilters}
+          onAssignScopeChange={(value) => {
+            setAssignScope(value);
+            if (!value) {
+              setRowSelection({});
+            } else if (value === "visible") {
+              const next = {};
+              table.getRowModel().rows.forEach((r) => {
+                next[r.id] = true;
+              });
+              setRowSelection(next);
+            } else if (value === "all") {
+              const next = {};
+              filteredCustomers.forEach((r) => {
+                next[r.id] = true;
+              });
+              setRowSelection(next);
+            }
+          }}
+          customerTypes={customerTypes}
+          kebeles={kebeles}
+          ketenas={ketenas}
+          branches={branches}
+          readers={readers}
+          isCustomerTypesLoading={isCustomerTypesLoading}
+          isKebelesLoading={isKebelesLoading}
+          isKetenasLoading={isKetenasLoading}
+          isBranchesLoading={isBranchesLoading}
+          isReadersLoading={isReadersLoading}
+          formatEthiopianDateForPicker={formatEthiopianDateForPicker}
+        />
+
+        {/* FLOATING SELECTION ACTION BAR */}
+        {selectedCount > 0 && (
+          <Paper
+            elevation={3}
+            sx={{
+              p: 1.5,
+              mb: 2,
+              borderRadius: 2,
+              bgcolor: "primary.lighter",
+              border: "1px solid",
+              borderColor: "primary.main",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: 1,
+            }}
+          >
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+              <Chip
+                label={`${selectedCount} Selected`}
+                color="primary"
+                sx={{ fontWeight: 700 }}
+              />
+              <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                Quick Batch Actions:
+              </Typography>
+            </Box>
+
+            <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<AssignmentIndIcon />}
+                onClick={() => {
+                  setAssignReaderId("");
+                  setBulkBranchId(selectedBranchId || "");
+                  setAssignDialogOpen(true);
+                }}
+              >
+                Assign Reader
+              </Button>
+              <Button
+                size="small"
+                variant="outlined"
+                color="warning"
+                startIcon={<CleaningServicesIcon />}
+                onClick={() => setBulkAdditionalPaymentOpen(true)}
+              >
+                Set Dry Waste
+              </Button>
+              <Button
+                size="small"
+                variant="outlined"
+                color="success"
+                startIcon={<PaymentsIcon />}
+                onClick={() => setBulkTechemariOpen(true)}
+              >
+                Set Additional Fee
+              </Button>
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<DownloadIcon />}
+                onClick={() => handleExportExcel()}
+              >
+                Export Selected
+              </Button>
+              <Button
+                size="small"
+                color="inherit"
+                onClick={() => {
+                  setRowSelection({});
+                  setAssignScope("");
+                }}
+              >
+                Clear Selection
+              </Button>
+            </Box>
+          </Paper>
+        )}
+
+        {/* Table View Counts & Info */}
+        <Box sx={{ display: "flex", justifyContent: "flex-end", mb: 1 }}>
+          <Typography variant="caption" color="text.secondary">
+            Showing <strong>{filteredCustomers.length.toLocaleString()}</strong> filtered consumers
+            (Page {pagination.pageIndex + 1} of{" "}
+            {Math.ceil(filteredCustomers.length / pagination.pageSize) || 1})
+          </Typography>
+        </Box>
+
+        {/* Material React Table */}
+        <MaterialReactTable table={table} />
+      </Paper>
+
+      {/* BILLS & INVOICE LEDGER PANEL */}
       <CustomerBillsPanel
         selectedCustomerId={selectedCustomerId}
+        customerName={selectedCustomerObj?.fullName || selectedCustomerObj?.fullNameEng || ""}
+        accountNumber={selectedCustomerObj?.accountNumber || ""}
         combinedBillData={combinedBillData}
         isLoading={isBillsLoading}
         isError={isBillsError}
         activeBillTab={activeBillTab}
-        onBillTabChange={handleBillTabChange}
+        onBillTabChange={(e, val) => setActiveBillTab(val)}
       />
 
-      {/* =================== MODALS =================== */}
+      {/* =================== MODAL SUITE =================== */}
 
+      {/* Create & Edit Modal (Passes existingCustomers for Duplicate Protection) */}
       <CustomerFormModal
-        open={isCreateModalOpen || !!editingCustomerId}
-        onClose={() => { setCreateModalOpen(false); setEditingCustomerId(null); }}
+        open={isCreateModalOpen || Boolean(editingCustomerId)}
+        onClose={() => {
+          setCreateModalOpen(false);
+          setEditingCustomerId(null);
+        }}
         onSubmit={editingCustomerId ? handleUpdateSubmit : handleCreateSubmit}
         customer={isFetchingCustomer ? null : editingCustomer}
         isLoading={isFetchingCustomer || isUpdating || isCreating}
         lookupData={{ kebeles, branches, customerTypes, meterSizes }}
+        existingCustomers={allCustomers}
         ketenaFetcher={getKetenasByKebeleCached}
         readerFetcher={getReadersByBranchCached}
       />
 
+      {/* Status Activation / Deactivation Modal */}
       <CustomerStatusModal
         open={statusModalOpen}
         mode={statusModalMode}
-        onClose={() => { setStatusModalOpen(false); setStatusCustomerId(null); setStatusModalMode(null); }}
+        customer={statusCustomerObj}
+        onClose={() => {
+          setStatusModalOpen(false);
+          setStatusCustomerId(null);
+          setStatusModalMode(null);
+        }}
         onConfirm={handleStatusConfirm}
+        isSubmitting={isDeactivating || isActivating}
       />
 
+      {/* Customer 360 View Modal */}
       <ViewCustomerModal
-        open={!!viewedCustomer}
+        open={Boolean(viewedCustomer)}
         onClose={() => setViewedCustomerId(null)}
         customer={viewedCustomer}
         isLoading={isCustomerDetailsFetching}
         lookupData={{ customerTypes, meterSizes, kebeles, branches }}
+        onEdit={(id) => {
+          setEditingCustomerId(id);
+          setViewedCustomerId(null);
+        }}
+        onOpenMeters={(id) => {
+          setMetersCustomerId(id);
+          setMetersOpen(true);
+        }}
       />
 
+      {/* Meters Management Modal (Passes allCustomers for Duplicate Meter Protection) */}
       <MetersModal
         meterSizes={meterSizes}
         open={isMetersOpen}
-        onClose={() => setMetersOpen(false)}
-        customerId={selectedCustomerId}
+        onClose={() => {
+          setMetersOpen(false);
+          setMetersCustomerId(null);
+        }}
+        customerId={metersCustomerId || selectedCustomerId}
+        allCustomers={allCustomers}
       />
 
-      {/* Complete Delete Confirmation (MUI Dialog replacing window.confirm) */}
-      <Dialog
+      {/* Safe Complete Delete Confirmation */}
+      <ConfirmDialog
         open={completeDeleteDialogOpen}
-        onClose={() => { setCompleteDeleteDialogOpen(false); setCompleteDeleteCustomerId(null); }}
-      >
-        <DialogTitle>Confirm Complete Delete</DialogTitle>
-        <DialogContent>
-          <Typography>
-            Are you sure you want to completely delete this customer? This action cannot be undone.
+        title="Confirm Permanent Customer Deletion"
+        content={
+          <Typography variant="body2">
+            Are you sure you want to permanently delete customer{" "}
+            <strong>#{completeDeleteCustomerId}</strong>? This action finalizes removal and cannot
+            be undone.
           </Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => { setCompleteDeleteDialogOpen(false); setCompleteDeleteCustomerId(null); }}>
-            Cancel
-          </Button>
-          <Button
-            color="error"
-            variant="contained"
-            disabled={isCompleteDeleting}
-            onClick={async () => {
-              if (completeDeleteCustomerId) {
-                await completeDeleteCustomer(completeDeleteCustomerId);
-              }
-              setCompleteDeleteDialogOpen(false);
-              setCompleteDeleteCustomerId(null);
-            }}
-          >
-            {isCompleteDeleting ? "Deleting..." : "Complete Delete"}
-          </Button>
-        </DialogActions>
-      </Dialog>
+        }
+        confirmText="Permanently Delete"
+        confirmColor="error"
+        onClose={() => {
+          setCompleteDeleteDialogOpen(false);
+          setCompleteDeleteCustomerId(null);
+        }}
+        onConfirm={async () => {
+          if (completeDeleteCustomerId) {
+            await completeDeleteCustomer(completeDeleteCustomerId);
+            setCompleteDeleteDialogOpen(false);
+            setCompleteDeleteCustomerId(null);
+          }
+        }}
+      />
 
-      {/* Bulk Actions Dialogs */}
+      {/* Bulk Actions Suite */}
       <BulkActionsDialogs
         assignDialogOpen={assignDialogOpen}
         onAssignClose={() => setAssignDialogOpen(false)}
@@ -1237,7 +1768,13 @@ const CustomerList = () => {
         onAssignReaderIdChange={setAssignReaderId}
         readers={readers}
         isReadersLoading={isReadersLoading}
-        selectedBranchId={selectedBranchId}
+        selectedBranchId={bulkBranchId || selectedBranchId}
+        branches={branches}
+        onBranchChange={(bId) => {
+          setBulkBranchId(bId);
+          setAssignReaderId("");
+        }}
+        targetCustomerCount={targetCustomerCount}
         bulkPaymentOpen={bulkAdditionalPaymentOpen}
         onPaymentClose={() => setBulkAdditionalPaymentOpen(false)}
         onPaymentConfirm={handleConfirmBulkAdditionalPayment}
@@ -1252,35 +1789,58 @@ const CustomerList = () => {
         onTechemariAmountChange={setTechemariKfyaValue}
       />
 
-      {/* Import/Update Dialogs */}
+      {/* Import & Update Suite */}
       <ImportDialogs
         confirmImportOpen={confirmImportOpen}
-        onCancelImport={handleCancelImport}
+        onCancelImport={() => {
+          setConfirmImportOpen(false);
+          setSelectedFile(null);
+        }}
         onConfirmImport={handleConfirmImport}
         selectedFile={selectedFile}
         importDialogOpen={importDialogOpen}
-        onCloseImportDialog={handleCloseImportDialog}
+        onCloseImportDialog={() => {
+          setImportDialogOpen(false);
+          setImportResult(null);
+        }}
         importResult={importResult}
         confirmUpdateOpen={confirmUpdateOpen}
-        onCancelUpdate={handleCancelUpdate}
+        onCancelUpdate={() => {
+          setConfirmUpdateOpen(false);
+          setSelectedUpdateFile(null);
+        }}
         onConfirmUpdate={handleConfirmUpdate}
         selectedUpdateFile={selectedUpdateFile}
         updateDialogOpen={updateDialogOpen}
-        onCloseUpdateDialog={handleCloseUpdateDialog}
+        onCloseUpdateDialog={() => {
+          setUpdateDialogOpen(false);
+          setUpdateResult(null);
+        }}
         updateResult={updateResult}
         updateReaderModalOpen={updateReaderModalOpen}
-        onUpdateReaderClose={handleUpdateReaderModalClose}
+        onUpdateReaderClose={() => setUpdateReaderModalOpen(false)}
         branches={branches}
         isBranchesLoading={isBranchesLoading}
         updateReaderBranchId={updateReaderBranchId}
-        onUpdateReaderBranchIdChange={(val) => { setUpdateReaderBranchId(val); setUpdateReaderReaderId(""); }}
+        onUpdateReaderBranchIdChange={(val) => {
+          setUpdateReaderBranchId(val);
+          setUpdateReaderReaderId("");
+        }}
         updateReaderReaderId={updateReaderReaderId}
         onUpdateReaderReaderIdChange={setUpdateReaderReaderId}
         updateReaderReaders={updateReaderReaders}
         isUpdateReaderReadersLoading={isUpdateReaderReadersLoading}
         updateReaderFile={updateReaderFile}
-        onUpdateReaderFileChange={(file) => { setUpdateReaderFile(file); setUpdateReaderMatchedCustomers([]); setUpdateReaderNotFound([]); }}
-        onUpdateReaderFileClear={() => { setUpdateReaderFile(null); setUpdateReaderMatchedCustomers([]); setUpdateReaderNotFound([]); }}
+        onUpdateReaderFileChange={(file) => {
+          setUpdateReaderFile(file);
+          setUpdateReaderMatchedCustomers([]);
+          setUpdateReaderNotFound([]);
+        }}
+        onUpdateReaderFileClear={() => {
+          setUpdateReaderFile(null);
+          setUpdateReaderMatchedCustomers([]);
+          setUpdateReaderNotFound([]);
+        }}
         updateReaderMatchedCustomers={updateReaderMatchedCustomers}
         updateReaderNotFound={updateReaderNotFound}
         updateReaderProcessing={updateReaderProcessing}
@@ -1288,26 +1848,27 @@ const CustomerList = () => {
         onProcessReaderExcel={handleProcessReaderExcel}
         onSaveUpdateReader={handleSaveUpdateReader}
         updateGpsModalOpen={updateGpsModalOpen}
-        onUpdateGpsClose={handleUpdateGpsModalClose}
+        onUpdateGpsClose={() => setUpdateGpsModalOpen(false)}
         updateGpsFile={updateGpsFile}
-        onUpdateGpsFileChange={(file) => { setUpdateGpsFile(file); setUpdateGpsMatchedCustomers([]); setUpdateGpsNotFound([]); }}
-        onUpdateGpsFileClear={() => { setUpdateGpsFile(null); setUpdateGpsMatchedCustomers([]); setUpdateGpsNotFound([]); }}
+        onUpdateGpsFileChange={(file) => {
+          setUpdateGpsFile(file);
+          setUpdateGpsMatchedCustomers([]);
+          setUpdateGpsNotFound([]);
+        }}
+        onUpdateGpsFileClear={() => {
+          setUpdateGpsFile(null);
+          setUpdateGpsMatchedCustomers([]);
+          setUpdateGpsNotFound([]);
+        }}
         updateGpsMatchedCustomers={updateGpsMatchedCustomers}
         updateGpsNotFound={updateGpsNotFound}
         updateGpsProcessing={updateGpsProcessing}
         updateGpsSaving={updateGpsSaving}
         onProcessGpsJson={handleProcessGpsJson}
         onSaveUpdateGps={handleSaveUpdateGps}
-        deactivatingCustomerId={deactivatingCustomerId}
-        onCancelDeactivation={() => setDeactivatingCustomerId(null)}
-        onConfirmDeactivation={async () => {
-          await deactivateCustomer(deactivatingCustomerId);
-          setDeactivatingCustomerId(null);
-        }}
-        isDeactivating={isDeactivating}
       />
 
-      {/* Snackbar */}
+      {/* Global Snackbar */}
       <Snackbar
         open={snackbar.open}
         autoHideDuration={6000}

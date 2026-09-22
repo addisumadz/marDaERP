@@ -18,7 +18,7 @@ public interface CustomNewLineConnectionRequestRepository extends JpaRepository<
     List<CustomNewLineConnectionRequest> findByStatus(String status);
 
     @Query("SELECT r FROM CustomNewLineConnectionRequest r WHERE " +
-           "(:status IS NULL OR r.status = :status) AND " +
+           "(:status IS NULL OR r.status = :status OR (:status = 'REJECTED_OR_CANCELLED' AND (r.status = 'SURVEY_REJECTED_UNFEASIBLE' OR r.status = 'APPLICATION_CANCELLED' OR r.status = 'RETURNED_FOR_REVISION'))) AND " +
            "(:branchId IS NULL OR r.branch.id = :branchId) AND " +
            "(:searchTerm IS NULL OR " +
            "LOWER(r.applicationNumber) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR " +

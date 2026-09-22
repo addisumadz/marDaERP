@@ -3,10 +3,12 @@ package com.wbill.home.model;
 import java.io.Serializable;
 import java.util.Date;
 import jakarta.persistence.*;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 @Entity
 @Table(name = "user_account")
 @NamedQuery(name = "UserAccount.findAll", query = "SELECT u FROM UserAccount u")
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 public class UserAccount implements Serializable {
 	private static final long serialVersionUID = 1L;
 
@@ -21,6 +23,7 @@ public class UserAccount implements Serializable {
 	// bi-directional many-to-one association to Branch
 	@ManyToOne
 	@JoinColumn(name = "branchs_id")
+	@JsonIgnoreProperties({"hibernateLazyInitializer", "handler", "branchKebele"})
 	private Branch branch; // Assuming 'Branch' is the entity for the 'branchs' table
 
 	@Column(name = "user_name", nullable = false, length = 100, unique = true)

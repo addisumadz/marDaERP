@@ -4,9 +4,11 @@ import java.io.Serializable;
 import java.math.BigDecimal;
 import jakarta.persistence.*;
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 @Entity
 @Table(name = "inv_purchase_requisition_line")
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 public class InvPurchaseRequisitionLine implements Serializable {
     private static final long serialVersionUID = 1L;
 
@@ -21,6 +23,7 @@ public class InvPurchaseRequisitionLine implements Serializable {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "item_id", nullable = false)
+    @JsonIgnoreProperties({"hibernateLazyInitializer", "handler", "category", "itemGroup"})
     private InvItem item;
 
     @Column(name = "requested_quantity", nullable = false, precision = 15, scale = 4)

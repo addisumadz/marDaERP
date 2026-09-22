@@ -1,0 +1,308 @@
+{
+  "info": {
+    "_postman_id": "761d7556-db2f-42a2-a2b7-b3c07a4d7c7c",
+    "name": "billingApi",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "50716559",
+    "_collection_link": "https://go.postman.co/collection/50716559-761d7556-db2f-42a2-a2b7-b3c07a4d7c7c?source=collection_link"
+  },
+  "item": [
+    {
+      "name": "update or register single bill",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"validUntil\": \"2022-03-07\",\n  \"customer\": {\n    \"fullName\": \"abebe kebede\",\n    \"phoneNumber\": \"\",\n    \"customerId\": \"200143\"\n  },\n  \"receiptData\": {\n    \"items\": [\n      {\n        \"name\": \"november fee\",\n        \"price\": 3980.00\n      },\n      {\n        \"name\": \"penalty for november\",\n        \"price\": 80.00\n      }\n    ]\n  },\n  \"billId\": \"LOPASZXC45324\"\n}"
+        },
+        "url": {
+          "raw": "http://196.189.53.130:28080/enterpriseApi/BillIntegrationResource/updateOrRegisterBill?API_KEY=2017491298EC43FC8F7B6DE5EB000B63.C8FADC0BCFA9430BB8CCB0718FA58709",
+          "protocol": "http",
+          "host": [
+            "196",
+            "189",
+            "53",
+            "130"
+          ],
+          "port": "28080",
+          "path": [
+            "enterpriseApi",
+            "BillIntegrationResource",
+            "updateOrRegisterBill"
+          ],
+          "query": [
+            {
+              "key": "API_KEY",
+              "value": "2017491298EC43FC8F7B6DE5EB000B63.C8FADC0BCFA9430BB8CCB0718FA58709"
+            }
+          ]
+        },
+        "description": "register collection of bills to bank, upon successful response invokes the provided callback url for notification , on error returns the specified error (Bad Request)"
+      },
+      "response": []
+    },
+    {
+      "name": "BillSync (* API_KEY is mandatory)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\r\n    \"startDate\":\"2021-11-01\",\r\n    \"endDate\":\"2021-11-30\"\r\n}"
+        },
+        "url": {
+          "raw": "http://196.189.53.130:28080/enterpriseApi/BillIntegrationResource/billSync?API_KEY=2017491298EC43FC8F7B6DE5EB000B63.C8FADC0BCFA9430BB8CCB0718FA58709",
+          "protocol": "http",
+          "host": [
+            "196",
+            "189",
+            "53",
+            "130"
+          ],
+          "port": "28080",
+          "path": [
+            "enterpriseApi",
+            "BillIntegrationResource",
+            "billSync"
+          ],
+          "query": [
+            {
+              "key": "API_KEY",
+              "value": "2017491298EC43FC8F7B6DE5EB000B63.C8FADC0BCFA9430BB8CCB0718FA58709"
+            }
+          ]
+        },
+        "description": "Lists the paid bills between the start & endDate"
+      },
+      "response": []
+    },
+    {
+      "name": "billSyncFile",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\r\n    \"startDate\":\"2021-11-01\",\r\n    \"endDate\":\"2021-11-30\"\r\n}"
+        },
+        "url": {
+          "raw": "http://196.189.53.130:28080/enterpriseApi/BillIntegrationResource/billSyncFile?API_KEY=2017491298EC43FC8F7B6DE5EB000B63.C8FADC0BCFA9430BB8CCB0718FA58709",
+          "protocol": "http",
+          "host": [
+            "196",
+            "189",
+            "53",
+            "130"
+          ],
+          "port": "28080",
+          "path": [
+            "enterpriseApi",
+            "BillIntegrationResource",
+            "billSyncFile"
+          ],
+          "query": [
+            {
+              "key": "API_KEY",
+              "value": "2017491298EC43FC8F7B6DE5EB000B63.C8FADC0BCFA9430BB8CCB0718FA58709"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "cancel single bill (*API_KEY is mandatory)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": {
+          "raw": "http://196.189.53.130:28080/enterpriseApi/BillIntegrationResource/cancelBill?API_KEY=2017491298EC43FC8F7B6DE5EB000B63.C8FADC0BCFA9430BB8CCB0718FA58709&bill_id=LOPASZXC45324",
+          "protocol": "http",
+          "host": [
+            "196",
+            "189",
+            "53",
+            "130"
+          ],
+          "port": "28080",
+          "path": [
+            "enterpriseApi",
+            "BillIntegrationResource",
+            "cancelBill"
+          ],
+          "query": [
+            {
+              "key": "API_KEY",
+              "value": "2017491298EC43FC8F7B6DE5EB000B63.C8FADC0BCFA9430BB8CCB0718FA58709"
+            },
+            {
+              "key": "bill_id",
+              "value": "LOPASZXC45324"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Bulk Bill Cancel (* API_KEY is mandatory)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "API_KEY",
+            "value": "2017491298EC43FC8F7B6DE5EB000B63.C8FADC0BCFA9430BB8CCB0718FA58709"
+          }
+        ],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "uploadedFile",
+              "type": "file",
+              "src": "bills_to_cancel.csv"
+            }
+          ]
+        },
+        "url": {
+          "raw": "http://196.189.53.130:28080/enterpriseApi/BillIntegrationResource/bulkBillCancel?API_KEY=2017491298EC43FC8F7B6DE5EB000B63.C8FADC0BCFA9430BB8CCB0718FA58709",
+          "protocol": "http",
+          "host": [
+            "196",
+            "189",
+            "53",
+            "130"
+          ],
+          "port": "28080",
+          "path": [
+            "enterpriseApi",
+            "BillIntegrationResource",
+            "bulkBillCancel"
+          ],
+          "query": [
+            {
+              "key": "API_KEY",
+              "value": "2017491298EC43FC8F7B6DE5EB000B63.C8FADC0BCFA9430BB8CCB0718FA58709"
+            }
+          ]
+        },
+        "description": "cancels collection of bills\n\nThis endpoint will accept a collection of bill ids (via a csv file) and cancels the pending bills.\nupon successful response 200 will be returned.otherwise 401 bad request will be returned."
+      },
+      "response": []
+    },
+    {
+      "name": "Bulk Bill Registration",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "API_KEY",
+            "value": "2017491298EC43FC8F7B6DE5EB000B63.C8FADC0BCFA9430BB8CCB0718FA58709"
+          }
+        ],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "uploadedFile",
+              "type": "file",
+              "src": "adis_kidam.csv"
+            }
+          ]
+        },
+        "url": {
+          "raw": "http://196.189.53.130:28080/enterpriseApi/BillIntegrationResource/bulkBillUpload?API_KEY=2017491298EC43FC8F7B6DE5EB000B63.C8FADC0BCFA9430BB8CCB0718FA58709",
+          "protocol": "http",
+          "host": [
+            "196",
+            "189",
+            "53",
+            "130"
+          ],
+          "port": "28080",
+          "path": [
+            "enterpriseApi",
+            "BillIntegrationResource",
+            "bulkBillUpload"
+          ],
+          "query": [
+            {
+              "key": "API_KEY",
+              "value": "2017491298EC43FC8F7B6DE5EB000B63.C8FADC0BCFA9430BB8CCB0718FA58709"
+            }
+          ]
+        },
+        "description": "cancels collection of bills\n\nThis endpoint will accept a collection of bill ids (via a csv file) and cancels the pending bills.\nupon successful response 200 will be returned.otherwise 401 bad request will be returned."
+      },
+      "response": []
+    },
+    {
+      "name": "Bulk Bill Update",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "API_KEY",
+            "value": "2017491298EC43FC8F7B6DE5EB000B63.C8FADC0BCFA9430BB8CCB0718FA58709"
+          }
+        ],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "uploadedFile",
+              "type": "file",
+              "src": "adis_kidam.csv"
+            },
+            {
+              "key": "",
+              "value": "",
+              "type": "text",
+              "disabled": true
+            }
+          ]
+        },
+        "url": {
+          "raw": "http://196.189.53.130:28080/enterpriseApi/BillIntegrationResource/bulkBillUpdate?API_KEY=2017491298EC43FC8F7B6DE5EB000B63.C8FADC0BCFA9430BB8CCB0718FA58709",
+          "protocol": "http",
+          "host": [
+            "196",
+            "189",
+            "53",
+            "130"
+          ],
+          "port": "28080",
+          "path": [
+            "enterpriseApi",
+            "BillIntegrationResource",
+            "bulkBillUpdate"
+          ],
+          "query": [
+            {
+              "key": "API_KEY",
+              "value": "2017491298EC43FC8F7B6DE5EB000B63.C8FADC0BCFA9430BB8CCB0718FA58709"
+            }
+          ]
+        },
+        "description": "cancels collection of bills\n\nThis endpoint will accept a collection of bill ids (via a csv file) and cancels the pending bills.\nupon successful response 200 will be returned.otherwise 401 bad request will be returned."
+      },
+      "response": []
+    }
+  ]
+}

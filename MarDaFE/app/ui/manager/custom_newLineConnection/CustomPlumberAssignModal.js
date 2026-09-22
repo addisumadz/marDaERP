@@ -5,7 +5,14 @@ import { toast } from "react-toastify";
 import customNewLineConnectionService from "../../../lib/custom_newLineConnectionService";
 import { generateSurveyChecklistPdf } from "./customNewLinePdf";
 
-export default function CustomPlumberAssignModal({ isOpen, onClose, onSuccess, request, mode = "survey" }) {
+export default function CustomPlumberAssignModal({
+  isOpen,
+  onClose,
+  onSuccess,
+  request,
+  mode = "survey",
+  isReassign = false,
+}) {
   const [plumbers, setPlumbers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -45,9 +52,21 @@ export default function CustomPlumberAssignModal({ isOpen, onClose, onSuccess, r
       return;
     }
 
+    if (isReassign && !notes.trim()) {
+      toast.error("እባክዎ ባለሙያ የተቀየረበትን ምክንያት ያስገቡ");
+      return;
+    }
+
     setSubmitting(true);
     try {
-      if (isSurvey) {
+      if (isReassign) {
+        await customNewLineConnectionService.reassignPlumber(request.id, {
+          plumberId: Number(selectedPlumberId),
+          mode,
+          reason: notes.trim(),
+        });
+        toast.success("ባለሙያው በተሳካ ሁኔታ ተቀይሯል");
+      } else if (isSurvey) {
         await customNewLineConnectionService.assignSurveyPlumber(request.id, {
           plumberId: Number(selectedPlumberId),
           notes,
@@ -99,7 +118,13 @@ export default function CustomPlumberAssignModal({ isOpen, onClose, onSuccess, r
           <div className="flex items-center gap-2">
             <Wrench className="w-5 h-5 text-amber-200" />
             <h2 className="text-base font-bold">
-              {isSurvey ? "የዳሰሳ ጥናት ባለሙያ (Plumber) መመደቢያ" : "የመስመር ዝርጋታ ባለሙያ መመደቢያ"}
+              {isReassign
+                ? isSurvey
+                  ? "የዳሰሳ ጥናት ባለሙያ መቀየሪያ (Reassign Survey Plumber)"
+                  : "የመስመር ዝርጋታ ባለሙያ መቀየሪያ (Reassign Installation Plumber)"
+                : isSurvey
+                ? "የዳሰሳ ጥናት ባለሙያ (Plumber) መመደቢያ"
+                : "የመስመር ዝርጋታ ባለሙያ መመደቢያ"}
             </h2>
           </div>
           <button onClick={onClose} className="p-1 rounded-lg hover:bg-white/20 text-white transition-colors">
@@ -118,7 +143,8 @@ export default function CustomPlumberAssignModal({ isOpen, onClose, onSuccess, r
         <form onSubmit={handleAssign} className="p-6 space-y-4">
           <div>
             <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-2">
-              የቅርንጫፉ ባለሙያ (Branch Plumber) ይምረጡ <span className="text-red-500">*</span>
+              {isReassign ? "አዲስ የሚመደብ የቅርንጫፍ ባለሙያ ይምረጡ" : "የቅርንጫፉ ባለሙያ (Branch Plumber) ይምረጡ"}{" "}
+              <span className="text-red-500">*</span>
             </label>
             {loading ? (
               <div className="flex items-center gap-2 text-sm text-gray-400 py-3">
@@ -168,13 +194,24 @@ export default function CustomPlumberAssignModal({ isOpen, onClose, onSuccess, r
 
           <div>
             <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
-              ተጨማሪ ማስታወሻ / መመሪያ ለባለሙያው
+              {isReassign ? (
+                <>
+                  ባለሙያ የተቀየረበት ምክንያት <span className="text-red-500">*</span>
+                </>
+              ) : (
+                "ተጨማሪ ማስታወሻ / መመሪያ ለባለሙያው"
+              )}
             </label>
             <textarea
               rows={3}
+              required={isReassign}
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="ለምሳሌ: የደንበኛውን ቤት በአስቸኳይ በመጎብኘት አስፈላጊውን ርቀት ይለኩ..."
+              placeholder={
+                isReassign
+                  ? "ለምሳሌ: ቀደም ሲል የተመደበው ባለሙያ በእረፍት ላይ ስለሆነ ወይም የስራ ጫና ስለበዛበት..."
+                  : "ለምሳሌ: የደንበኛውን ቤት በአስቸኳይ በመጎብኘት አስፈላጊውን ርቀት ይለኩ..."
+              }
               className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700/50 dark:text-white focus:ring-2 focus:ring-amber-500 outline-none"
             />
           </div>
@@ -193,8 +230,20 @@ export default function CustomPlumberAssignModal({ isOpen, onClose, onSuccess, r
               disabled={submitting || plumbers.length === 0}
               className="flex items-center gap-2 px-5 py-2 text-sm font-medium text-white bg-amber-600 hover:bg-amber-700 rounded-lg shadow-sm transition-colors disabled:opacity-50"
             >
-              {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserCheck className="w-4 h-4" />}
-              {submitting ? "በመመደብ ላይ..." : "ባለሙያውን መድብ"}
+              {submitting ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : isReassign ? (
+                <RefreshCw className="w-4 h-4" />
+              ) : (
+                <UserCheck className="w-4 h-4" />
+              )}
+              {submitting
+                ? isReassign
+                  ? "በመቀየር ላይ..."
+                  : "በመመደብ ላይ..."
+                : isReassign
+                ? "ባለሙያውን ቀይር"
+                : "ባለሙያውን መድብ"}
             </button>
           </div>
         </form>

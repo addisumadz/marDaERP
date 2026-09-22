@@ -71,6 +71,16 @@ public class CustomNewLineConnectionController {
         return ResponseEntity.ok(service.getApplicationFees(id));
     }
 
+    @GetMapping("/applications/{id}/logs")
+    public ResponseEntity<?> getApplicationLogs(@PathVariable Long id, Principal principal) {
+        try {
+            String username = principal != null ? principal.getName() : null;
+            return ResponseEntity.ok(service.getApplicationLogs(id, username));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Collections.singletonMap("message", e.getMessage()));
+        }
+    }
+
     @GetMapping("/stats")
     public ResponseEntity<?> getDepartmentStats(
             @RequestParam(required = false) Integer branchId,
@@ -177,7 +187,47 @@ public class CustomNewLineConnectionController {
         }
     }
 
-    // ─── 10. Catalogs & Plumbers ────────────────────────────────────────────
+    // ─── 10. Supervisory & Management Operations ────────────────────────────
+    @PutMapping("/applications/{id}/reassign-plumber")
+    public ResponseEntity<?> reassignPlumber(
+            @PathVariable Long id,
+            @RequestBody ReassignPlumberDTO dto,
+            Principal principal) {
+        try {
+            String username = principal != null ? principal.getName() : "technical_lead";
+            return ResponseEntity.ok(service.reassignPlumber(id, dto, username));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Collections.singletonMap("message", e.getMessage()));
+        }
+    }
+
+    @PutMapping("/applications/{id}/reject-cancel")
+    public ResponseEntity<?> rejectOrCancelApplication(
+            @PathVariable Long id,
+            @RequestBody RejectCancelDTO dto,
+            Principal principal) {
+        try {
+            String username = principal != null ? principal.getName() : "management";
+            return ResponseEntity.ok(service.rejectOrCancelApplication(id, dto, username));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Collections.singletonMap("message", e.getMessage()));
+        }
+    }
+
+    @PutMapping("/applications/{id}/return-revision")
+    public ResponseEntity<?> returnForRevision(
+            @PathVariable Long id,
+            @RequestBody ReturnRevisionDTO dto,
+            Principal principal) {
+        try {
+            String username = principal != null ? principal.getName() : "revenue";
+            return ResponseEntity.ok(service.returnForRevision(id, dto, username));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Collections.singletonMap("message", e.getMessage()));
+        }
+    }
+
+    // ─── 11. Catalogs & Plumbers ────────────────────────────────────────────
     @GetMapping("/common-materials")
     public ResponseEntity<?> getCommonMaterials() {
         return ResponseEntity.ok(service.getAllCommonMaterials());

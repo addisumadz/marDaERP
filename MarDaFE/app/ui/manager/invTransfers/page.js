@@ -7,7 +7,11 @@ import invStoreService from "../../../lib/invStoreService";
 import invItemService from "../../../lib/invItemService";
 import invStockQueryService from "../../../lib/invStockService";
 import workflowService from "../../../lib/workflowService";
+import invUserStoreService from "../../../lib/invUserStoreService";
+import { UserAccountService } from "../../../lib/userAccountService";
 import { generateTransferPdf } from "./transferPdf";
+
+const userService = new UserAccountService();
 import {
   ArrowLeftRight,
   Plus,
@@ -49,7 +53,14 @@ const statusColors = {
 };
 
 /* ─── Dynamic Configurable Stepper Component ─────────────────────── */
-function TransferStepper({ status, templateSteps = [], currentStep = null, remarks = "" }) {
+function TransferStepper({
+  status,
+  templateSteps = [],
+  currentStep = null,
+  remarks = "",
+  fromStore = null,
+  toStore = null,
+}) {
   const isCancelled = status === "CANCELLED";
   const isDraft = status === "DRAFT";
   const isApproved = status === "APPROVED";
@@ -71,8 +82,16 @@ function TransferStepper({ status, templateSteps = [], currentStep = null, remar
       role: s.approverRoleCode,
       stepOrder: s.stepOrder,
     })),
-    { key: "DISPATCH", label: "Dispatched / In-Transit", role: "Storekeeper" },
-    { key: "RECEIVE", label: "Goods Received", role: "Destination Store" },
+    {
+      key: "DISPATCH",
+      label: "Dispatched / In-Transit",
+      role: fromStore?.storeName ? `Source: ${fromStore.storeName}` : "Source Storekeeper",
+    },
+    {
+      key: "RECEIVE",
+      label: "Goods Received",
+      role: toStore?.storeName ? `Dest: ${toStore.storeName}` : "Destination Storekeeper",
+    },
   ];
 
   // Calculate current active step index
@@ -176,7 +195,15 @@ export default function InvTransfersPage() {
   const [templateSteps, setTemplateSteps] = useState([]);
   const [stores, setStores] = useState([]);
   const [items, setItems] = useState([]);
+  const [myStores, setMyStores] = useState([]);
+  const [assignedStore, setAssignedStore] = useState(null);
+  const [currentUserBranch, setCurrentUserBranch] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  // Branch & Admin flags
+  const isMainOffice = currentUserBranch?.branchCode?.toUpperCase() === "MO" ||
+    (currentUserBranch?.branchName && currentUserBranch.branchName.toLowerCase().includes("main"));
+  const isMainOfficeOrAdmin = isSuperAdmin || isMainOffice;
 
   // Pagination & Filtering
   const [page, setPage] = useState(0);
@@ -194,6 +221,8 @@ export default function InvTransfersPage() {
   const [detailModal, setDetailModal] = useState(null);
   const [approveModal, setApproveModal] = useState(null); // transfer item
   const [approveComments, setApproveComments] = useState("");
+  const [approveLines, setApproveLines] = useState([]);
+  const [approveErrors, setApproveErrors] = useState({});
   const [rejectModal, setRejectModal] = useState(null); // transfer item
   const [rejectReason, setRejectReason] = useState("");
   const [rejectErrors, setRejectErrors] = useState("");
@@ -221,21 +250,132 @@ export default function InvTransfersPage() {
   }, []);
 
   useEffect(() => {
+    if (session?.user?.id && !currentUserBranch) {
+      userService
+        .getUserById(session.user.id)
+        .then((userProfile) => {
+          if (userProfile && userProfile.branchId) {
+            const storeInBranch = stores.find((s) => s.branch?.id === userProfile.branchId);
+            setCurrentUserBranch({
+              id: userProfile.branchId,
+              branchCode: storeInBranch?.branch?.branchCode || "",
+              branchName: userProfile.branchName || storeInBranch?.branch?.branchDescription || "",
+            });
+          }
+        })
+        .catch(() => {});
+    }
+  }, [session?.user?.id, stores, currentUserBranch]);
+
+  useEffect(() => {
     loadData();
   }, [page, filterStatus]);
 
   const loadLookups = async () => {
     try {
-      const [sList, iList] = await Promise.all([
+      const [sList, iList, mySt, userProfile] = await Promise.all([
         invStoreService.getAllActive(),
         invItemService.getAllActive(),
+        invUserStoreService.getMyStores().catch(() => []),
+        session?.user?.id ? userService.getUserById(session.user.id).catch(() => null) : null,
       ]);
       setStores(sList || []);
       setItems(iList || []);
+
+      const activeUserStores = (mySt || []).filter((s) => s.isActive !== false && s.store);
+      setMyStores(activeUserStores);
+      const primary = activeUserStores.find((s) => s.isPrimary)?.store || activeUserStores[0]?.store || null;
+      setAssignedStore(primary);
+
+      if (userProfile && userProfile.branchId) {
+        const storeInBranch = (sList || []).find((s) => s.branch?.id === userProfile.branchId);
+        setCurrentUserBranch({
+          id: userProfile.branchId,
+          branchCode: storeInBranch?.branch?.branchCode || "",
+          branchName: userProfile.branchName || storeInBranch?.branch?.branchDescription || "",
+        });
+      }
     } catch (e) {
       console.warn("Could not load lookups:", e);
     }
   };
+
+  /* ── Custody & Step Authorization Helpers ── */
+  // Checks if the logged-in user is an authorized custodian for a given store
+  const isUserAuthorizedForStore = useCallback(
+    (store) => {
+      if (!store || !store.id) return false;
+      if (isSuperAdmin) return true;
+
+      const uid = session?.user?.id;
+      const uname = (session?.user?.name || session?.user?.username || "").toLowerCase();
+
+      // 1. Direct Store Keeper on store record
+      if (store.storeKeeper) {
+        if (uid && String(store.storeKeeper.id) === String(uid)) return true;
+        if (uname && store.storeKeeper.userName && store.storeKeeper.userName.toLowerCase() === uname) return true;
+      }
+
+      // 2. Direct Manager on store record
+      if (store.manager) {
+        if (uid && String(store.manager.id) === String(uid)) return true;
+        if (uname && store.manager.userName && store.manager.userName.toLowerCase() === uname) return true;
+      }
+
+      // 3. User store assignment match via inv_store_user (myStores)
+      if (myStores && myStores.length > 0) {
+        const isAssigned = myStores.some(
+          (ms) => ms.store && String(ms.store.id) === String(store.id) && ms.isActive !== false
+        );
+        if (isAssigned) return true;
+      }
+
+      return false;
+    },
+    [isSuperAdmin, session?.user?.id, session?.user?.name, session?.user?.username, myStores]
+  );
+
+  // Check if user is authorized to approve/reject the active workflow step
+  const canUserApproveStep = useCallback(
+    (transfer) => {
+      if (!transfer || transfer.status !== "SUBMITTED") return false;
+      if (isSuperAdmin) return true;
+
+      const inst = wfInstances[transfer.id];
+      if (inst && inst.status === "IN_PROGRESS" && inst.currentStep) {
+        const requiredRole = (inst.currentStep.approverRoleCode || "").toLowerCase().replace(/^role_/i, "");
+        return normalizedRoles.includes(requiredRole);
+      }
+      // Fallback when no workflow instance or step
+      return isStoreManager;
+    },
+    [isSuperAdmin, wfInstances, normalizedRoles, isStoreManager]
+  );
+
+  // Check if user can dispatch / ship from source store
+  const canUserShip = useCallback(
+    (transfer) => {
+      if (!transfer || transfer.status !== "APPROVED") return false;
+      return isSuperAdmin || isUserAuthorizedForStore(transfer.fromStore);
+    },
+    [isSuperAdmin, isUserAuthorizedForStore]
+  );
+
+  // Check if user can accept and receive into destination store
+  const canUserReceive = useCallback(
+    (transfer) => {
+      if (!transfer || transfer.status !== "IN_TRANSIT") return false;
+      return isSuperAdmin || isUserAuthorizedForStore(transfer.toStore);
+    },
+    [isSuperAdmin, isUserAuthorizedForStore]
+  );
+
+  const isAuthorizedCreator =
+    isSuperAdmin ||
+    isStoreManager ||
+    isStorekeeper ||
+    (myStores && myStores.length > 0) ||
+    normalizedRoles.some((r) => ["m_branch_store", "inv_storekeeper", "m_gebi_officer", "inv_manager"].includes(r));
 
   const loadWorkflowTemplate = async () => {
     try {
@@ -282,10 +422,10 @@ export default function InvTransfersPage() {
 
   /* ── Live Stock Check Helper ──────────────────────────────────── */
   const fetchItemStock = useCallback(
-    async (itemId, storeId) => {
+    async (itemId, storeId, force = false) => {
       if (!itemId || !storeId) return null;
       const key = `${storeId}_${itemId}`;
-      if (stockCache[key] && !stockCache[key].loading) {
+      if (!force && stockCache[key] && !stockCache[key].loading) {
         return stockCache[key];
       }
 
@@ -478,21 +618,126 @@ export default function InvTransfersPage() {
     setSubmitting(false);
   };
 
+  /* ── Open Approve Modal with Line Adjustment & Stock Checks ──── */
+  const handleOpenApproveModal = async (transfer) => {
+    if (!canUserApproveStep(transfer)) {
+      toast.error("You are not authorized to approve the current step for this transfer.");
+      return;
+    }
+
+    let full = transfer;
+    if (!transfer.lines || transfer.lines.length === 0) {
+      try {
+        full = await invTransferService.getById(transfer.id);
+      } catch (e) {
+        console.error("Failed to load transfer lines:", e);
+      }
+    }
+
+    setApproveModal(full);
+    setApproveComments("");
+    setApproveErrors({});
+
+    const linesData = (full.lines || []).map((l) => ({
+      id: l.id,
+      itemId: l.item?.id || l.itemId,
+      item: l.item,
+      originalQuantity: Number(l.quantity || 0),
+      approvedQuantity: Number(l.quantity || 0),
+      unitCost: Number(l.unitCost || 0),
+    }));
+    setApproveLines(linesData);
+
+    const fromStoreId = full.fromStore?.id;
+    if (fromStoreId) {
+      linesData.forEach((l) => {
+        if (l.itemId) {
+          fetchItemStock(l.itemId, fromStoreId, true);
+        }
+      });
+    }
+  };
+
+  const handleApproveLineQuantityChange = (idx, value) => {
+    const updated = [...approveLines];
+    updated[idx] = { ...updated[idx], approvedQuantity: value };
+    setApproveLines(updated);
+
+    if (approveErrors[idx]) {
+      setApproveErrors((prev) => {
+        const copy = { ...prev };
+        delete copy[idx];
+        return copy;
+      });
+    }
+  };
+
   /* ── Workflow Step Approval ───────────────────────────────────── */
   const handleApproveConfirm = async () => {
     if (!approveModal) return;
+    if (!canUserApproveStep(approveModal)) {
+      toast.error("You are not authorized to approve the current step for this transfer.");
+      return;
+    }
+
+    // Real-time stock validation against source store
+    const fromStoreId = approveModal.fromStore?.id;
+    const errors = {};
+    let hasError = false;
+
+    approveLines.forEach((l, idx) => {
+      const qty = Number(l.approvedQuantity);
+      if (l.approvedQuantity === "" || l.approvedQuantity === null || isNaN(qty) || qty <= 0) {
+        errors[idx] = "Enter a valid quantity > 0";
+        hasError = true;
+      } else if (fromStoreId && l.itemId) {
+        const stockKey = `${fromStoreId}_${l.itemId}`;
+        const stock = stockCache[stockKey];
+        if (stock && !stock.loading && qty > stock.available) {
+          errors[idx] = `Exceeds source stock (max: ${stock.available})`;
+          hasError = true;
+        }
+      }
+    });
+
+    if (hasError) {
+      setApproveErrors(errors);
+      toast.error("Please correct invalid quantities or lines exceeding source warehouse stock.");
+      return;
+    }
+
     setSubmitting(true);
     try {
+      // 1. If any line quantities were modified, persist them to the backend first
+      const hasChanges = approveLines.some(
+        (l) => Number(l.approvedQuantity) !== Number(l.originalQuantity)
+      );
+
+      const payloadLines = approveLines.map((l) => ({
+        id: l.id,
+        itemId: l.itemId,
+        quantity: Number(l.approvedQuantity),
+      }));
+
+      if (hasChanges) {
+        await invTransferService.updateLines(approveModal.id, payloadLines);
+      }
+
+      // 2. Complete workflow step approval or fallback direct approval
       const inst = wfInstances[approveModal.id];
       if (inst && inst.id && inst.status === "IN_PROGRESS") {
         await workflowService.approveStep(inst.id, approveComments || "Approved");
       } else {
-        await invTransferService.approve(approveModal.id);
+        await invTransferService.approve(approveModal.id, { lines: payloadLines });
       }
+
       toast.success(`Transfer ${approveModal.transferNumber} step approved!`);
       setApproveModal(null);
       setApproveComments("");
+      setApproveLines([]);
+      setApproveErrors({});
       loadData();
+
       if (detailModal?.id === approveModal.id) {
         const full = await invTransferService.getById(approveModal.id);
         setDetailModal(full);
@@ -506,6 +751,10 @@ export default function InvTransfersPage() {
   /* ── Workflow Step Rejection ──────────────────────────────────── */
   const handleRejectConfirm = async () => {
     if (!rejectModal) return;
+    if (!canUserApproveStep(rejectModal)) {
+      toast.error("You are not authorized to reject the current step for this transfer.");
+      return;
+    }
     if (!rejectReason || !rejectReason.trim()) {
       setRejectErrors("Rejection reason is mandatory.");
       return;
@@ -536,6 +785,10 @@ export default function InvTransfersPage() {
 
   /* ── Dispatch / Ship Handler ──────────────────────────────────── */
   const handleOpenShipModal = (transfer) => {
+    if (!canUserShip(transfer)) {
+      toast.error("You are not authorized to dispatch stock from the source warehouse.");
+      return;
+    }
     setShipModal(transfer);
     setShipForm({
       waybillNumber: transfer.waybillNumber || "",
@@ -547,6 +800,11 @@ export default function InvTransfersPage() {
 
   const handleShipConfirm = async () => {
     if (!shipModal) return;
+    if (!canUserShip(shipModal)) {
+      toast.error("You are not authorized to dispatch stock from the source warehouse.");
+      return;
+    }
+
     const errors = {};
     if (!shipForm.vehiclePlate.trim()) errors.vehiclePlate = "Vehicle plate number is required.";
     if (!shipForm.driverName.trim()) errors.driverName = "Driver name is required.";
@@ -579,6 +837,10 @@ export default function InvTransfersPage() {
 
   /* ── Receive Goods Handler ────────────────────────────────────── */
   const handleOpenReceiveModal = (transfer) => {
+    if (!canUserReceive(transfer)) {
+      toast.error("Only the destination store owner or assigned storekeeper may confirm receipt.");
+      return;
+    }
     setReceiveModal(transfer);
     setReceiveLines(
       (transfer.lines || []).map((l) => ({
@@ -592,6 +854,11 @@ export default function InvTransfersPage() {
 
   const handleReceiveConfirm = async () => {
     if (!receiveModal) return;
+    if (!canUserReceive(receiveModal)) {
+      toast.error("Only the destination store owner or assigned storekeeper may confirm receipt.");
+      return;
+    }
+
     setSubmitting(true);
     try {
       await invTransferService.receive(receiveModal.id);
@@ -676,18 +943,36 @@ export default function InvTransfersPage() {
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => {
-              setFormErrors({});
-              setCreateModalOpen(true);
-            }}
-            className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white text-sm font-semibold rounded-xl shadow-md shadow-indigo-200 dark:shadow-indigo-900/40 transition-all"
-          >
-            <Plus className="w-4 h-4" />
-            <span>New Stock Transfer</span>
-          </button>
-        </div>
+        {isAuthorizedCreator && (
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => {
+                let defaultFromStoreId = "";
+                if (assignedStore?.id) {
+                  defaultFromStoreId = String(assignedStore.id);
+                } else if (myStores.length > 0 && myStores[0]?.store?.id) {
+                  defaultFromStoreId = String(myStores[0].store.id);
+                } else if (currentUserBranch?.id) {
+                  const bStores = stores.filter((s) => s.branch?.id === currentUserBranch.id);
+                  if (bStores.length > 0) defaultFromStoreId = String(bStores[0].id);
+                }
+
+                setForm({
+                  fromStoreId: defaultFromStoreId,
+                  toStoreId: "",
+                  remarks: "",
+                  lines: [{ itemId: "", quantity: "" }],
+                });
+                setFormErrors({});
+                setCreateModalOpen(true);
+              }}
+              className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white text-sm font-semibold rounded-xl shadow-md shadow-indigo-200 dark:shadow-indigo-900/40 transition-all"
+            >
+              <Plus className="w-4 h-4" />
+              <span>New Stock Transfer</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* ── Summary Metric Cards ── */}
@@ -838,15 +1123,9 @@ export default function InvTransfersPage() {
                 filteredTransfers.map((t) => {
                   const inst = wfInstances[t.id];
                   const currentStep = inst?.currentStep;
-                  const canApprove =
-                    t.status === "SUBMITTED" &&
-                    (isSuperAdmin ||
-                      (currentStep
-                        ? normalizedRoles.includes(currentStep.approverRoleCode?.toLowerCase())
-                        : isStoreManager));
-
-                  const canShip = t.status === "APPROVED" && (isSuperAdmin || isStorekeeper || isStoreManager);
-                  const canReceive = t.status === "IN_TRANSIT" && (isSuperAdmin || isStorekeeper || isStoreManager);
+                  const canApprove = canUserApproveStep(t);
+                  const canShip = canUserShip(t);
+                  const canReceive = canUserReceive(t);
 
                   return (
                     <tr key={t.id} className="hover:bg-gray-50/60 dark:hover:bg-gray-700/30 transition-colors">
@@ -934,7 +1213,7 @@ export default function InvTransfersPage() {
                           </button>
 
                           {/* Submit Draft */}
-                          {t.status === "DRAFT" && (
+                          {t.status === "DRAFT" && isAuthorizedCreator && (
                             <button
                               onClick={() => handleSubmit(t)}
                               className="p-1.5 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400"
@@ -948,9 +1227,9 @@ export default function InvTransfersPage() {
                           {canApprove && (
                             <>
                               <button
-                                onClick={() => setApproveModal(t)}
+                                onClick={() => handleOpenApproveModal(t)}
                                 className="p-1.5 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400"
-                                title="Approve Step"
+                                title="Approve Current Step"
                               >
                                 <Check className="w-4 h-4" />
                               </button>
@@ -973,7 +1252,7 @@ export default function InvTransfersPage() {
                             <button
                               onClick={() => handleOpenShipModal(t)}
                               className="p-1.5 rounded-lg hover:bg-purple-50 dark:hover:bg-purple-900/30 text-purple-600 dark:text-purple-400"
-                              title="Dispatch / Ship Stock"
+                              title="Dispatch / Ship Stock (Source Warehouse Custodian)"
                             >
                               <Truck className="w-4 h-4" />
                             </button>
@@ -984,10 +1263,28 @@ export default function InvTransfersPage() {
                             <button
                               onClick={() => handleOpenReceiveModal(t)}
                               className="p-1.5 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400"
-                              title="Receive Goods into Warehouse"
+                              title="Receive Goods (Destination Warehouse Custodian)"
                             >
                               <PackageCheck className="w-4 h-4" />
                             </button>
+                          )}
+
+                          {/* Pending Custodian Tooltips / Indicators */}
+                          {t.status === "IN_TRANSIT" && !canReceive && (
+                            <span
+                              className="p-1.5 text-gray-400 dark:text-gray-500 cursor-not-allowed"
+                              title={`Awaiting receipt confirmation by destination storekeeper (${t.toStore?.storeName || "Destination Store"})`}
+                            >
+                              <PackageCheck className="w-4 h-4 opacity-40" />
+                            </span>
+                          )}
+                          {t.status === "APPROVED" && !canShip && (
+                            <span
+                              className="p-1.5 text-gray-400 dark:text-gray-500 cursor-not-allowed"
+                              title={`Awaiting dispatch by source storekeeper (${t.fromStore?.storeName || "Source Store"})`}
+                            >
+                              <Truck className="w-4 h-4 opacity-40" />
+                            </span>
                           )}
                         </div>
                       </td>
@@ -1066,7 +1363,14 @@ export default function InvTransfersPage() {
                     }`}
                   >
                     <option value="">Select Source Store...</option>
-                    {stores.map((s) => (
+                    {(isMainOfficeOrAdmin
+                      ? stores
+                      : myStores.length > 0
+                      ? myStores.map((ms) => ms.store).filter(Boolean)
+                      : currentUserBranch?.id
+                      ? stores.filter((s) => s.branch?.id === currentUserBranch.id)
+                      : stores
+                    ).map((s) => (
                       <option key={s.id} value={s.id}>
                         {s.storeName} ({s.storeCode || `ID: ${s.id}`})
                       </option>
@@ -1346,6 +1650,8 @@ export default function InvTransfersPage() {
                 templateSteps={templateSteps}
                 currentStep={wfInstances[detailModal.id]?.currentStep}
                 remarks={detailModal.remarks}
+                fromStore={detailModal.fromStore}
+                toStore={detailModal.toStore}
               />
             </div>
 
@@ -1355,7 +1661,7 @@ export default function InvTransfersPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* Store Routing */}
                 <div className="p-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-700/30 space-y-2">
-                  <div className="text-xs font-semibold uppercase tracking-wider text-gray-500">Store Routing</div>
+                  <div className="text-xs font-semibold uppercase tracking-wider text-gray-500">Store Routing & Custodians</div>
                   <div className="flex items-center justify-between pt-1">
                     <div>
                       <div className="text-xs text-gray-400">Source (From)</div>
@@ -1364,6 +1670,9 @@ export default function InvTransfersPage() {
                       </div>
                       <div className="text-xs text-gray-500 font-mono">
                         {detailModal.fromStore?.storeCode || "Code —"}
+                      </div>
+                      <div className="text-[11px] text-indigo-600 dark:text-indigo-400 mt-0.5">
+                        Custodian: {detailModal.fromStore?.storeKeeper?.fullName || detailModal.fromStore?.storeKeeper?.userName || "Assigned Storekeeper"}
                       </div>
                     </div>
                     <ArrowRight className="w-5 h-5 text-indigo-500 mx-2" />
@@ -1374,6 +1683,9 @@ export default function InvTransfersPage() {
                       </div>
                       <div className="text-xs text-gray-500 font-mono">
                         {detailModal.toStore?.storeCode || "Code —"}
+                      </div>
+                      <div className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-0.5">
+                        Custodian: {detailModal.toStore?.storeKeeper?.fullName || detailModal.toStore?.storeKeeper?.userName || "Assigned Storekeeper"}
                       </div>
                     </div>
                   </div>
@@ -1519,17 +1831,43 @@ export default function InvTransfersPage() {
             </div>
 
             {/* Modal Footer with Actions */}
-            <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50">
-              <button
-                type="button"
-                onClick={() => setDetailModal(null)}
-                className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900"
-              >
-                Close
-              </button>
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50">
+              <div className="text-xs text-gray-500">
+                {detailModal.status === "SUBMITTED" && !canUserApproveStep(detailModal) && (
+                  <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400 font-medium">
+                    <Clock className="w-3.5 h-3.5" />
+                    Pending Approval: {wfInstances[detailModal.id]?.currentStep?.stepName || "Manager"} ({wfInstances[detailModal.id]?.currentStep?.approverRoleCode || "Role Required"})
+                  </span>
+                )}
+                {detailModal.status === "APPROVED" && !canUserShip(detailModal) && (
+                  <span className="flex items-center gap-1 text-purple-600 dark:text-purple-400 font-medium">
+                    <Truck className="w-3.5 h-3.5" />
+                    Awaiting dispatch by source custodian ({detailModal.fromStore?.storeName})
+                  </span>
+                )}
+                {detailModal.status === "IN_TRANSIT" && !canUserReceive(detailModal) && (
+                  <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-medium">
+                    <PackageCheck className="w-3.5 h-3.5" />
+                    Final receipt must be confirmed by destination custodian ({detailModal.toStore?.storeName})
+                  </span>
+                )}
+                {detailModal.status === "RECEIVED" && (
+                  <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-medium">
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Fully received & stock intake posted
+                  </span>
+                )}
+              </div>
 
-              <div className="flex items-center gap-2">
-                {detailModal.status === "DRAFT" && (
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setDetailModal(null)}
+                  className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900"
+                >
+                  Close
+                </button>
+
+                {detailModal.status === "DRAFT" && isAuthorizedCreator && (
                   <button
                     onClick={() => handleSubmit(detailModal)}
                     className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700"
@@ -1539,10 +1877,10 @@ export default function InvTransfersPage() {
                   </button>
                 )}
 
-                {detailModal.status === "SUBMITTED" && (
+                {detailModal.status === "SUBMITTED" && canUserApproveStep(detailModal) && (
                   <>
                     <button
-                      onClick={() => setApproveModal(detailModal)}
+                      onClick={() => handleOpenApproveModal(detailModal)}
                       className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 text-white rounded-xl text-sm font-semibold hover:bg-emerald-700"
                     >
                       <Check className="w-4 h-4" />
@@ -1562,7 +1900,7 @@ export default function InvTransfersPage() {
                   </>
                 )}
 
-                {detailModal.status === "APPROVED" && (
+                {detailModal.status === "APPROVED" && canUserShip(detailModal) && (
                   <button
                     onClick={() => handleOpenShipModal(detailModal)}
                     className="flex items-center gap-1.5 px-4 py-2 bg-purple-600 text-white rounded-xl text-sm font-semibold hover:bg-purple-700"
@@ -1572,7 +1910,7 @@ export default function InvTransfersPage() {
                   </button>
                 )}
 
-                {detailModal.status === "IN_TRANSIT" && (
+                {detailModal.status === "IN_TRANSIT" && canUserReceive(detailModal) && (
                   <button
                     onClick={() => handleOpenReceiveModal(detailModal)}
                     className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 text-white rounded-xl text-sm font-semibold hover:bg-emerald-700"
@@ -1588,53 +1926,270 @@ export default function InvTransfersPage() {
       )}
 
       {/* ══════════════════════════════════════════════════════════════════ */}
-      {/* ── MODAL: Approve Step (with comments) ──────────────────────── */}
+      {/* ── MODAL: Approve Step (with Line Item Adjustments & Stock Checks) */}
       {/* ══════════════════════════════════════════════════════════════════ */}
       {approveModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md p-6 border border-gray-200 dark:border-gray-700 space-y-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
-                <Check className="w-5 h-5" />
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden border border-gray-200 dark:border-gray-700">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400 flex items-center justify-center">
+                  <Check className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base font-bold text-gray-900 dark:text-white">
+                      Approve Stock Transfer Step
+                    </h3>
+                    <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                      {wfInstances[approveModal.id]?.currentStep?.stepName || "Step Approval"}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Transfer <span className="font-mono font-medium">{approveModal.transferNumber}</span>
+                  </p>
+                </div>
               </div>
-              <div>
-                <h3 className="text-base font-bold text-gray-900 dark:text-white">Approve Transfer Step</h3>
-                <p className="text-xs text-gray-500">Transfer {approveModal.transferNumber}</p>
-              </div>
-            </div>
-
-            <p className="text-sm text-gray-600 dark:text-gray-300">
-              Are you sure you want to approve this stock transfer step? Stock availability has been verified.
-            </p>
-
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 mb-1">Comments (Optional)</label>
-              <textarea
-                rows={3}
-                placeholder="Optional approval remarks..."
-                value={approveComments}
-                onChange={(e) => setApproveComments(e.target.value)}
-                className="w-full px-3 py-2 text-sm rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white"
-              />
-            </div>
-
-            <div className="flex items-center justify-end gap-3 pt-2">
               <button
-                type="button"
                 onClick={() => setApproveModal(null)}
-                className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900"
+                className="p-1.5 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg text-gray-500 transition-colors"
               >
-                Cancel
+                <X className="w-5 h-5" />
               </button>
-              <button
-                type="button"
-                disabled={submitting}
-                onClick={handleApproveConfirm}
-                className="flex items-center gap-1.5 px-5 py-2 bg-emerald-600 text-white rounded-xl text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50"
-              >
-                {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                <span>Confirm Approval</span>
-              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-5 overflow-y-auto flex-1">
+              {/* Route & Authorization Info */}
+              <div className="p-3.5 rounded-xl bg-blue-50/70 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/60 text-xs space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                    <span className="font-semibold text-blue-900 dark:text-blue-300">
+                      Current Step & Assigned Role Authorization
+                    </span>
+                  </div>
+                  <span className="font-mono text-[11px] text-blue-600 dark:text-blue-400">
+                    Role: {wfInstances[approveModal.id]?.currentStep?.approverRoleCode || "AUTHORIZED_APPROVER"}
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-3 pt-1 text-gray-700 dark:text-gray-300">
+                  <span className="flex items-center gap-1 font-medium">
+                    <Store className="w-3.5 h-3.5 text-gray-500" /> Source:{" "}
+                    <strong>{approveModal.fromStore?.storeName || `Store #${approveModal.fromStore?.id}`}</strong>
+                  </span>
+                  <ArrowRight className="w-3.5 h-3.5 text-blue-500" />
+                  <span className="flex items-center gap-1 font-medium">
+                    <Store className="w-3.5 h-3.5 text-gray-500" /> Destination:{" "}
+                    <strong>{approveModal.toStore?.storeName || `Store #${approveModal.toStore?.id}`}</strong>
+                  </span>
+                </div>
+                <p className="text-[11px] text-blue-700 dark:text-blue-400 pt-0.5">
+                  You are authorized to review and adjust requested quantities. Approved quantities are verified in real time against source store stock balances.
+                </p>
+              </div>
+
+              {/* Editable Line Items Table */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-300">
+                    Line Items & Quantity Review
+                  </h4>
+                  <span className="text-xs text-gray-400">
+                    {approveLines.length} {approveLines.length === 1 ? "item" : "items"}
+                  </span>
+                </div>
+
+                {approveLines.length === 0 ? (
+                  <div className="py-8 text-center text-gray-400">
+                    <Loader2 className="w-5 h-5 animate-spin mx-auto mb-1.5" />
+                    <p className="text-xs">Loading line items...</p>
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+                    <table className="w-full text-xs">
+                      <thead className="bg-gray-50 dark:bg-gray-700/50 text-gray-600 dark:text-gray-300 font-semibold uppercase">
+                        <tr>
+                          <th className="px-3 py-2.5 text-left">Item</th>
+                          <th className="px-3 py-2.5 text-left">Source Store Stock</th>
+                          <th className="px-3 py-2.5 text-right">Requested Qty</th>
+                          <th className="px-3 py-2.5 text-right w-36">Approved Qty</th>
+                          <th className="px-3 py-2.5 text-right">Unit Cost</th>
+                          <th className="px-3 py-2.5 text-right">Total (ETB)</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                        {approveLines.map((line, idx) => {
+                          const stockKey = approveModal.fromStore?.id && line.itemId ? `${approveModal.fromStore.id}_${line.itemId}` : null;
+                          const stock = stockKey ? stockCache[stockKey] : null;
+                          const uom = line.item?.unitOfMeasure?.unitCode || "Pcs";
+                          const isQuantityModified = Number(line.approvedQuantity) !== Number(line.originalQuantity);
+                          const lineError = approveErrors[idx];
+
+                          return (
+                            <tr key={line.id || idx} className="hover:bg-gray-50/50 dark:hover:bg-gray-700/20 transition-colors">
+                              {/* Item Description */}
+                              <td className="px-3 py-2.5">
+                                <div className="font-semibold text-gray-900 dark:text-white">
+                                  {line.item?.itemName}
+                                </div>
+                                <div className="text-[11px] text-gray-400 font-mono">
+                                  {line.item?.itemCode}
+                                </div>
+                              </td>
+
+                              {/* Source Store Stock Availability */}
+                              <td className="px-3 py-2.5">
+                                {stock?.loading ? (
+                                  <span className="flex items-center gap-1 text-gray-400 text-[11px]">
+                                    <Loader2 className="w-3 h-3 animate-spin" /> Checking stock...
+                                  </span>
+                                ) : stock ? (
+                                  <div>
+                                    <span
+                                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold ${
+                                        stock.available < Number(line.approvedQuantity || 0)
+                                          ? "bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-300 border border-red-200 dark:border-red-800"
+                                          : "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800"
+                                      }`}
+                                    >
+                                      {stock.available < Number(line.approvedQuantity || 0) ? (
+                                        <AlertTriangle className="w-3 h-3 text-red-500" />
+                                      ) : (
+                                        <Check className="w-3 h-3 text-emerald-500" />
+                                      )}
+                                      Avail: {stock.available.toLocaleString()} {uom}
+                                    </span>
+                                    {stock.reserved > 0 && (
+                                      <div className="text-[10px] text-gray-400 mt-0.5">
+                                        (On hand: {stock.onHand}, Rsvd: {stock.reserved})
+                                      </div>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <span className="text-gray-400 text-[11px]">—</span>
+                                )}
+                              </td>
+
+                              {/* Original Requested Quantity */}
+                              <td className="px-3 py-2.5 text-right font-mono font-medium text-gray-600 dark:text-gray-300">
+                                {Number(line.originalQuantity || 0).toLocaleString()} {uom}
+                              </td>
+
+                              {/* Approved Quantity Input */}
+                              <td className="px-3 py-2.5 text-right">
+                                <div className="inline-flex flex-col items-end">
+                                  <input
+                                    type="number"
+                                    min="0.01"
+                                    step="any"
+                                    value={line.approvedQuantity}
+                                    onChange={(e) => handleApproveLineQuantityChange(idx, e.target.value)}
+                                    className={`w-28 px-2.5 py-1 text-xs rounded-lg border text-right font-mono font-bold transition-all ${
+                                      lineError
+                                        ? "border-red-500 bg-red-50/20 text-red-700 dark:text-red-400 focus:ring-red-500"
+                                        : isQuantityModified
+                                        ? "border-amber-400 bg-amber-50/30 text-amber-800 dark:text-amber-300 focus:ring-amber-500"
+                                        : "border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-emerald-500"
+                                    }`}
+                                  />
+                                  {isQuantityModified && !lineError && (
+                                    <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium mt-0.5">
+                                      Modified (was {line.originalQuantity})
+                                    </span>
+                                  )}
+                                  {lineError && (
+                                    <span className="text-[10px] text-red-500 font-medium mt-0.5 max-w-[140px] text-right">
+                                      {lineError}
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+
+                              {/* Unit Cost */}
+                              <td className="px-3 py-2.5 text-right font-mono text-gray-600 dark:text-gray-300">
+                                {Number(line.unitCost || 0).toFixed(2)}
+                              </td>
+
+                              {/* Line Total */}
+                              <td className="px-3 py-2.5 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                                {(Number(line.approvedQuantity || 0) * Number(line.unitCost || 0)).toFixed(2)}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                      <tfoot className="bg-gray-50/75 dark:bg-gray-700/50 border-t border-gray-200 dark:border-gray-700">
+                        <tr>
+                          <td colSpan={5} className="px-3 py-2.5 text-right font-semibold text-gray-700 dark:text-gray-300">
+                            Total Approved Value:
+                          </td>
+                          <td className="px-3 py-2.5 text-right font-mono font-bold text-sm text-emerald-600 dark:text-emerald-400">
+                            ETB{" "}
+                            {approveLines
+                              .reduce(
+                                (sum, l) => sum + Number(l.approvedQuantity || 0) * Number(l.unitCost || 0),
+                                0
+                              )
+                              .toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* Approval Remarks */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">
+                  Approval Remarks / Comments (Optional)
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="Enter optional step approval remarks or reasons for quantity adjustments..."
+                  value={approveComments}
+                  onChange={(e) => setApproveComments(e.target.value)}
+                  className="w-full px-3 py-2 text-xs rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50">
+              <div className="text-xs text-gray-500">
+                {approveLines.some((l) => Number(l.approvedQuantity) !== Number(l.originalQuantity)) ? (
+                  <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400 font-medium">
+                    <AlertTriangle className="w-3.5 h-3.5" />
+                    One or more line quantities have been modified from original request.
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-medium">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    Quantities will be deducted from source store upon final dispatch.
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setApproveModal(null)}
+                  className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={submitting}
+                  onClick={handleApproveConfirm}
+                  className="flex items-center gap-1.5 px-5 py-2 bg-emerald-600 text-white rounded-xl text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50 transition-colors shadow-sm"
+                >
+                  {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                  <span>Confirm Step Approval</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>

@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect, useCallback } from "react";
 import {
   MaterialReactTable,
   useMaterialReactTable,
@@ -25,7 +25,10 @@ import {
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import Breadcrumb from "@/app/ui/components/Breadcrumbs/Breadcrumb";
+import ProPeriodPicker from "@/app/ui/components/ProPeriodPicker";
+import { ETH_MONTHS_AM } from "@/app/helpers/constants";
 import { ReadingService } from "@/app/lib/ReadingService";
+import { CampanyProfileService } from "@/app/lib/campanyProfileService";
 import bankUnicashService from "@/app/lib/bankUnicashService";
 import { DropdownService } from "@/app/lib/dropdownService";
 import EtDatePicker from "mui-ethiopian-datepicker";
@@ -33,6 +36,7 @@ var ethiopianDate = require("ethiopian-date");
 
 const readingService = new ReadingService();
 const dropdownService = new DropdownService();
+const companyProfileService = new CampanyProfileService();
 
 const ethiopianMonthsAmh = [
   "መስከረም", "ጥቅምት", "ኅዳር", "ታህሣሥ", "ጥር", "የካቲት", "መጋቢት", "ሚያዚያ", "ግንቦት", "ሰኔ", "ሐምሌ", "ነሐሴ", "ጳጉሜ"
@@ -82,6 +86,8 @@ const escapeCSV = (val) => {
 const SendToUnicashInner = () => {
   const [selectedKifyaWerMonth, setSelectedKifyaWerMonth] = useState("");
   const [selectedKifyaWerYear, setSelectedKifyaWerYear] = useState("");
+  const [currentCycleMonth, setCurrentCycleMonth] = useState("");
+  const [currentCycleYear, setCurrentCycleYear] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [extraPenalty, setExtraPenalty] = useState("");
   const [processing, setProcessing] = useState(false);
@@ -147,7 +153,7 @@ const SendToUnicashInner = () => {
   };
 
   const currentGregorianDate = new Date();
-  const [ethYear] = ethiopianDate.toEthiopian(
+  const [ethYear, ethMonth] = ethiopianDate.toEthiopian(
     currentGregorianDate.getFullYear(),
     currentGregorianDate.getMonth() + 1,
     currentGregorianDate.getDate()
@@ -161,6 +167,54 @@ const SendToUnicashInner = () => {
     for (let i = ethYear - 5; i <= ethYear + 1; i++) arr.push(i);
     return arr;
   }, [ethYear]);
+
+  const { data: companyProfile } = useQuery({
+    queryKey: ["unicash_companyProfile"],
+    queryFn: () => companyProfileService.getCampanyProfile(),
+    staleTime: 15 * 60 * 1000,
+  });
+
+  const { data: dbPeriods = [] } = useQuery({
+    queryKey: ["distinctKifyaWer"],
+    queryFn: () => readingService.getDistinctKifyaWerList(),
+    staleTime: 15 * 60 * 1000,
+  });
+
+  const handlePeriodChange = useCallback((newMonth, newYear) => {
+    setSelectedKifyaWerMonth(newMonth);
+    setSelectedKifyaWerYear(String(newYear));
+  }, []);
+
+  useEffect(() => {
+    if (companyProfile && companyProfile.activeReadingDate) {
+      try {
+        const activeDate = new Date(companyProfile.activeReadingDate);
+        if (!isNaN(activeDate.getTime())) {
+          const [eYear, eMonth] = ethiopianDate.toEthiopian(
+            activeDate.getFullYear(),
+            activeDate.getMonth() + 1,
+            activeDate.getDate()
+          );
+          const monthIndex = Math.min(eMonth, 12) - 1;
+          const cycleMonth = ETH_MONTHS_AM[monthIndex];
+          setCurrentCycleMonth(cycleMonth);
+          setCurrentCycleYear(String(eYear));
+          setSelectedKifyaWerMonth((prev) => prev || cycleMonth);
+          setSelectedKifyaWerYear((prev) => prev || String(eYear));
+          return;
+        }
+      } catch (e) {
+        console.error("Error parsing activeReadingDate:", e);
+      }
+    }
+
+    const monthIndex = Math.min(ethMonth || 1, 12) - 1;
+    const cycleMonth = ETH_MONTHS_AM[monthIndex];
+    setCurrentCycleMonth(cycleMonth);
+    setCurrentCycleYear(String(ethYear));
+    setSelectedKifyaWerMonth((prev) => prev || cycleMonth);
+    setSelectedKifyaWerYear((prev) => prev || String(ethYear));
+  }, [companyProfile, ethYear, ethMonth]);
 
   const { data: readings = [], isFetching, refetch } = useQuery({
     queryKey: ["unicash-send-readings", selectedKifyaWerMonth, selectedKifyaWerYear],
@@ -821,21 +875,16 @@ const SendToUnicashInner = () => {
                   1. Period & Settings
                 </Typography>
                 <Grid container spacing={2} alignItems="flex-end">
-                  <Grid item xs={6} lg={4}>
-                    <FormControl size="small" fullWidth>
-                      <InputLabel>Month</InputLabel>
-                      <Select value={selectedKifyaWerMonth} label="Month" onChange={(e) => setSelectedKifyaWerMonth(e.target.value)}>
-                        {months.map((m) => (<MenuItem key={m} value={m}>{m}</MenuItem>))}
-                      </Select>
-                    </FormControl>
-                  </Grid>
-                  <Grid item xs={6} lg={4}>
-                    <FormControl size="small" fullWidth>
-                      <InputLabel>Year</InputLabel>
-                      <Select value={selectedKifyaWerYear} label="Year" onChange={(e) => setSelectedKifyaWerYear(e.target.value)}>
-                        {years.map((y) => (<MenuItem key={y} value={y}>{y}</MenuItem>))}
-                      </Select>
-                    </FormControl>
+                  <Grid item xs={12} lg={8}>
+                    <ProPeriodPicker
+                      selectedMonth={selectedKifyaWerMonth}
+                      selectedYear={selectedKifyaWerYear}
+                      onPeriodChange={handlePeriodChange}
+                      currentCycleMonth={currentCycleMonth}
+                      currentCycleYear={currentCycleYear}
+                      dbPeriods={dbPeriods}
+                      disabled={isFetching || processing}
+                    />
                   </Grid>
                   <Grid item xs={12} lg={4}>
                     <Button

@@ -1382,6 +1382,37 @@ const BillList = () => {
       tekilalaTekefay: 0,
       // Group 4
       consumption: 0,
+      // Additional Payment 1 & 2
+      additionalPayment1: 0,
+      additionalPayment2: 0,
+      wuzifAdditionalPayment1: 0,
+      wuzifAdditionalPayment2: 0,
+      prepaidAdditionalPayment1: 0,
+      prepaidAdditionalPayment2: 0,
+      prepaidWuzifAdditionalPayment1: 0,
+      prepaidWuzifAdditionalPayment2: 0,
+      prepaidTotalPayment1: 0,
+      prepaidTotalPayment2: 0,
+      officeAdditionalPayment1: 0,
+      officeAdditionalPayment2: 0,
+      officeWuzifAdditionalPayment1: 0,
+      officeWuzifAdditionalPayment2: 0,
+      officeTotalPayment1: 0,
+      officeTotalPayment2: 0,
+      bankAdditionalPayment1: {},
+      bankAdditionalPayment2: {},
+      bankWuzifAdditionalPayment1: {},
+      bankWuzifAdditionalPayment2: {},
+      bankTotalPayment1: {},
+      bankTotalPayment2: {},
+      duplicateAdditionalPayment1: 0,
+      duplicateAdditionalPayment2: 0,
+      duplicateWuzifAdditionalPayment1: 0,
+      duplicateWuzifAdditionalPayment2: 0,
+      totalAdditionalPayment1: 0,
+      totalAdditionalPayment2: 0,
+      totalWuzifAdditionalPayment1: 0,
+      totalWuzifAdditionalPayment2: 0,
       // Payment Location Summary fields
       prepaid: 0,
       paidAtOffice: 0,
@@ -1456,6 +1487,17 @@ const BillList = () => {
         acc.tekilalaTekefay += bill.tekilalaTekefay || 0;
         acc.consumption += bill.consumption || 0;
 
+        // Additional Payment 1 and 2
+        const addPay1 = Number(bill.mBillingAdditionalPayment1Value ?? bill.mbillingAdditionalPayment1Value ?? 0);
+        const addPay2 = Number(bill.mBillingAdditionalPayment2Value ?? bill.mbillingAdditionalPayment2Value ?? 0);
+        const wuzifAddPay1 = Number(bill.mBillingAdditionalPayment1Wuzif ?? bill.mbillingAdditionalPayment1Wuzif ?? 0);
+        const wuzifAddPay2 = Number(bill.mBillingAdditionalPayment2Wuzif ?? bill.mbillingAdditionalPayment2Wuzif ?? 0);
+
+        acc.additionalPayment1 += addPay1;
+        acc.additionalPayment2 += addPay2;
+        acc.wuzifAdditionalPayment1 += wuzifAddPay1;
+        acc.wuzifAdditionalPayment2 += wuzifAddPay2;
+
         // Local bank name resolver fallback
         const getBankName = (key) => key;
 
@@ -1471,6 +1513,12 @@ const BillList = () => {
           acc.prepaidCount += 1;
           acc.prepaidAdditionalHisab += bill.additionalHisab || 0;
           acc.prepaidWuzifDerekKoshasha += bill.wuzifDerekKoshasha || 0;
+          acc.prepaidAdditionalPayment1 += addPay1;
+          acc.prepaidAdditionalPayment2 += addPay2;
+          acc.prepaidWuzifAdditionalPayment1 += wuzifAddPay1;
+          acc.prepaidWuzifAdditionalPayment2 += wuzifAddPay2;
+          acc.prepaidTotalPayment1 += (addPay1 + wuzifAddPay1);
+          acc.prepaidTotalPayment2 += (addPay2 + wuzifAddPay2);
           acc.prepaidTekilalaTekefay += bill.tekilalaTekefay || 0;
           acc.prepaidTotalDerekKoshasha +=
             (bill.wuzifDerekKoshasha || 0) + (bill.additionalHisab || 0);
@@ -1486,6 +1534,12 @@ const BillList = () => {
           // Add additional sums for office
           acc.officeAdditionalHisab += bill.additionalHisab || 0;
           acc.officeWuzifDerekKoshasha += bill.wuzifDerekKoshasha || 0;
+          acc.officeAdditionalPayment1 += addPay1;
+          acc.officeAdditionalPayment2 += addPay2;
+          acc.officeWuzifAdditionalPayment1 += wuzifAddPay1;
+          acc.officeWuzifAdditionalPayment2 += wuzifAddPay2;
+          acc.officeTotalPayment1 += (addPay1 + wuzifAddPay1);
+          acc.officeTotalPayment2 += (addPay2 + wuzifAddPay2);
           acc.officeTekilalaTekefay += bill.tekilalaTekefay || 0;
           // Calculate total fields
           acc.officeTotalDerekKoshasha +=
@@ -1508,6 +1562,12 @@ const BillList = () => {
             acc.paidByBankCount[bankKeyForSum] = (acc.paidByBankCount[bankKeyForSum] || 0) + 1;
             acc.bankAdditionalHisab[bankKeyForSum] = (acc.bankAdditionalHisab[bankKeyForSum] || 0) + (bill.additionalHisab || 0);
             acc.bankWuzifDerekKoshasha[bankKeyForSum] = (acc.bankWuzifDerekKoshasha[bankKeyForSum] || 0) + (bill.wuzifDerekKoshasha || 0);
+            acc.bankAdditionalPayment1[bankKeyForSum] = (acc.bankAdditionalPayment1[bankKeyForSum] || 0) + addPay1;
+            acc.bankAdditionalPayment2[bankKeyForSum] = (acc.bankAdditionalPayment2[bankKeyForSum] || 0) + addPay2;
+            acc.bankWuzifAdditionalPayment1[bankKeyForSum] = (acc.bankWuzifAdditionalPayment1[bankKeyForSum] || 0) + wuzifAddPay1;
+            acc.bankWuzifAdditionalPayment2[bankKeyForSum] = (acc.bankWuzifAdditionalPayment2[bankKeyForSum] || 0) + wuzifAddPay2;
+            acc.bankTotalPayment1[bankKeyForSum] = (acc.bankTotalPayment1[bankKeyForSum] || 0) + addPay1 + wuzifAddPay1;
+            acc.bankTotalPayment2[bankKeyForSum] = (acc.bankTotalPayment2[bankKeyForSum] || 0) + addPay2 + wuzifAddPay2;
             acc.bankTekilalaTekefay[bankKeyForSum] = (acc.bankTekilalaTekefay[bankKeyForSum] || 0) + (bill.tekilalaTekefay || 0);
             acc.bankTotalDerekKoshasha[bankKeyForSum] = (acc.bankTotalDerekKoshasha[bankKeyForSum] || 0) + (bill.wuzifDerekKoshasha || 0) + (bill.additionalHisab || 0);
             acc.bankCheck[bankKeyForSum] = (acc.bankCheck[bankKeyForSum] || 0) + (bill.tekilalaTekefay || 0) - bankPaid;
@@ -1535,6 +1595,12 @@ const BillList = () => {
             acc.paidByBankCount[bankKeyForSum] = (acc.paidByBankCount[bankKeyForSum] || 0) + 1;
             acc.bankAdditionalHisab[bankKeyForSum] = (acc.bankAdditionalHisab[bankKeyForSum] || 0) + (bill.additionalHisab || 0);
             acc.bankWuzifDerekKoshasha[bankKeyForSum] = (acc.bankWuzifDerekKoshasha[bankKeyForSum] || 0) + (bill.wuzifDerekKoshasha || 0);
+            acc.bankAdditionalPayment1[bankKeyForSum] = (acc.bankAdditionalPayment1[bankKeyForSum] || 0) + addPay1;
+            acc.bankAdditionalPayment2[bankKeyForSum] = (acc.bankAdditionalPayment2[bankKeyForSum] || 0) + addPay2;
+            acc.bankWuzifAdditionalPayment1[bankKeyForSum] = (acc.bankWuzifAdditionalPayment1[bankKeyForSum] || 0) + wuzifAddPay1;
+            acc.bankWuzifAdditionalPayment2[bankKeyForSum] = (acc.bankWuzifAdditionalPayment2[bankKeyForSum] || 0) + wuzifAddPay2;
+            acc.bankTotalPayment1[bankKeyForSum] = (acc.bankTotalPayment1[bankKeyForSum] || 0) + addPay1 + wuzifAddPay1;
+            acc.bankTotalPayment2[bankKeyForSum] = (acc.bankTotalPayment2[bankKeyForSum] || 0) + addPay2 + wuzifAddPay2;
             acc.bankTekilalaTekefay[bankKeyForSum] = (acc.bankTekilalaTekefay[bankKeyForSum] || 0) + (bill.tekilalaTekefay || 0);
             acc.bankTotalDerekKoshasha[bankKeyForSum] = (acc.bankTotalDerekKoshasha[bankKeyForSum] || 0) + (bill.wuzifDerekKoshasha || 0) + (bill.additionalHisab || 0);
             acc.bankCheck[bankKeyForSum] = (acc.bankCheck[bankKeyForSum] || 0) + (bill.tekilalaTekefay || 0) - bankPaid;
@@ -1547,6 +1613,10 @@ const BillList = () => {
           acc.duplicatePaymentCount += 1;
           acc.duplicateAdditionalHisab += bill.additionalHisab || 0;
           acc.duplicateWuzifDerekKoshasha += bill.wuzifDerekKoshasha || 0;
+          acc.duplicateAdditionalPayment1 += addPay1;
+          acc.duplicateAdditionalPayment2 += addPay2;
+          acc.duplicateWuzifAdditionalPayment1 += wuzifAddPay1;
+          acc.duplicateWuzifAdditionalPayment2 += wuzifAddPay2;
           acc.duplicateTekilalaTekefay += bill.tekilalaTekefay || 0;
           acc.duplicateCheck += (bill.tekilalaTekefay || 0) - totalPaidAmount;
         }
@@ -1572,6 +1642,22 @@ const BillList = () => {
       calculatedSums.bankTekilalaTekefay
     ).reduce((sum, amount) => sum + amount, 0);
 
+    const totalAdditionalPayment1s = Object.values(
+      calculatedSums.bankAdditionalPayment1
+    ).reduce((sum, amount) => sum + amount, 0);
+
+    const totalAdditionalPayment2s = Object.values(
+      calculatedSums.bankAdditionalPayment2
+    ).reduce((sum, amount) => sum + amount, 0);
+
+    const totalWuzifAdditionalPayment1s = Object.values(
+      calculatedSums.bankWuzifAdditionalPayment1
+    ).reduce((sum, amount) => sum + amount, 0);
+
+    const totalWuzifAdditionalPayment2s = Object.values(
+      calculatedSums.bankWuzifAdditionalPayment2
+    ).reduce((sum, amount) => sum + amount, 0);
+
     calculatedSums.totalPaidLocationSum =
       calculatedSums.paidAtOffice + totalBankPayments + calculatedSums.prepaid;
 
@@ -1589,6 +1675,26 @@ const BillList = () => {
       calculatedSums.officeTekilalaTekefay +
       totaltekelalaTekefay +
       calculatedSums.prepaidTekilalaTekefay;
+
+    calculatedSums.totalAdditionalPayment1 =
+      calculatedSums.officeAdditionalPayment1 +
+      totalAdditionalPayment1s +
+      calculatedSums.prepaidAdditionalPayment1;
+
+    calculatedSums.totalAdditionalPayment2 =
+      calculatedSums.officeAdditionalPayment2 +
+      totalAdditionalPayment2s +
+      calculatedSums.prepaidAdditionalPayment2;
+
+    calculatedSums.totalWuzifAdditionalPayment1 =
+      calculatedSums.officeWuzifAdditionalPayment1 +
+      totalWuzifAdditionalPayment1s +
+      calculatedSums.prepaidWuzifAdditionalPayment1;
+
+    calculatedSums.totalWuzifAdditionalPayment2 =
+      calculatedSums.officeWuzifAdditionalPayment2 +
+      totalWuzifAdditionalPayment2s +
+      calculatedSums.prepaidWuzifAdditionalPayment2;
 
     return calculatedSums;
   }, [filteredData]);
@@ -1647,6 +1753,34 @@ const BillList = () => {
     },
     staleTime: 10 * 60 * 1000,
   });
+
+  const addPay1RawLabel = (companyProfile?.mBillingAdditionalPayment1ValueLable || companyProfile?.mbillingAdditionalPayment1ValueLable || "").trim();
+  const addPay2RawLabel = (companyProfile?.mBillingAdditionalPayment2ValueLable || companyProfile?.mbillingAdditionalPayment2ValueLable || "").trim();
+  const addPay1Label = addPay1RawLabel || "ተጨማሪ ክፍያ 1";
+  const addPay2Label = addPay2RawLabel || "ተጨማሪ ክፍያ 2";
+
+  // Label helpers matching dry waste style ("የዚህ ወር ደረቅ ቆሻሻ", "ውዝፍ ደረቅ ቆሻሻ", "ጠቅላላ ደረቅ ቆሻሻ")
+  const curPay1Label = addPay1Label.startsWith("የዚህ ወር") ? addPay1Label : `የዚህ ወር ${addPay1Label}`;
+  const curPay2Label = addPay2Label.startsWith("የዚህ ወር") ? addPay2Label : `የዚህ ወር ${addPay2Label}`;
+  const wuzifPay1Label = addPay1Label.startsWith("ውዝፍ") ? addPay1Label : `ውዝፍ ${addPay1Label}`;
+  const wuzifPay2Label = addPay2Label.startsWith("ውዝፍ") ? addPay2Label : `ውዝፍ ${addPay2Label}`;
+  const totPay1Label = addPay1Label.startsWith("ጠቅላላ") ? addPay1Label : `ጠቅላላ ${addPay1Label}`;
+  const totPay2Label = addPay2Label.startsWith("ጠቅላላ") ? addPay2Label : `ጠቅላላ ${addPay2Label}`;
+
+  // Numerical values & Zero-check helpers
+  const curPay1Val = Number(summations.additionalPayment1 || 0);
+  const curPay2Val = Number(summations.additionalPayment2 || 0);
+  const wuzifPay1Val = Number(summations.wuzifAdditionalPayment1 || 0);
+  const wuzifPay2Val = Number(summations.wuzifAdditionalPayment2 || 0);
+  const totPay1Val = curPay1Val + wuzifPay1Val;
+  const totPay2Val = curPay2Val + wuzifPay2Val;
+
+  const hasCurPay1 = Math.abs(curPay1Val) > 0.0001;
+  const hasCurPay2 = Math.abs(curPay2Val) > 0.0001;
+  const hasWuzifPay1 = Math.abs(wuzifPay1Val) > 0.0001;
+  const hasWuzifPay2 = Math.abs(wuzifPay2Val) > 0.0001;
+  const hasTotPay1 = Math.abs(totPay1Val) > 0.0001;
+  const hasTotPay2 = Math.abs(totPay2Val) > 0.0001;
 
   // Export/Preview the current Summations and Payment Location Summary to PDF (Full 1-Page A4 B&W)
   const handleExportSummationsPDF = async (preview = false) => {
@@ -1723,47 +1857,51 @@ const BillList = () => {
       doc.setTextColor(0, 0, 0);
       doc.text("Summary Overview", MARGIN + fullW / 2, summaryY + 11, { align: "center" });
 
-      // 2 Rows of Metrics (5 columns per row)
-      const sColW = (fullW - 16) / 5;
+      // 2 Rows of Metrics (6 columns per row)
+      const sColW = (fullW - 16) / 6;
       const sLabelY1 = summaryY + 27;
       const sValueY1 = summaryY + 39;
       const sLabelY2 = summaryY + 52;
       const sValueY2 = summaryY + 64;
 
       // Row 1 Labels
-      doc.setFontSize(9);
+      doc.setFontSize(8.5);
       doc.setFont("nyala", "normal");
       doc.setTextColor(60, 60, 60);
       doc.text("Total Bills", MARGIN + 8 + 0 * sColW, sLabelY1);
       doc.text("የወሩ ፍጆታ (ሜ3)", MARGIN + 8 + 1 * sColW, sLabelY1);
       doc.text("ውዝፍ ፍጆታ (ሜ3)", MARGIN + 8 + 2 * sColW, sLabelY1);
       doc.text("ጠቅላላ ደረቅ ቆሻሻ", MARGIN + 8 + 3 * sColW, sLabelY1);
-      doc.text("ጠቅላላ የዚህ ወር", MARGIN + 8 + 4 * sColW, sLabelY1);
+      if (hasTotPay1) doc.text(totPay1Label, MARGIN + 8 + 4 * sColW, sLabelY1);
+      if (hasTotPay2) doc.text(totPay2Label, MARGIN + 8 + 5 * sColW, sLabelY1);
 
       // Row 1 Values
-      doc.setFontSize(10.5);
+      doc.setFontSize(10);
       doc.setTextColor(0, 0, 0);
       doc.text(fmt0(filteredData.length), MARGIN + 8 + 0 * sColW, sValueY1);
       doc.text(fmt0(summations.consumption), MARGIN + 8 + 1 * sColW, sValueY1);
       doc.text(fmt(summations.wuzifFjota), MARGIN + 8 + 2 * sColW, sValueY1);
       doc.text(fmt((summations.additionalHisab || 0) + (summations.wuzifDerekKoshasha || 0)), MARGIN + 8 + 3 * sColW, sValueY1);
-      doc.text(fmt(summations.yezihWer), MARGIN + 8 + 4 * sColW, sValueY1);
+      if (hasTotPay1) doc.text(fmt(totPay1Val), MARGIN + 8 + 4 * sColW, sValueY1);
+      if (hasTotPay2) doc.text(fmt(totPay2Val), MARGIN + 8 + 5 * sColW, sValueY1);
 
       // Row 2 Labels
-      doc.setFontSize(9);
+      doc.setFontSize(8.5);
       doc.setTextColor(60, 60, 60);
-      doc.text("ቅድሚያ የተከፈለ", MARGIN + 8 + 0 * sColW, sLabelY2);
-      doc.text("ጠቅላላ ተጨማሪ ክፍያ", MARGIN + 8 + 1 * sColW, sLabelY2);
-      doc.text("ቅጣት", MARGIN + 8 + 2 * sColW, sLabelY2);
-      doc.text("ጠቅላላ ውዝፍ", MARGIN + 8 + 3 * sColW, sLabelY2);
+      doc.text("ጠቅላላ የዚህ ወር", MARGIN + 8 + 0 * sColW, sLabelY2);
+      doc.text("ቅድሚያ የተከፈለ", MARGIN + 8 + 1 * sColW, sLabelY2);
+      doc.text("ጠቅላላ ተጨማሪ ክፍያ", MARGIN + 8 + 2 * sColW, sLabelY2);
+      doc.text("ቅጣት", MARGIN + 8 + 3 * sColW, sLabelY2);
+      doc.text("ጠቅላላ ውዝፍ", MARGIN + 8 + 4 * sColW, sLabelY2);
 
       // Row 2 Values
-      doc.setFontSize(10.5);
+      doc.setFontSize(10);
       doc.setTextColor(0, 0, 0);
-      doc.text(fmt(summations.prepaid), MARGIN + 8 + 0 * sColW, sValueY2);
-      doc.text(fmt((summations.techemariKfya || 0) + (summations.wuzifTechemariKfya || 0)), MARGIN + 8 + 1 * sColW, sValueY2);
-      doc.text(fmt(summations.kitat), MARGIN + 8 + 2 * sColW, sValueY2);
-      doc.text(fmt((summations.wuzifHisab || 0) - (summations.wuzifDerekKoshasha || 0)), MARGIN + 8 + 3 * sColW, sValueY2);
+      doc.text(fmt(summations.yezihWer), MARGIN + 8 + 0 * sColW, sValueY2);
+      doc.text(fmt(summations.prepaid), MARGIN + 8 + 1 * sColW, sValueY2);
+      doc.text(fmt((summations.techemariKfya || 0) + (summations.wuzifTechemariKfya || 0)), MARGIN + 8 + 2 * sColW, sValueY2);
+      doc.text(fmt(summations.kitat), MARGIN + 8 + 3 * sColW, sValueY2);
+      doc.text(fmt((summations.wuzifHisab || 0) - (summations.wuzifDerekKoshasha || 0)), MARGIN + 8 + 4 * sColW, sValueY2);
 
       // Bottom Grand Total Framing
       const tileY = summaryY + 72;
@@ -1813,43 +1951,48 @@ const BillList = () => {
       // Row 1
       doc.setFontSize(8.5);
       doc.setTextColor(60, 60, 60);
-      doc.text("የውሃ ፍጆታ ብር", leftBoxX + 8, gBoxY + 28);
-      doc.text("ቆጣሪ ኪራይ", leftBoxX + 8 + gColW3, gBoxY + 28);
-      doc.text("ተጨማሪ ክፍያ", leftBoxX + 8 + 2 * gColW3, gBoxY + 28);
+      doc.text("የውሃ ፍጆታ ብር", leftBoxX + 8, gBoxY + 27);
+      doc.text("ቆጣሪ ኪራይ", leftBoxX + 8 + gColW3, gBoxY + 27);
+      doc.text("ተጨማሪ ክፍያ", leftBoxX + 8 + 2 * gColW3, gBoxY + 27);
 
-      doc.setFontSize(10.5);
+      doc.setFontSize(10);
       doc.setTextColor(0, 0, 0);
-      doc.text(fmt(summations.yezihWerFjotaKfya), leftBoxX + 8, gBoxY + 41);
-      doc.text(fmt(summations.kotariKiray), leftBoxX + 8 + gColW3, gBoxY + 41);
-      doc.text(fmt(summations.techemariKfya), leftBoxX + 8 + 2 * gColW3, gBoxY + 41);
+      doc.text(fmt(summations.yezihWerFjotaKfya), leftBoxX + 8, gBoxY + 39);
+      doc.text(fmt(summations.kotariKiray), leftBoxX + 8 + gColW3, gBoxY + 39);
+      doc.text(fmt(summations.techemariKfya), leftBoxX + 8 + 2 * gColW3, gBoxY + 39);
 
       // Row 2
       doc.setFontSize(8.5);
       doc.setTextColor(60, 60, 60);
-      doc.text("የዚህ ወር ደረቅ ቆሻሻ", leftBoxX + 8, gBoxY + 56);
-      doc.setFontSize(10.5);
+      doc.text("የዚህ ወር ደረቅ ቆሻሻ", leftBoxX + 8, gBoxY + 52);
+      if (hasCurPay1) doc.text(curPay1Label, leftBoxX + 8 + gColW3, gBoxY + 52);
+      if (hasCurPay2) doc.text(curPay2Label, leftBoxX + 8 + 2 * gColW3, gBoxY + 52);
+
+      doc.setFontSize(10);
       doc.setTextColor(0, 0, 0);
-      doc.text(fmt(summations.additionalHisab), leftBoxX + 8, gBoxY + 69);
+      doc.text(fmt(summations.additionalHisab), leftBoxX + 8, gBoxY + 64);
+      if (hasCurPay1) doc.text(fmt(curPay1Val), leftBoxX + 8 + gColW3, gBoxY + 64);
+      if (hasCurPay2) doc.text(fmt(curPay2Val), leftBoxX + 8 + 2 * gColW3, gBoxY + 64);
 
       // Divider line
       doc.setDrawColor(160, 160, 160);
       doc.setLineWidth(0.5);
-      doc.line(leftBoxX + 6, gBoxY + 80, leftBoxX + gBoxW - 6, gBoxY + 80);
+      doc.line(leftBoxX + 6, gBoxY + 91, leftBoxX + gBoxW - 6, gBoxY + 91);
 
       // Subtotals (G1)
       doc.setFontSize(9);
       doc.setTextColor(0, 0, 0);
-      doc.text("የዚህ ወር", leftBoxX + 8, gBoxY + 93);
-      doc.text("የዚህ ወር አና ደረቅ ቆሻሻ", leftBoxX + 8 + gColW3 * 1.3, gBoxY + 93);
+      doc.text("የዚህ ወር", leftBoxX + 8, gBoxY + 104);
+      doc.text("የዚህ ወር አና ደረቅ ቆሻሻ", leftBoxX + 8 + gColW3 * 1.3, gBoxY + 104);
 
       doc.setFillColor(245, 245, 245);
       doc.setDrawColor(0, 0, 0);
-      doc.rect(leftBoxX + 8, gBoxY + 99, gColW3 * 1.2, 19, "FD");
-      doc.rect(leftBoxX + 8 + gColW3 * 1.3, gBoxY + 99, gColW3 * 1.5, 19, "FD");
+      doc.rect(leftBoxX + 8, gBoxY + 111, gColW3 * 1.2, 19, "FD");
+      doc.rect(leftBoxX + 8 + gColW3 * 1.3, gBoxY + 111, gColW3 * 1.5, 19, "FD");
 
       doc.setFontSize(10.5);
-      doc.text(fmt(summations.yezihWer), leftBoxX + 8 + gColW3 * 1.2 - 4, gBoxY + 113, { align: "right" });
-      doc.text(fmt((summations.yezihWer || 0) + (summations.additionalHisab || 0)), leftBoxX + 8 + gColW3 * 2.8 - 4, gBoxY + 113, { align: "right" });
+      doc.text(fmt(summations.yezihWer), leftBoxX + 8 + gColW3 * 1.2 - 4, gBoxY + 125, { align: "right" });
+      doc.text(fmt((summations.yezihWer || 0) + (summations.additionalHisab || 0)), leftBoxX + 8 + gColW3 * 2.8 - 4, gBoxY + 125, { align: "right" });
 
       // ── Right Box: Group 2: ውዝፍ ──
       doc.setDrawColor(0, 0, 0);
@@ -1867,22 +2010,22 @@ const BillList = () => {
       // Row 1
       doc.setFontSize(8.5);
       doc.setTextColor(60, 60, 60);
-      doc.text("ውዝፍ ቆጣሪ ኪራይ", rightBoxX + 8, gBoxY + 28);
-      doc.text("ውዝፍ ተጨማሪ ክፍያ", rightBoxX + 8 + gColW3, gBoxY + 28);
-      doc.text("ቅጣት", rightBoxX + 8 + 2 * gColW3, gBoxY + 28);
+      doc.text("ውዝፍ ቆጣሪ ኪራይ", rightBoxX + 8, gBoxY + 26);
+      doc.text("ውዝፍ ተጨማሪ ክፍያ", rightBoxX + 8 + gColW3, gBoxY + 26);
+      doc.text("ቅጣት", rightBoxX + 8 + 2 * gColW3, gBoxY + 26);
 
-      doc.setFontSize(10.5);
+      doc.setFontSize(10);
       doc.setTextColor(0, 0, 0);
-      doc.text(fmt(summations.wuzifKotariKiray), rightBoxX + 8, gBoxY + 41);
-      doc.text(fmt(summations.wuzifTechemariKfya), rightBoxX + 8 + gColW3, gBoxY + 41);
-      doc.text(fmt(summations.kitat), rightBoxX + 8 + 2 * gColW3, gBoxY + 41);
+      doc.text(fmt(summations.wuzifKotariKiray), rightBoxX + 8, gBoxY + 38);
+      doc.text(fmt(summations.wuzifTechemariKfya), rightBoxX + 8 + gColW3, gBoxY + 38);
+      doc.text(fmt(summations.kitat), rightBoxX + 8 + 2 * gColW3, gBoxY + 38);
 
       // Row 2
       doc.setFontSize(8.5);
       doc.setTextColor(60, 60, 60);
-      doc.text("ውዝፍ ፍጆታ ክፍያ", rightBoxX + 8, gBoxY + 56);
-      doc.text("ውዝፍ ደረቅ ቆሻሻ", rightBoxX + 8 + gColW3, gBoxY + 56);
-      doc.text("የተላለፈ(ነባር) ውዝፍ", rightBoxX + 8 + 2 * gColW3, gBoxY + 56);
+      doc.text("ውዝፍ ፍጆታ ክፍያ", rightBoxX + 8, gBoxY + 48);
+      doc.text("ውዝፍ ደረቅ ቆሻሻ", rightBoxX + 8 + gColW3, gBoxY + 48);
+      doc.text("የተላለፈ(ነባር) ውዝፍ", rightBoxX + 8 + 2 * gColW3, gBoxY + 48);
 
       const transferredVal = (summations.wuzifHisab || 0) - (
         (summations.wuzifKotariKiray || 0) +
@@ -1891,35 +2034,46 @@ const BillList = () => {
         (summations.wuzifTechemariKfya || 0)
       );
 
-      doc.setFontSize(10.5);
+      doc.setFontSize(10);
       doc.setTextColor(0, 0, 0);
-      doc.text(fmt(summations.wuzifFjotaKfya), rightBoxX + 8, gBoxY + 69);
-      doc.text(fmt(summations.wuzifDerekKoshasha), rightBoxX + 8 + gColW3, gBoxY + 69);
-      doc.text(fmt(transferredVal), rightBoxX + 8 + 2 * gColW3, gBoxY + 69);
+      doc.text(fmt(summations.wuzifFjotaKfya), rightBoxX + 8, gBoxY + 60);
+      doc.text(fmt(summations.wuzifDerekKoshasha), rightBoxX + 8 + gColW3, gBoxY + 60);
+      doc.text(fmt(transferredVal), rightBoxX + 8 + 2 * gColW3, gBoxY + 60);
+
+      // Row 3
+      doc.setFontSize(8.5);
+      doc.setTextColor(60, 60, 60);
+      if (hasWuzifPay1) doc.text(wuzifPay1Label, rightBoxX + 8, gBoxY + 70);
+      if (hasWuzifPay2) doc.text(wuzifPay2Label, rightBoxX + 8 + gColW3, gBoxY + 70);
+
+      doc.setFontSize(10);
+      doc.setTextColor(0, 0, 0);
+      if (hasWuzifPay1) doc.text(fmt(wuzifPay1Val), rightBoxX + 8, gBoxY + 82);
+      if (hasWuzifPay2) doc.text(fmt(wuzifPay2Val), rightBoxX + 8 + gColW3, gBoxY + 82);
 
       // Divider line
       doc.setDrawColor(160, 160, 160);
       doc.setLineWidth(0.5);
-      doc.line(rightBoxX + 6, gBoxY + 80, rightBoxX + gBoxW - 6, gBoxY + 80);
+      doc.line(rightBoxX + 6, gBoxY + 91, rightBoxX + gBoxW - 6, gBoxY + 91);
 
       // Subtotals (G2) - 3 items
       const g2SubColW = (gBoxW - 16) / 3;
       doc.setFontSize(8.5);
       doc.setTextColor(0, 0, 0);
-      doc.text("ውዝፍ", rightBoxX + 8, gBoxY + 93);
-      doc.text("ውዝፍ አና ደረቅ ቆሻሻ", rightBoxX + 8 + g2SubColW, gBoxY + 93);
-      doc.text("ውዝፍ አና ቅጣት", rightBoxX + 8 + 2 * g2SubColW, gBoxY + 93);
+      doc.text("ውዝፍ", rightBoxX + 8, gBoxY + 104);
+      doc.text("ውዝፍ አና ደረቅ ቆሻሻ", rightBoxX + 8 + g2SubColW, gBoxY + 104);
+      doc.text("ውዝፍ አና ቅጣት", rightBoxX + 8 + 2 * g2SubColW, gBoxY + 104);
 
       doc.setFillColor(245, 245, 245);
       doc.setDrawColor(0, 0, 0);
-      doc.rect(rightBoxX + 6, gBoxY + 99, g2SubColW - 2, 19, "FD");
-      doc.rect(rightBoxX + 6 + g2SubColW, gBoxY + 99, g2SubColW - 2, 19, "FD");
-      doc.rect(rightBoxX + 6 + 2 * g2SubColW, gBoxY + 99, g2SubColW - 2, 19, "FD");
+      doc.rect(rightBoxX + 6, gBoxY + 111, g2SubColW - 2, 19, "FD");
+      doc.rect(rightBoxX + 6 + g2SubColW, gBoxY + 111, g2SubColW - 2, 19, "FD");
+      doc.rect(rightBoxX + 6 + 2 * g2SubColW, gBoxY + 111, g2SubColW - 2, 19, "FD");
 
       doc.setFontSize(10);
-      doc.text(fmt((summations.wuzifHisab || 0) - (summations.wuzifDerekKoshasha || 0)), rightBoxX + g2SubColW + 2, gBoxY + 113, { align: "right" });
-      doc.text(fmt(summations.wuzifHisab), rightBoxX + 2 * g2SubColW + 2, gBoxY + 113, { align: "right" });
-      doc.text(fmt((summations.wuzifHisab || 0) + (summations.kitat || 0)), rightBoxX + 3 * g2SubColW + 2, gBoxY + 113, { align: "right" });
+      doc.text(fmt((summations.wuzifHisab || 0) - (summations.wuzifDerekKoshasha || 0)), rightBoxX + g2SubColW + 2, gBoxY + 125, { align: "right" });
+      doc.text(fmt(summations.wuzifHisab), rightBoxX + 2 * g2SubColW + 2, gBoxY + 125, { align: "right" });
+      doc.text(fmt((summations.wuzifHisab || 0) + (summations.kitat || 0)), rightBoxX + 3 * g2SubColW + 2, gBoxY + 125, { align: "right" });
 
       // ─── 4. PAYMENT LOCATION SUMMARY TABLE (Y: 352 to ~600) ───────
       const paymentStartY = gBoxY + gBoxH + 6; // ~352
@@ -2181,43 +2335,47 @@ const BillList = () => {
       doc.setTextColor(0, 0, 0);
       doc.text("Summary Overview", MARGIN + fullW / 2, summaryY + 13, { align: "center" });
 
-      const sColW = (fullW - 20) / 5;
+      const sColW = (fullW - 20) / 6;
       const sLabelY1 = summaryY + 34;
       const sValueY1 = summaryY + 49;
       const sLabelY2 = summaryY + 68;
       const sValueY2 = summaryY + 83;
 
       // Row 1
-      doc.setFontSize(10);
+      doc.setFontSize(9.5);
       doc.setTextColor(60, 60, 60);
       doc.text("Total Bills", MARGIN + 10 + 0 * sColW, sLabelY1);
       doc.text("የወሩ ፍጆታ (ሜ3)", MARGIN + 10 + 1 * sColW, sLabelY1);
       doc.text("ውዝፍ ፍጆታ (ሜ3)", MARGIN + 10 + 2 * sColW, sLabelY1);
       doc.text("ጠቅላላ ደረቅ ቆሻሻ", MARGIN + 10 + 3 * sColW, sLabelY1);
-      doc.text("ጠቅላላ የዚህ ወር", MARGIN + 10 + 4 * sColW, sLabelY1);
+      if (hasTotPay1) doc.text(totPay1Label, MARGIN + 10 + 4 * sColW, sLabelY1);
+      if (hasTotPay2) doc.text(totPay2Label, MARGIN + 10 + 5 * sColW, sLabelY1);
 
-      doc.setFontSize(12);
+      doc.setFontSize(11.5);
       doc.setTextColor(0, 0, 0);
       doc.text(fmt0(filteredData.length), MARGIN + 10 + 0 * sColW, sValueY1);
       doc.text(fmt0(summations.consumption), MARGIN + 10 + 1 * sColW, sValueY1);
       doc.text(fmt(summations.wuzifFjota), MARGIN + 10 + 2 * sColW, sValueY1);
       doc.text(fmt((summations.additionalHisab || 0) + (summations.wuzifDerekKoshasha || 0)), MARGIN + 10 + 3 * sColW, sValueY1);
-      doc.text(fmt(summations.yezihWer), MARGIN + 10 + 4 * sColW, sValueY1);
+      if (hasTotPay1) doc.text(fmt(totPay1Val), MARGIN + 10 + 4 * sColW, sValueY1);
+      if (hasTotPay2) doc.text(fmt(totPay2Val), MARGIN + 10 + 5 * sColW, sValueY1);
 
       // Row 2
-      doc.setFontSize(10);
+      doc.setFontSize(9.5);
       doc.setTextColor(60, 60, 60);
-      doc.text("ቅድሚያ የተከፈለ", MARGIN + 10 + 0 * sColW, sLabelY2);
-      doc.text("ጠቅላላ ተጨማሪ ክፍያ", MARGIN + 10 + 1 * sColW, sLabelY2);
-      doc.text("ቅጣት", MARGIN + 10 + 2 * sColW, sLabelY2);
-      doc.text("ጠቅላላ ውዝፍ", MARGIN + 10 + 3 * sColW, sLabelY2);
+      doc.text("ጠቅላላ የዚህ ወር", MARGIN + 10 + 0 * sColW, sLabelY2);
+      doc.text("ቅድሚያ የተከፈለ", MARGIN + 10 + 1 * sColW, sLabelY2);
+      doc.text("ጠቅላላ ተጨማሪ ክፍያ", MARGIN + 10 + 2 * sColW, sLabelY2);
+      doc.text("ቅጣት", MARGIN + 10 + 3 * sColW, sLabelY2);
+      doc.text("ጠቅላላ ውዝፍ", MARGIN + 10 + 4 * sColW, sLabelY2);
 
-      doc.setFontSize(12);
+      doc.setFontSize(11.5);
       doc.setTextColor(0, 0, 0);
-      doc.text(fmt(summations.prepaid), MARGIN + 10 + 0 * sColW, sValueY2);
-      doc.text(fmt((summations.techemariKfya || 0) + (summations.wuzifTechemariKfya || 0)), MARGIN + 10 + 1 * sColW, sValueY2);
-      doc.text(fmt(summations.kitat), MARGIN + 10 + 2 * sColW, sValueY2);
-      doc.text(fmt((summations.wuzifHisab || 0) - (summations.wuzifDerekKoshasha || 0)), MARGIN + 10 + 3 * sColW, sValueY2);
+      doc.text(fmt(summations.yezihWer), MARGIN + 10 + 0 * sColW, sValueY2);
+      doc.text(fmt(summations.prepaid), MARGIN + 10 + 1 * sColW, sValueY2);
+      doc.text(fmt((summations.techemariKfya || 0) + (summations.wuzifTechemariKfya || 0)), MARGIN + 10 + 2 * sColW, sValueY2);
+      doc.text(fmt(summations.kitat), MARGIN + 10 + 3 * sColW, sValueY2);
+      doc.text(fmt((summations.wuzifHisab || 0) - (summations.wuzifDerekKoshasha || 0)), MARGIN + 10 + 4 * sColW, sValueY2);
 
       // Bottom Grand Total Boxes
       const tileY = summaryY + 95;
@@ -2257,20 +2415,24 @@ const BillList = () => {
       doc.setTextColor(0, 0, 0);
       doc.text("Group 1: የዚህ ወር", MARGIN + fullW / 2, g1Y + 13, { align: "center" });
 
-      const colW4 = (fullW - 30) / 4;
-      doc.setFontSize(10.5);
+      const colW6 = (fullW - 24) / 6;
+      doc.setFontSize(9.5);
       doc.setTextColor(60, 60, 60);
-      doc.text("የውሃ ፍጆታ ብር", MARGIN + 12, g1Y + 38);
-      doc.text("ቆጣሪ ኪራይ", MARGIN + 12 + colW4, g1Y + 38);
-      doc.text("ተጨማሪ ክፍያ", MARGIN + 12 + 2 * colW4, g1Y + 38);
-      doc.text("የዚህ ወር ደረቅ ቆሻሻ", MARGIN + 12 + 3 * colW4, g1Y + 38);
+      doc.text("የውሃ ፍጆታ ብር", MARGIN + 12 + 0 * colW6, g1Y + 38);
+      doc.text("ቆጣሪ ኪራይ", MARGIN + 12 + 1 * colW6, g1Y + 38);
+      doc.text("ተጨማሪ ክፍያ", MARGIN + 12 + 2 * colW6, g1Y + 38);
+      doc.text("የዚህ ወር ደረቅ ቆሻሻ", MARGIN + 12 + 3 * colW6, g1Y + 38);
+      if (hasCurPay1) doc.text(curPay1Label, MARGIN + 12 + 4 * colW6, g1Y + 38);
+      if (hasCurPay2) doc.text(curPay2Label, MARGIN + 12 + 5 * colW6, g1Y + 38);
 
-      doc.setFontSize(13);
+      doc.setFontSize(11.5);
       doc.setTextColor(0, 0, 0);
-      doc.text(fmt(summations.yezihWerFjotaKfya), MARGIN + 12, g1Y + 56);
-      doc.text(fmt(summations.kotariKiray), MARGIN + 12 + colW4, g1Y + 56);
-      doc.text(fmt(summations.techemariKfya), MARGIN + 12 + 2 * colW4, g1Y + 56);
-      doc.text(fmt(summations.additionalHisab), MARGIN + 12 + 3 * colW4, g1Y + 56);
+      doc.text(fmt(summations.yezihWerFjotaKfya), MARGIN + 12 + 0 * colW6, g1Y + 56);
+      doc.text(fmt(summations.kotariKiray), MARGIN + 12 + 1 * colW6, g1Y + 56);
+      doc.text(fmt(summations.techemariKfya), MARGIN + 12 + 2 * colW6, g1Y + 56);
+      doc.text(fmt(summations.additionalHisab), MARGIN + 12 + 3 * colW6, g1Y + 56);
+      if (hasCurPay1) doc.text(fmt(curPay1Val), MARGIN + 12 + 4 * colW6, g1Y + 56);
+      if (hasCurPay2) doc.text(fmt(curPay2Val), MARGIN + 12 + 5 * colW6, g1Y + 56);
 
       // Divider
       doc.setDrawColor(160, 160, 160);
@@ -2278,6 +2440,7 @@ const BillList = () => {
       doc.line(MARGIN + 12, g1Y + 76, MARGIN + fullW - 12, g1Y + 76);
 
       // Subtotals (G1)
+      const colW4 = (fullW - 30) / 4;
       doc.setFontSize(11);
       doc.setTextColor(0, 0, 0);
       doc.text("የዚህ ወር", MARGIN + 12, g1Y + 98);
@@ -2292,9 +2455,9 @@ const BillList = () => {
       doc.text(fmt(summations.yezihWer), MARGIN + 12 + colW4 * 1.3 - 6, g1Y + 123, { align: "right" });
       doc.text(fmt((summations.yezihWer || 0) + (summations.additionalHisab || 0)), MARGIN + 12 + colW4 * 3.1 - 6, g1Y + 123, { align: "right" });
 
-      // ─── 4. GROUP 2: ውዝፍ (Y: 396 to 580, Height = 184 pt) ─────────
+      // ─── 4. GROUP 2: ውዝፍ (Y: 396 to 586, Height = 190 pt) ─────────
       const g2Y = g1Y + g1H + 10; // 396
-      const g2H = 184;
+      const g2H = 190;
 
       doc.setDrawColor(0, 0, 0);
       doc.setFillColor(255, 255, 255);
@@ -2311,24 +2474,24 @@ const BillList = () => {
       const colW3 = (fullW - 30) / 3;
 
       // Row 1
-      doc.setFontSize(10.5);
+      doc.setFontSize(10);
       doc.setTextColor(60, 60, 60);
-      doc.text("ውዝፍ ቆጣሪ ኪራይ", MARGIN + 12, g2Y + 38);
-      doc.text("ውዝፍ ተጨማሪ ክፍያ", MARGIN + 12 + colW3, g2Y + 38);
-      doc.text("ቅጣት", MARGIN + 12 + 2 * colW3, g2Y + 38);
+      doc.text("ውዝፍ ቆጣሪ ኪራይ", MARGIN + 12, g2Y + 34);
+      doc.text("ውዝፍ ተጨማሪ ክፍያ", MARGIN + 12 + colW3, g2Y + 34);
+      doc.text("ቅጣት", MARGIN + 12 + 2 * colW3, g2Y + 34);
 
-      doc.setFontSize(13);
+      doc.setFontSize(12);
       doc.setTextColor(0, 0, 0);
-      doc.text(fmt(summations.wuzifKotariKiray), MARGIN + 12, g2Y + 54);
-      doc.text(fmt(summations.wuzifTechemariKfya), MARGIN + 12 + colW3, g2Y + 54);
-      doc.text(fmt(summations.kitat), MARGIN + 12 + 2 * colW3, g2Y + 54);
+      doc.text(fmt(summations.wuzifKotariKiray), MARGIN + 12, g2Y + 48);
+      doc.text(fmt(summations.wuzifTechemariKfya), MARGIN + 12 + colW3, g2Y + 48);
+      doc.text(fmt(summations.kitat), MARGIN + 12 + 2 * colW3, g2Y + 48);
 
       // Row 2
-      doc.setFontSize(10.5);
+      doc.setFontSize(10);
       doc.setTextColor(60, 60, 60);
-      doc.text("ውዝፍ ፍጆታ ክፍያ", MARGIN + 12, g2Y + 74);
-      doc.text("ውዝፍ ደረቅ ቆሻሻ", MARGIN + 12 + colW3, g2Y + 74);
-      doc.text("የተላለፈ(ነባር) ውዝፍ", MARGIN + 12 + 2 * colW3, g2Y + 74);
+      doc.text("ውዝፍ ፍጆታ ክፍያ", MARGIN + 12, g2Y + 64);
+      doc.text("ውዝፍ ደረቅ ቆሻሻ", MARGIN + 12 + colW3, g2Y + 64);
+      doc.text("የተላለፈ(ነባር) ውዝፍ", MARGIN + 12 + 2 * colW3, g2Y + 64);
 
       const basicTransferred = (summations.wuzifHisab || 0) - (
         (summations.wuzifKotariKiray || 0) +
@@ -2337,34 +2500,45 @@ const BillList = () => {
         (summations.wuzifTechemariKfya || 0)
       );
 
-      doc.setFontSize(13);
+      doc.setFontSize(12);
       doc.setTextColor(0, 0, 0);
-      doc.text(fmt(summations.wuzifFjotaKfya), MARGIN + 12, g2Y + 90);
-      doc.text(fmt(summations.wuzifDerekKoshasha), MARGIN + 12 + colW3, g2Y + 90);
-      doc.text(fmt(basicTransferred), MARGIN + 12 + 2 * colW3, g2Y + 90);
+      doc.text(fmt(summations.wuzifFjotaKfya), MARGIN + 12, g2Y + 78);
+      doc.text(fmt(summations.wuzifDerekKoshasha), MARGIN + 12 + colW3, g2Y + 78);
+      doc.text(fmt(basicTransferred), MARGIN + 12 + 2 * colW3, g2Y + 78);
+
+      // Row 3
+      doc.setFontSize(10);
+      doc.setTextColor(60, 60, 60);
+      if (hasWuzifPay1) doc.text(wuzifPay1Label, MARGIN + 12, g2Y + 94);
+      if (hasWuzifPay2) doc.text(wuzifPay2Label, MARGIN + 12 + colW3, g2Y + 94);
+
+      doc.setFontSize(12);
+      doc.setTextColor(0, 0, 0);
+      if (hasWuzifPay1) doc.text(fmt(wuzifPay1Val), MARGIN + 12, g2Y + 108);
+      if (hasWuzifPay2) doc.text(fmt(wuzifPay2Val), MARGIN + 12 + colW3, g2Y + 108);
 
       // Divider
       doc.setDrawColor(160, 160, 160);
       doc.setLineWidth(0.5);
-      doc.line(MARGIN + 12, g2Y + 108, MARGIN + fullW - 12, g2Y + 108);
+      doc.line(MARGIN + 12, g2Y + 122, MARGIN + fullW - 12, g2Y + 122);
 
       // Subtotals (G2) - 3 items
       doc.setFontSize(10.5);
       doc.setTextColor(0, 0, 0);
-      doc.text("ውዝፍ", MARGIN + 12, g2Y + 126);
-      doc.text("ውዝፍ አና ደረቅ ቆሻሻ", MARGIN + 12 + colW3, g2Y + 126);
-      doc.text("ውዝፍ አና ቅጣት", MARGIN + 12 + 2 * colW3, g2Y + 126);
+      doc.text("ውዝፍ", MARGIN + 12, g2Y + 138);
+      doc.text("ውዝፍ አና ደረቅ ቆሻሻ", MARGIN + 12 + colW3, g2Y + 138);
+      doc.text("ውዝፍ አና ቅጣት", MARGIN + 12 + 2 * colW3, g2Y + 138);
 
       doc.setFillColor(245, 245, 245);
       doc.setDrawColor(0, 0, 0);
-      doc.rect(MARGIN + 12, g2Y + 134, colW3 - 10, 24, "FD");
-      doc.rect(MARGIN + 12 + colW3, g2Y + 134, colW3 - 10, 24, "FD");
-      doc.rect(MARGIN + 12 + 2 * colW3, g2Y + 134, colW3 - 10, 24, "FD");
+      doc.rect(MARGIN + 12, g2Y + 146, colW3 - 10, 24, "FD");
+      doc.rect(MARGIN + 12 + colW3, g2Y + 146, colW3 - 10, 24, "FD");
+      doc.rect(MARGIN + 12 + 2 * colW3, g2Y + 146, colW3 - 10, 24, "FD");
 
       doc.setFontSize(13);
-      doc.text(fmt((summations.wuzifHisab || 0) - (summations.wuzifDerekKoshasha || 0)), MARGIN + colW3 - 4, g2Y + 151, { align: "right" });
-      doc.text(fmt(summations.wuzifHisab), MARGIN + 2 * colW3 - 4, g2Y + 151, { align: "right" });
-      doc.text(fmt((summations.wuzifHisab || 0) + (summations.kitat || 0)), MARGIN + 3 * colW3 - 4, g2Y + 151, { align: "right" });
+      doc.text(fmt((summations.wuzifHisab || 0) - (summations.wuzifDerekKoshasha || 0)), MARGIN + colW3 - 4, g2Y + 163, { align: "right" });
+      doc.text(fmt(summations.wuzifHisab), MARGIN + 2 * colW3 - 4, g2Y + 163, { align: "right" });
+      doc.text(fmt((summations.wuzifHisab || 0) + (summations.kitat || 0)), MARGIN + 3 * colW3 - 4, g2Y + 163, { align: "right" });
 
       // ─── 5. DUPLICATE PAYMENTS CARD (if count > 0) ────────────────
       if ((summations.duplicatePaymentCount || 0) > 0) {
@@ -3386,6 +3560,58 @@ const BillList = () => {
                         })}
                       </Typography>
                     </Box>
+                    <Box sx={{ flex: 1, minWidth: '150px', textAlign: 'center', visibility: hasTotPay1 ? 'visible' : 'hidden' }}>
+                      <Typography
+                        variant="body2"
+                        sx={{
+                          fontFamily: 'Nyala, serif',
+                          mb: 1,
+                          fontSize: '1.105rem',
+                          fontWeight: 'medium'
+                        }}
+                      >
+                        {totPay1Label}
+                      </Typography>
+                      <Typography
+                        variant="h6"
+                        sx={{
+                          fontWeight: "bold",
+                          fontSize: '1.3rem',
+                          color: 'info.main'
+                        }}
+                      >
+                        {totPay1Val.toLocaleString("en-US", {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
+                      </Typography>
+                    </Box>
+                    <Box sx={{ flex: 1, minWidth: '150px', textAlign: 'center', visibility: hasTotPay2 ? 'visible' : 'hidden' }}>
+                      <Typography
+                        variant="body2"
+                        sx={{
+                          fontFamily: 'Nyala, serif',
+                          mb: 1,
+                          fontSize: '1.105rem',
+                          fontWeight: 'medium'
+                        }}
+                      >
+                        {totPay2Label}
+                      </Typography>
+                      <Typography
+                        variant="h6"
+                        sx={{
+                          fontWeight: "bold",
+                          fontSize: '1.3rem',
+                          color: 'info.main'
+                        }}
+                      >
+                        {totPay2Val.toLocaleString("en-US", {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
+                      </Typography>
+                    </Box>
                     <Box sx={{ flex: 1, minWidth: '150px', textAlign: 'center' }}>
                       <Typography
                         variant="body2"
@@ -3735,11 +3961,57 @@ const BillList = () => {
                               })}
                             </Typography>
                           </Box>
-                          <Box sx={{ flex: 1 }}>
-                            {/* Empty space for alignment */}
+                          <Box sx={{ flex: 1, textAlign: 'center', visibility: hasCurPay1 ? 'visible' : 'hidden' }}>
+                            <Typography
+                              variant="body2"
+                              sx={{
+                                fontFamily: 'Nyala, serif',
+                                mb: 1.5,
+                                fontSize: '1.17rem',
+                                fontWeight: 'medium'
+                              }}
+                            >
+                              {curPay1Label}
+                            </Typography>
+                            <Typography
+                              variant="h6"
+                              sx={{
+                                fontWeight: "bold",
+                                fontSize: '1.43rem',
+                                color: 'info.main'
+                              }}
+                            >
+                              {curPay1Val.toLocaleString("en-US", {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}
+                            </Typography>
                           </Box>
-                          <Box sx={{ flex: 1 }}>
-                            {/* Empty space for alignment */}
+                          <Box sx={{ flex: 1, textAlign: 'center', visibility: hasCurPay2 ? 'visible' : 'hidden' }}>
+                            <Typography
+                              variant="body2"
+                              sx={{
+                                fontFamily: 'Nyala, serif',
+                                mb: 1.5,
+                                fontSize: '1.17rem',
+                                fontWeight: 'medium'
+                              }}
+                            >
+                              {curPay2Label}
+                            </Typography>
+                            <Typography
+                              variant="h6"
+                              sx={{
+                                fontWeight: "bold",
+                                fontSize: '1.43rem',
+                                color: 'info.main'
+                              }}
+                            >
+                              {curPay2Val.toLocaleString("en-US", {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}
+                            </Typography>
                           </Box>
                         </Box>
                       </Box>
@@ -3988,6 +4260,63 @@ const BillList = () => {
                                 maximumFractionDigits: 2,
                               })}
                             </Typography>
+                          </Box>
+                        </Box>
+                        <Box sx={{ display: 'flex', flexDirection: 'row', gap: 3 }}>
+                          <Box sx={{ flex: 1, textAlign: 'center', visibility: hasWuzifPay1 ? 'visible' : 'hidden' }}>
+                            <Typography
+                              variant="body2"
+                              sx={{
+                                fontFamily: 'Nyala, serif',
+                                mb: 1.5,
+                                fontSize: '1.17rem',
+                                fontWeight: 'medium'
+                              }}
+                            >
+                              {wuzifPay1Label}
+                            </Typography>
+                            <Typography
+                              variant="h6"
+                              sx={{
+                                fontWeight: "bold",
+                                fontSize: '1.43rem',
+                                color: 'error.main'
+                              }}
+                            >
+                              {wuzifPay1Val.toLocaleString("en-US", {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}
+                            </Typography>
+                          </Box>
+                          <Box sx={{ flex: 1, textAlign: 'center', visibility: hasWuzifPay2 ? 'visible' : 'hidden' }}>
+                            <Typography
+                              variant="body2"
+                              sx={{
+                                fontFamily: 'Nyala, serif',
+                                mb: 1.5,
+                                fontSize: '1.17rem',
+                                fontWeight: 'medium'
+                              }}
+                            >
+                              {wuzifPay2Label}
+                            </Typography>
+                            <Typography
+                              variant="h6"
+                              sx={{
+                                fontWeight: "bold",
+                                fontSize: '1.43rem',
+                                color: 'error.main'
+                              }}
+                            >
+                              {wuzifPay2Val.toLocaleString("en-US", {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}
+                            </Typography>
+                          </Box>
+                          <Box sx={{ flex: 1 }}>
+                            {/* Empty space for alignment */}
                           </Box>
                         </Box>
                         <Box sx={{ borderTop: '2px solid #000', pt: 2 }}>

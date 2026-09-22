@@ -4,10 +4,12 @@ import java.io.Serializable;
 import java.util.Date;
 import jakarta.persistence.*;
 import com.fasterxml.jackson.annotation.JsonManagedReference;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 @Entity
 @Table(name = "address_streets")
 @NamedQuery(name = "AddressStreets.findAll", query = "SELECT a FROM AddressStreets a")
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 public class AddressStreets implements Serializable {
 	private static final long serialVersionUID = 1L;
 
@@ -44,6 +46,7 @@ public class AddressStreets implements Serializable {
 	// bi-directional many-to-one association to UserAccount (registered by)
 	@ManyToOne
 	@JoinColumn(name = "registered_by", nullable = false)
+	@JsonIgnoreProperties({"hibernateLazyInitializer", "handler", "branch", "userRole", "password", "signature", "photo", "registeredBy", "modifiedBy"})
 	private UserAccount registeredBy;
 
 	@Temporal(TemporalType.TIMESTAMP)
@@ -53,6 +56,7 @@ public class AddressStreets implements Serializable {
 	// bi-directional many-to-one association to UserAccount (modified by)
 	@ManyToOne
 	@JoinColumn(name = "modified_by", nullable = false)
+	@JsonIgnoreProperties({"hibernateLazyInitializer", "handler", "branch", "userRole", "password", "signature", "photo", "registeredBy", "modifiedBy"})
 	private UserAccount modifiedBy;
 
 	public AddressStreets() {

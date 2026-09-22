@@ -29,15 +29,10 @@ public class InvPurchaseRequisitionController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(required = false) Integer storeId,
-            @RequestParam(required = false) String status) {
-        if (storeId != null && status != null) {
-            return ResponseEntity.ok(service.getByStoreAndStatus(storeId, PRStatus.valueOf(status), page, size));
-        } else if (storeId != null) {
-            return ResponseEntity.ok(service.getByStore(storeId, page, size));
-        } else if (status != null) {
-            return ResponseEntity.ok(service.getByStatus(PRStatus.valueOf(status), page, size));
-        }
-        return ResponseEntity.ok(service.getAll(page, size));
+            @RequestParam(required = false) String status,
+            Principal principal) {
+        String username = principal != null ? principal.getName() : null;
+        return ResponseEntity.ok(service.getAllFiltered(storeId, status, username, page, size));
     }
 
     @GetMapping("/{id}")

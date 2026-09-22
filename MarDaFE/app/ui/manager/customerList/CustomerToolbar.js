@@ -1,8 +1,31 @@
 "use client";
 import { useState } from "react";
-import { Box, Button, Menu, MenuItem } from "@mui/material";
+import {
+  Box,
+  Button,
+  Menu,
+  MenuItem,
+  ListItemIcon,
+  ListItemText,
+  Chip,
+  Tooltip,
+  IconButton,
+  Divider,
+} from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import DownloadIcon from "@mui/icons-material/Download";
+import UploadFileIcon from "@mui/icons-material/UploadFile";
+import SystemUpdateAltIcon from "@mui/icons-material/SystemUpdateAlt";
+import PersonPinIcon from "@mui/icons-material/PersonPin";
+import LocationOnIcon from "@mui/icons-material/LocationOn";
+import RefreshIcon from "@mui/icons-material/Refresh";
+import SpeedIcon from "@mui/icons-material/Speed";
+import DeleteSweepIcon from "@mui/icons-material/DeleteSweep";
+import PaymentsIcon from "@mui/icons-material/Payments";
+import CleaningServicesIcon from "@mui/icons-material/CleaningServices";
+import AssignmentIndIcon from "@mui/icons-material/AssignmentInd";
+import MoreVertIcon from "@mui/icons-material/MoreVert";
+import LayersIcon from "@mui/icons-material/Layers";
 
 const CustomerToolbar = ({
   onCreate,
@@ -14,6 +37,8 @@ const CustomerToolbar = ({
   onExportExcel,
   isFetching,
   selectedCustomerId,
+  selectedCount = 0,
+  onClearSelection,
   onOpenMeters,
   onOpenAssignReader,
   onOpenBulkPayment,
@@ -33,45 +58,62 @@ const CustomerToolbar = ({
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
-        gap: "1rem",
-        p: "4px",
+        flexWrap: "wrap",
+        gap: 1.5,
+        p: 1,
+        borderRadius: 1,
       }}
     >
-      <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
+      {/* Hidden File Inputs */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleFileUpload}
+        accept=".xlsx,.xls"
+        style={{ display: "none" }}
+      />
+      <input
+        type="file"
+        ref={updateFileInputRef}
+        onChange={handleUpdateFileUpload}
+        accept=".xlsx,.xls"
+        style={{ display: "none" }}
+      />
+
+      {/* Left Action Buttons */}
+      <Box sx={{ display: "flex", gap: 1, alignItems: "center", flexWrap: "wrap" }}>
         <Button
           variant="contained"
+          color="primary"
           startIcon={<AddIcon />}
           size="small"
           onClick={onCreate}
+          sx={{
+            fontWeight: 600,
+            textTransform: "none",
+            boxShadow: 2,
+            px: 2,
+          }}
         >
-          Create
+          New Customer
         </Button>
-        <input
-          type="file"
-          ref={fileInputRef}
-          onChange={handleFileUpload}
-          accept=".xlsx,.xls"
-          style={{ display: "none" }}
-        />
-        <input
-          type="file"
-          ref={updateFileInputRef}
-          onChange={handleUpdateFileUpload}
-          accept=".xlsx,.xls"
-          style={{ display: "none" }}
-        />
 
+        {/* Data Management Operations Menu */}
         <Button
           variant="outlined"
           size="small"
+          startIcon={<LayersIcon />}
           onClick={(e) => setDataActionsAnchorEl(e.currentTarget)}
+          sx={{ textTransform: "none", fontWeight: 500 }}
         >
-          Data
+          Data Operations
         </Button>
         <Menu
           anchorEl={dataActionsAnchorEl}
           open={Boolean(dataActionsAnchorEl)}
           onClose={() => setDataActionsAnchorEl(null)}
+          transformOrigin={{ horizontal: "left", vertical: "top" }}
+          anchorOrigin={{ horizontal: "left", vertical: "bottom" }}
         >
           <MenuItem
             onClick={() => {
@@ -79,7 +121,10 @@ const CustomerToolbar = ({
               setDataActionsAnchorEl(null);
             }}
           >
-            Import Customers
+            <ListItemIcon>
+              <UploadFileIcon fontSize="small" color="primary" />
+            </ListItemIcon>
+            <ListItemText primary="Import Customers (Excel)" secondary="Register new customers in bulk" />
           </MenuItem>
           <MenuItem
             onClick={() => {
@@ -87,15 +132,22 @@ const CustomerToolbar = ({
               setDataActionsAnchorEl(null);
             }}
           >
-            Update Customers
+            <ListItemIcon>
+              <SystemUpdateAltIcon fontSize="small" color="secondary" />
+            </ListItemIcon>
+            <ListItemText primary="Update Customers (Excel)" secondary="Update existing customer details" />
           </MenuItem>
+          <Divider />
           <MenuItem
             onClick={() => {
               onUpdateReaderOpen();
               setDataActionsAnchorEl(null);
             }}
           >
-            Update Customer Reader
+            <ListItemIcon>
+              <PersonPinIcon fontSize="small" color="info" />
+            </ListItemIcon>
+            <ListItemText primary="Update Customer Reader" secondary="Assign readers via Excel sheet" />
           </MenuItem>
           <MenuItem
             onClick={() => {
@@ -103,34 +155,32 @@ const CustomerToolbar = ({
               setDataActionsAnchorEl(null);
             }}
           >
-            Update GPS
+            <ListItemIcon>
+              <LocationOnIcon fontSize="small" color="success" />
+            </ListItemIcon>
+            <ListItemText primary="Update Customer GPS" secondary="Upload GPS coordinates" />
           </MenuItem>
+          <Divider />
           <MenuItem
             onClick={() => {
               onExportExcel();
               setDataActionsAnchorEl(null);
             }}
           >
-            <DownloadIcon fontSize="small" sx={{ mr: 1 }} />
-            Export to Excel
+            <ListItemIcon>
+              <DownloadIcon fontSize="small" color="action" />
+            </ListItemIcon>
+            <ListItemText primary="Export to Excel" secondary="Export current filtered list" />
           </MenuItem>
         </Menu>
-      </Box>
 
-      <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
+        {/* Bulk Operations Menu */}
         <Button
           variant="outlined"
           size="small"
-          onClick={onRefresh}
-          disabled={isFetching}
-        >
-          {isFetching ? "Refreshing..." : "Refresh"}
-        </Button>
-
-        <Button
-          variant="outlined"
-          size="small"
+          startIcon={<MoreVertIcon />}
           onClick={(e) => setBulkActionsAnchorEl(e.currentTarget)}
+          sx={{ textTransform: "none", fontWeight: 500 }}
         >
           Bulk Actions
         </Button>
@@ -145,7 +195,13 @@ const CustomerToolbar = ({
               setBulkActionsAnchorEl(null);
             }}
           >
-            Assign Reader
+            <ListItemIcon>
+              <AssignmentIndIcon fontSize="small" color="primary" />
+            </ListItemIcon>
+            <ListItemText
+              primary="Assign Mobile Reader"
+              secondary={selectedCount > 0 ? `Apply to ${selectedCount} selected` : "Apply to selected/scope"}
+            />
           </MenuItem>
           <MenuItem
             onClick={() => {
@@ -154,7 +210,13 @@ const CustomerToolbar = ({
             }}
             disabled={!canUpdateDryWaste}
           >
-            Update Dry Waste
+            <ListItemIcon>
+              <CleaningServicesIcon fontSize="small" color="warning" />
+            </ListItemIcon>
+            <ListItemText
+              primary="Update Dry Waste Fee"
+              secondary={canUpdateDryWaste ? "Set monthly dry waste fee" : "Select rows or scope first"}
+            />
           </MenuItem>
           <MenuItem
             onClick={() => {
@@ -163,18 +225,91 @@ const CustomerToolbar = ({
             }}
             disabled={!canUpdateDryWaste}
           >
-            Update Additional Fee
+            <ListItemIcon>
+              <PaymentsIcon fontSize="small" color="success" />
+            </ListItemIcon>
+            <ListItemText
+              primary="Update Additional Fee (Techemari)"
+              secondary={canUpdateDryWaste ? "Set custom fee name & amount" : "Select rows or scope first"}
+            />
           </MenuItem>
         </Menu>
 
-        <Button
-          variant="outlined"
-          size="small"
-          onClick={onOpenMeters}
-          disabled={!selectedCustomerId}
+        {/* Selection Badge & Clear */}
+        {selectedCount > 0 && (
+          <Chip
+            color="primary"
+            variant="outlined"
+            size="small"
+            label={`${selectedCount} Selected`}
+            onDelete={onClearSelection}
+            deleteIcon={<DeleteSweepIcon fontSize="small" />}
+            sx={{ fontWeight: 600 }}
+          />
+        )}
+      </Box>
+
+      {/* Right Action Buttons */}
+      <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
+        <Tooltip
+          title={
+            selectedCustomerId
+              ? "View and manage meter records for selected customer"
+              : "Select exactly 1 customer row below to manage meters"
+          }
         >
-          Meters
-        </Button>
+          <span>
+            <Button
+              variant={selectedCustomerId ? "contained" : "outlined"}
+              color="info"
+              size="small"
+              startIcon={<SpeedIcon />}
+              onClick={onOpenMeters}
+              disabled={!selectedCustomerId}
+              sx={{ textTransform: "none", fontWeight: 500 }}
+            >
+              Meters
+            </Button>
+          </span>
+        </Tooltip>
+
+        <Tooltip title="Export current filtered view to Excel">
+          <Button
+            variant="outlined"
+            size="small"
+            startIcon={<DownloadIcon />}
+            onClick={onExportExcel}
+            sx={{ textTransform: "none" }}
+          >
+            Export
+          </Button>
+        </Tooltip>
+
+        <Tooltip title="Refresh Customer Data">
+          <IconButton
+            size="small"
+            onClick={onRefresh}
+            disabled={isFetching}
+            color="primary"
+            sx={{
+              border: "1px solid",
+              borderColor: "divider",
+              borderRadius: 1,
+              p: 0.75,
+            }}
+          >
+            <RefreshIcon
+              fontSize="small"
+              sx={{
+                animation: isFetching ? "spin 1s linear infinite" : "none",
+                "@keyframes spin": {
+                  "0%": { transform: "rotate(0deg)" },
+                  "100%": { transform: "rotate(360deg)" },
+                },
+              }}
+            />
+          </IconButton>
+        </Tooltip>
       </Box>
     </Box>
   );

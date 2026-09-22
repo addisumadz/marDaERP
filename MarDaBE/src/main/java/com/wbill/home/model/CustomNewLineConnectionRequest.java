@@ -186,6 +186,18 @@ public class CustomNewLineConnectionRequest implements Serializable {
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
+    @Column(name = "rejection_reason", columnDefinition = "TEXT")
+    private String rejectionReason;
+
+    @Column(name = "rejected_by", length = 100)
+    private String rejectedBy;
+
+    @Column(name = "rejected_date")
+    private LocalDateTime rejectedDate;
+
+    @Column(name = "cancellation_reason", columnDefinition = "TEXT")
+    private String cancellationReason;
+
     // Child relations
     @OneToMany(mappedBy = "request", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @OrderBy("id ASC")
@@ -368,4 +380,16 @@ public class CustomNewLineConnectionRequest implements Serializable {
 
     public List<CustomNewLineActivityLog> getActivityLogs() { return activityLogs; }
     public void setActivityLogs(List<CustomNewLineActivityLog> activityLogs) { this.activityLogs = activityLogs; }
+
+    public String getRejectionReason() { return rejectionReason; }
+    public void setRejectionReason(String rejectionReason) { this.rejectionReason = rejectionReason; }
+
+    public String getRejectedBy() { return rejectedBy; }
+    public void setRejectedBy(String rejectedBy) { this.rejectedBy = rejectedBy; }
+
+    public LocalDateTime getRejectedDate() { return rejectedDate; }
+    public void setRejectedDate(LocalDateTime rejectedDate) { this.rejectedDate = rejectedDate; }
+
+    public String getCancellationReason() { return cancellationReason; }
+    public void setCancellationReason(String cancellationReason) { this.cancellationReason = cancellationReason; }
 }

@@ -1,0 +1,316 @@
+{
+  "variables": [],
+  "info": {
+    "name": "billingApi - domain updated",
+    "_postman_id": "186b4322-62c5-7384-af60-a9fbd9471980",
+    "description": "",
+    "schema": "https://schema.getpostman.com/json/collection/v2.0.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "update or register single bill",
+      "request": {
+        "url": {
+          "raw": "https://unicashbill.act.com.et/enterpriseApi/BillIntegrationResource/updateOrRegisterBill?API_KEY=2017491298EC43FC8F7B6DE5EB000B63.C8FADC0BCFA9430BB8CCB0718FA58709",
+          "protocol": "https",
+          "host": [
+            "unicashbill.act.com.et"
+          ],
+          "path": [
+            "enterpriseApi",
+            "BillIntegrationResource",
+            "updateOrRegisterBill"
+          ],
+          "query": [
+            {
+              "key": "API_KEY",
+              "value": "2017491298EC43FC8F7B6DE5EB000B63.C8FADC0BCFA9430BB8CCB0718FA58709",
+              "equals": true,
+              "description": ""
+            }
+          ],
+          "variable": []
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "description": ""
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"validUntil\": \"2022-03-07\",\n  \"customer\": {\n    \"fullName\": \"abebe kebede\",\n    \"phoneNumber\": \"\",\n    \"customerId\": \"200143\"\n  },\n  \"receiptData\": {\n    \"items\": [\n      {\n        \"name\": \"november fee\",\n        \"price\": 3980.00\n      },\n      {\n        \"name\": \"penalty for november\",\n        \"price\": 80.00\n      }\n    ]\n  },\n  \"billId\": \"LOPASZXC45324\"\n}"
+        },
+        "description": "register collection of bills to bank, upon successful response invokes the provided callback url for notification , on error returns the specified error (Bad Request)"
+      },
+      "response": []
+    },
+    {
+      "name": "BillSync (* API_KEY is mandatory)",
+      "request": {
+        "url": {
+          "raw": "https://unicashbill.act.com.et/enterpriseApi/BillIntegrationResource/billSync?API_KEY=2017491298EC43FC8F7B6DE5EB000B63.C8FADC0BCFA9430BB8CCB0718FA58709",
+          "protocol": "https",
+          "host": [
+            "unicashbill.act.com.et"
+          ],
+          "path": [
+            "enterpriseApi",
+            "BillIntegrationResource",
+            "billSync"
+          ],
+          "query": [
+            {
+              "key": "API_KEY",
+              "value": "2017491298EC43FC8F7B6DE5EB000B63.C8FADC0BCFA9430BB8CCB0718FA58709",
+              "equals": true,
+              "description": ""
+            }
+          ],
+          "variable": []
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "description": ""
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\r\n    \"startDate\":\"2021-11-01\",\r\n    \"endDate\":\"2021-11-30\"\r\n}"
+        },
+        "description": "Lists the paid bills between the start & endDate"
+      },
+      "response": []
+    },
+    {
+      "name": "billSyncFile",
+      "request": {
+        "url": {
+          "raw": "https://unicashbill.act.com.et/enterpriseApi/BillIntegrationResource/billSyncFile?API_KEY=2017491298EC43FC8F7B6DE5EB000B63.C8FADC0BCFA9430BB8CCB0718FA58709",
+          "protocol": "https",
+          "host": [
+            "unicashbill.act.com.et"
+          ],
+          "path": [
+            "enterpriseApi",
+            "BillIntegrationResource",
+            "billSyncFile"
+          ],
+          "query": [
+            {
+              "key": "API_KEY",
+              "value": "2017491298EC43FC8F7B6DE5EB000B63.C8FADC0BCFA9430BB8CCB0718FA58709",
+              "equals": true,
+              "description": ""
+            }
+          ],
+          "variable": []
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "description": ""
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\r\n    \"startDate\":\"2021-11-01\",\r\n    \"endDate\":\"2021-11-30\"\r\n}"
+        },
+        "description": ""
+      },
+      "response": []
+    },
+    {
+      "name": "cancel single bill (*API_KEY is mandatory)",
+      "request": {
+        "url": {
+          "raw": "https://unicashbill.act.com.et/enterpriseApi/BillIntegrationResource/cancelBill?API_KEY=2017491298EC43FC8F7B6DE5EB000B63.C8FADC0BCFA9430BB8CCB0718FA58709&bill_id=LOPASZXC45324",
+          "protocol": "https",
+          "host": [
+            "unicashbill.act.com.et"
+          ],
+          "path": [
+            "enterpriseApi",
+            "BillIntegrationResource",
+            "cancelBill"
+          ],
+          "query": [
+            {
+              "key": "API_KEY",
+              "value": "2017491298EC43FC8F7B6DE5EB000B63.C8FADC0BCFA9430BB8CCB0718FA58709",
+              "equals": true,
+              "description": ""
+            },
+            {
+              "key": "bill_id",
+              "value": "LOPASZXC45324",
+              "equals": true,
+              "description": ""
+            }
+          ],
+          "variable": []
+        },
+        "method": "POST",
+        "header": [],
+        "body": {},
+        "description": ""
+      },
+      "response": []
+    },
+    {
+      "name": "Bulk Bill Cancel (* API_KEY is mandatory)",
+      "request": {
+        "url": {
+          "raw": "https://unicashbill.act.com.et/enterpriseApi/BillIntegrationResource/bulkBillCancel?API_KEY=2017491298EC43FC8F7B6DE5EB000B63.C8FADC0BCFA9430BB8CCB0718FA58709",
+          "protocol": "https",
+          "host": [
+            "unicashbill.act.com.et"
+          ],
+          "path": [
+            "enterpriseApi",
+            "BillIntegrationResource",
+            "bulkBillCancel"
+          ],
+          "query": [
+            {
+              "key": "API_KEY",
+              "value": "2017491298EC43FC8F7B6DE5EB000B63.C8FADC0BCFA9430BB8CCB0718FA58709",
+              "equals": true,
+              "description": ""
+            }
+          ],
+          "variable": []
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "API_KEY",
+            "value": "2017491298EC43FC8F7B6DE5EB000B63.C8FADC0BCFA9430BB8CCB0718FA58709",
+            "description": ""
+          }
+        ],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "uploadedFile",
+              "description": "",
+              "type": "file",
+              "src": "bills_to_cancel.csv"
+            }
+          ]
+        },
+        "description": "cancels collection of bills\n\nThis endpoint will accept a collection of bill ids (via a csv file) and cancels the pending bills.\nupon successful response 200 will be returned.otherwise 401 bad request will be returned."
+      },
+      "response": []
+    },
+    {
+      "name": "Bulk Bill Registration",
+      "request": {
+        "url": {
+          "raw": "https://unicashbill.act.com.et/enterpriseApi/BillIntegrationResource/bulkBillUpload?API_KEY=2017491298EC43FC8F7B6DE5EB000B63.C8FADC0BCFA9430BB8CCB0718FA58709",
+          "protocol": "https",
+          "host": [
+            "unicashbill.act.com.et"
+          ],
+          "path": [
+            "enterpriseApi",
+            "BillIntegrationResource",
+            "bulkBillUpload"
+          ],
+          "query": [
+            {
+              "key": "API_KEY",
+              "value": "2017491298EC43FC8F7B6DE5EB000B63.C8FADC0BCFA9430BB8CCB0718FA58709",
+              "equals": true,
+              "description": ""
+            }
+          ],
+          "variable": []
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "API_KEY",
+            "value": "2017491298EC43FC8F7B6DE5EB000B63.C8FADC0BCFA9430BB8CCB0718FA58709",
+            "description": ""
+          }
+        ],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "uploadedFile",
+              "description": "",
+              "type": "file",
+              "src": "adis_kidam.csv"
+            }
+          ]
+        },
+        "description": "cancels collection of bills\n\nThis endpoint will accept a collection of bill ids (via a csv file) and cancels the pending bills.\nupon successful response 200 will be returned.otherwise 401 bad request will be returned."
+      },
+      "response": []
+    },
+    {
+      "name": "Bulk Bill Update",
+      "request": {
+        "url": {
+          "raw": "https://unicashbill.act.com.et/enterpriseApi/BillIntegrationResource/bulkBillUpdate?API_KEY=2017491298EC43FC8F7B6DE5EB000B63.C8FADC0BCFA9430BB8CCB0718FA58709",
+          "protocol": "https",
+          "host": [
+            "unicashbill.act.com.et"
+          ],
+          "path": [
+            "enterpriseApi",
+            "BillIntegrationResource",
+            "bulkBillUpdate"
+          ],
+          "query": [
+            {
+              "key": "API_KEY",
+              "value": "2017491298EC43FC8F7B6DE5EB000B63.C8FADC0BCFA9430BB8CCB0718FA58709",
+              "equals": true,
+              "description": ""
+            }
+          ],
+          "variable": []
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "API_KEY",
+            "value": "2017491298EC43FC8F7B6DE5EB000B63.C8FADC0BCFA9430BB8CCB0718FA58709",
+            "description": ""
+          }
+        ],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "uploadedFile",
+              "description": "",
+              "type": "file",
+              "src": "adis_kidam.csv"
+            },
+            {
+              "key": "",
+              "value": "",
+              "description": "",
+              "type": "text",
+              "disabled": true
+            }
+          ]
+        },
+        "description": "cancels collection of bills\n\nThis endpoint will accept a collection of bill ids (via a csv file) and cancels the pending bills.\nupon successful response 200 will be returned.otherwise 401 bad request will be returned."
+      },
+      "response": []
+    }
+  ]
+}

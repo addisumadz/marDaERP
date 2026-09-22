@@ -13,8 +13,10 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.Year;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 @Service
 public class InvPurchaseRequisitionService {
@@ -30,6 +32,134 @@ public class InvPurchaseRequisitionService {
 
     @Autowired(required = false)
     private WorkflowService workflowService;
+
+    @Autowired(required = false)
+    private UserAccountRepository userAccountRepo;
+
+    @Autowired(required = false)
+    private UserAccountRoleRepository userAccountRoleRepo;
+
+    @Autowired(required = false)
+    private InvStoreUserRepository storeUserRepo;
+
+    public boolean isAdmin(String username) {
+        if (username == null || username.trim().isEmpty()) {
+            return false;
+        }
+        if ("system".equalsIgnoreCase(username)) {
+            return true;
+        }
+        if (userAccountRepo != null) {
+            Optional<UserAccount> userOpt = userAccountRepo.findByUserName(username);
+            if (userOpt.isPresent()) {
+                UserAccount ua = userOpt.get();
+                if (ua.getUserRole() != null) {
+                    String code = ua.getUserRole().getRoleCode() != null ? ua.getUserRole().getRoleCode().toLowerCase() : "";
+                    String name = ua.getUserRole().getRoleName() != null ? ua.getUserRole().getRoleName().toLowerCase() : "";
+                    if (code.contains("admin") || code.contains("billzgjt") || code.contains("gm") ||
+                        name.contains("admin") || name.contains("አስተዳዳሪ") || name.contains("ሥራ አስኪያጅ")) {
+                        return true;
+                    }
+                }
+            }
+        }
+        if (userAccountRoleRepo != null) {
+            List<String> codes = userAccountRoleRepo.findRoleCodesByUsername(username);
+            if (codes != null && codes.stream().anyMatch(c -> {
+                String lc = c.toLowerCase();
+                return lc.contains("admin") || lc.contains("billzgjt") || lc.contains("gm");
+            })) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public boolean isMainOfficeOrAdmin(String username) {
+        if (username == null || username.trim().isEmpty()) {
+            return false;
+        }
+        if ("system".equalsIgnoreCase(username) || isAdmin(username)) {
+            return true;
+        }
+        if (userAccountRepo != null) {
+            Optional<UserAccount> userOpt = userAccountRepo.findByUserName(username);
+            if (userOpt.isPresent()) {
+                UserAccount ua = userOpt.get();
+                if (ua.getBranch() != null && ua.getBranch().getBranchCode() != null) {
+                    if ("MO".equalsIgnoreCase(ua.getBranch().getBranchCode().trim())) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    public Integer getUserBranchId(String username) {
+        if (username == null || username.trim().isEmpty() || userAccountRepo == null) {
+            return null;
+        }
+        Optional<UserAccount> userOpt = userAccountRepo.findByUserName(username);
+        if (userOpt.isPresent() && userOpt.get().getBranch() != null) {
+            return userOpt.get().getBranch().getId();
+        }
+        return null;
+    }
+
+    public Page<InvPurchaseRequisition> getAllFiltered(Integer storeId, String statusStr, String username, int page, int size) {
+        PRStatus status = null;
+        if (statusStr != null && !statusStr.trim().isEmpty() && !"ALL".equalsIgnoreCase(statusStr)) {
+            try {
+                status = PRStatus.valueOf(statusStr.trim());
+            } catch (Exception ignored) {}
+        }
+
+        boolean isMoOrAdmin = isMainOfficeOrAdmin(username);
+        if (isMoOrAdmin) {
+            if (storeId != null && status != null) {
+                return getByStoreAndStatus(storeId, status, page, size);
+            } else if (storeId != null) {
+                return getByStore(storeId, page, size);
+            } else if (status != null) {
+                return getByStatus(status, page, size);
+            }
+            return getAll(page, size);
+        }
+
+        // Branch-scoped user (Branch Manager, Store Keeper, etc. belonging to a specific branch)
+        Integer userBranchId = getUserBranchId(username);
+        if (userBranchId == null) {
+            return new org.springframework.data.domain.PageImpl<>(
+                    Collections.emptyList(),
+                    PageRequest.of(page, size),
+                    0
+            );
+        }
+
+        // If a specific store is requested, ensure that the store belongs to the user's branch
+        if (storeId != null) {
+            Optional<InvStore> storeOpt = storeRepository.findById(storeId);
+            if (storeOpt.isPresent() && storeOpt.get().getBranch() != null && storeOpt.get().getBranch().getId() == userBranchId) {
+                if (status != null) {
+                    return getByStoreAndStatus(storeId, status, page, size);
+                }
+                return getByStore(storeId, page, size);
+            } else {
+                return new org.springframework.data.domain.PageImpl<>(
+                        Collections.emptyList(),
+                        PageRequest.of(page, size),
+                        0
+                );
+            }
+        }
+
+        // No specific store requested: return all PRs for stores in user's branch
+        if (status != null) {
+            return repository.findByBranchIdAndStatusOrderByCreatedAtDesc(userBranchId, status, PageRequest.of(page, size));
+        }
+        return repository.findByBranchIdOrderByCreatedAtDesc(userBranchId, PageRequest.of(page, size));
+    }
 
     public Page<InvPurchaseRequisition> getAll(int page, int size) {
         return repository.findAllByOrderByCreatedAtDesc(PageRequest.of(page, size));

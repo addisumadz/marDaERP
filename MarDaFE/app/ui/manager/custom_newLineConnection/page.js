@@ -28,6 +28,9 @@ import {
   AlertTriangle,
   Filter,
   Zap,
+  History,
+  XCircle,
+  Ban,
 } from "lucide-react";
 
 import customNewLineConnectionService from "../../../lib/custom_newLineConnectionService";
@@ -40,6 +43,8 @@ import CustomStoreDispatchModal from "./CustomStoreDispatchModal";
 import CustomInstallationCompletionModal from "./CustomInstallationCompletionModal";
 import CustomFinalActivationModal from "./CustomFinalActivationModal";
 import CustomCommonMaterialsModal from "./CustomCommonMaterialsModal";
+import CustomRejectCancelModal from "./CustomRejectCancelModal";
+import CustomActivityTimeline from "./CustomActivityTimeline";
 import { generateSurveyChecklistPdf, generateCostEstimationPdf } from "./customNewLinePdf";
 import { UserAccountService } from "../../../lib/userAccountService";
 import { DropdownService } from "../../../lib/dropdownService";
@@ -167,12 +172,16 @@ export default function CustomNewLineConnectionPage() {
   const [isAppModalOpen, setIsAppModalOpen] = useState(false);
   const [isPlumberModalOpen, setIsPlumberModalOpen] = useState(false);
   const [plumberModalMode, setPlumberModalMode] = useState("survey"); // "survey" | "installation"
+  const [isPlumberReassign, setIsPlumberReassign] = useState(false);
   const [isSurveyModalOpen, setIsSurveyModalOpen] = useState(false);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [isDispatchModalOpen, setIsDispatchModalOpen] = useState(false);
   const [isInstallationModalOpen, setIsInstallationModalOpen] = useState(false);
   const [isActivationModalOpen, setIsActivationModalOpen] = useState(false);
   const [isCommonMaterialsOpen, setIsCommonMaterialsOpen] = useState(false);
+  const [isRejectCancelModalOpen, setIsRejectCancelModalOpen] = useState(false);
+  const [rejectCancelDefaultType, setRejectCancelDefaultType] = useState("REJECT_SURVEY_UNFEASIBLE");
+  const [drawerTab, setDrawerTab] = useState("DETAILS"); // "DETAILS" | "TIMELINE"
 
   // Selected item for modals
   const [selectedRequest, setSelectedRequest] = useState(null);
@@ -192,6 +201,7 @@ export default function CustomNewLineConnectionPage() {
       else if (activeTab === "STORE") statusFilter = "PENDING_STORE_COLLECTION";
       else if (activeTab === "INSTALLATION") statusFilter = "INSTALLATION_IN_PROGRESS";
       else if (activeTab === "COMPLETED") statusFilter = "FINAL_ACTIVATION_COMPLETED";
+      else if (activeTab === "REJECTED_CANCELLED") statusFilter = "REJECTED_OR_CANCELLED";
 
       const [res, statsData] = await Promise.all([
         customNewLineConnectionService.getApplications({
@@ -300,10 +310,17 @@ export default function CustomNewLineConnectionPage() {
     }
   };
 
-  const handleOpenAssignPlumber = (req, mode) => {
+  const handleOpenAssignPlumber = (req, mode, isReassign = false) => {
     setSelectedRequest(req);
     setPlumberModalMode(mode);
+    setIsPlumberReassign(isReassign);
     setIsPlumberModalOpen(true);
+  };
+
+  const handleOpenRejectCancel = (req, type = "REJECT_SURVEY_UNFEASIBLE") => {
+    setSelectedRequest(req);
+    setRejectCancelDefaultType(type);
+    setIsRejectCancelModalOpen(true);
   };
 
   const handleOpenSurvey = (req) => {
@@ -419,7 +436,7 @@ export default function CustomNewLineConnectionPage() {
       )}
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2.5">
         <div
           onClick={() => setActiveTab("CS_INTAKE")}
           className={`p-3.5 rounded-xl border cursor-pointer transition-all relative ${
@@ -581,6 +598,35 @@ export default function CustomNewLineConnectionPage() {
             </div>
           )}
         </div>
+
+        <div
+          onClick={() => {
+            setActiveTab("REJECTED_CANCELLED");
+            setPage(0);
+          }}
+          className={`p-3.5 rounded-xl border cursor-pointer transition-all relative ${
+            activeTab === "REJECTED_CANCELLED"
+              ? "bg-rose-50 dark:bg-rose-950/30 border-rose-400 ring-2 ring-rose-400/20"
+              : "bg-white dark:bg-gray-800 border-gray-100 dark:border-gray-700 hover:border-rose-300"
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-medium text-gray-500">ውድቅ / የተሰረዙ</span>
+          </div>
+          <div className="text-xl font-bold text-rose-600 dark:text-rose-400 mt-0.5">
+            {(Number(stats?.rejectedUnfeasible) || 0) + (Number(stats?.applicationCancelled) || 0) + (Number(stats?.returnedForRevision) || 0)}
+          </div>
+          <div className="text-[10px] text-gray-400 mt-0.5">
+            {stats?.rejectedUnfeasible || 0} ውድቅ | {stats?.applicationCancelled || 0} ሰረዛ
+          </div>
+          {Number(stats?.returnedForRevision || 0) > 0 && (
+            <div className="mt-1.5">
+              <span className="inline-flex items-center gap-1 text-[9px] font-bold text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/60 px-1.5 py-0.5 rounded-full border border-amber-300">
+                ↺ {stats.returnedForRevision} ማሻሻያ
+              </span>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Tabs & Search Filter Bar */}
@@ -596,6 +642,7 @@ export default function CustomNewLineConnectionPage() {
               { key: "STORE", label: "ስቶር (ዕቃ ማስረከብ)" },
               { key: "INSTALLATION", label: "የመስመር ዝርጋታ" },
               { key: "COMPLETED", label: "የነቁ ደንበኞች" },
+              { key: "REJECTED_CANCELLED", label: "ውድቅ / የተሰረዙ" },
             ].map((tab) => (
               <button
                 key={tab.key}
@@ -754,6 +801,31 @@ export default function CustomNewLineConnectionPage() {
                         <span className={`inline-flex px-2.5 py-1 rounded-full text-[10px] font-bold ${badge.color}`}>
                           {badge.text}
                         </span>
+                        {/* SLA Aging Indicator */}
+                        {req.status !== "FINAL_ACTIVATION_COMPLETED" && req.status !== "APPLICATION_CANCELLED" && req.status !== "SURVEY_REJECTED_UNFEASIBLE" && (() => {
+                          const dt = new Date(req.applicationDate || req.createdAt);
+                          const diffDays = Math.floor((new Date() - dt) / (1000 * 60 * 60 * 24));
+                          if (diffDays >= 4) {
+                            return (
+                              <div className="mt-1">
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/50 dark:text-rose-300">
+                                  <AlertTriangle className="w-2.5 h-2.5 text-rose-600" />
+                                  {diffDays} ቀናት (SLA አሳሳቢ)
+                                </span>
+                              </div>
+                            );
+                          } else if (diffDays >= 2) {
+                            return (
+                              <div className="mt-1">
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-medium bg-amber-50 text-amber-800 border border-amber-200 dark:bg-amber-950/50 dark:text-amber-300">
+                                  <Clock className="w-2.5 h-2.5 text-amber-600" />
+                                  {diffDays} ቀናት
+                                </span>
+                              </div>
+                            );
+                          }
+                          return null;
+                        })()}
                         {isMyAction && (
                           <div className="mt-1">
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-extrabold bg-amber-100 text-amber-900 dark:bg-amber-900/60 dark:text-amber-200 border border-amber-300 animate-pulse shadow-sm">
@@ -770,19 +842,31 @@ export default function CustomNewLineConnectionPage() {
                         <div className="flex items-center justify-center gap-1.5 flex-wrap">
                           {/* 1. Stage 1 -> Assign Plumber for Survey */}
                           {req.status === "PENDING_SURVEY_ASSIGNMENT" && (
-                            canAssignSurveyPlumber(userRoles) ? (
-                              <button
-                                type="button"
-                                onClick={() => handleOpenAssignPlumber(req, "survey")}
-                                className="px-2.5 py-1 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-lg shadow-sm transition-all animate-pulse ring-2 ring-offset-1 ring-amber-400"
-                              >
-                                ባለሙያ መድብ
-                              </button>
-                            ) : (
-                              <span className="text-[11px] text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded font-medium">
-                                ባለሙያ በመጠባበቅ (ቴክኒክ)
-                              </span>
-                            )
+                            <>
+                              {canAssignSurveyPlumber(userRoles) ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenAssignPlumber(req, "survey")}
+                                  className="px-2.5 py-1 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-lg shadow-sm transition-all animate-pulse ring-2 ring-offset-1 ring-amber-400"
+                                >
+                                  ባለሙያ መድብ
+                                </button>
+                              ) : (
+                                <span className="text-[11px] text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded font-medium">
+                                  ባለሙያ በመጠባበቅ (ቴክኒክ)
+                                </span>
+                              )}
+                              {(canRegisterApplication(userRoles) || isAdmin) && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenRejectCancel(req, "CANCEL_APPLICATION")}
+                                  className="p-1 text-gray-400 hover:text-red-600 rounded hover:bg-gray-100"
+                                  title="ጥያቄውን ሰርዝ (Cancel Application)"
+                                >
+                                  <Ban className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </>
                           )}
 
                           {/* 2. Stage 2 -> Encode Survey Form & Print Checklist */}
@@ -797,6 +881,26 @@ export default function CustomNewLineConnectionPage() {
                                   እቃዎች መዝግብ
                                 </button>
                               )}
+                              {(canAssignSurveyPlumber(userRoles) || isAdmin) && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenAssignPlumber(req, "survey", true)}
+                                  className="p-1 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/30 rounded"
+                                  title="የዳሰሳ ባለሙያ ቀይር (Reassign Plumber)"
+                                >
+                                  <UserCheck className="w-4 h-4" />
+                                </button>
+                              )}
+                              {(canEncodeSurveyItems(userRoles) || canAssignSurveyPlumber(userRoles) || isAdmin) && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenRejectCancel(req, "REJECT_SURVEY_UNFEASIBLE")}
+                                  className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30 rounded"
+                                  title="የዳሰሳ ጥናት ውድቅ አድርግ (Feasibility Failed)"
+                                >
+                                  <XCircle className="w-4 h-4" />
+                                </button>
+                              )}
                               <button
                                 type="button"
                                 onClick={() => generateSurveyChecklistPdf([], req)}
@@ -805,6 +909,31 @@ export default function CustomNewLineConnectionPage() {
                               >
                                 <Printer className="w-4 h-4" />
                               </button>
+                            </>
+                          )}
+
+                          {/* 2b. Returned for Revision */}
+                          {req.status === "RETURNED_FOR_REVISION" && (
+                            <>
+                              {canEncodeSurveyItems(userRoles) && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenSurvey(req)}
+                                  className="px-2.5 py-1 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-lg shadow-sm transition-all animate-pulse ring-2 ring-offset-1 ring-amber-400"
+                                >
+                                  እቃዎች አስተካክል
+                                </button>
+                              )}
+                              {(canAssignSurveyPlumber(userRoles) || isAdmin) && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenAssignPlumber(req, "survey", true)}
+                                  className="p-1 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/30 rounded"
+                                  title="የዳሰሳ ባለሙያ ቀይር"
+                                >
+                                  <UserCheck className="w-4 h-4" />
+                                </button>
+                              )}
                             </>
                           )}
 
@@ -832,6 +961,16 @@ export default function CustomNewLineConnectionPage() {
                               >
                                 <Printer className="w-4 h-4" />
                               </button>
+                              {(canRegisterApplication(userRoles) || isAdmin) && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenRejectCancel(req, "CANCEL_APPLICATION")}
+                                  className="p-1 text-gray-400 hover:text-red-600 rounded hover:bg-gray-100"
+                                  title="ጥያቄውን ሰርዝ (Cancel Application)"
+                                >
+                                  <Ban className="w-3.5 h-3.5" />
+                                </button>
+                              )}
                             </>
                           )}
 
@@ -871,19 +1010,31 @@ export default function CustomNewLineConnectionPage() {
 
                           {/* 6. Stage 6 -> Complete Installation */}
                           {req.status === "INSTALLATION_IN_PROGRESS" && (
-                            canCompleteInstallation(userRoles) ? (
-                              <button
-                                type="button"
-                                onClick={() => handleOpenInstallationCompletion(req)}
-                                className="px-2.5 py-1 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-sm transition-all animate-pulse ring-2 ring-offset-1 ring-emerald-400"
-                              >
-                                ዝርጋታ ተጠናቋል ✓
-                              </button>
-                            ) : (
-                              <span className="text-[11px] text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded font-medium">
-                                ዝርጋታ ላይ (ቴክኒክ)
-                              </span>
-                            )
+                            <>
+                              {canCompleteInstallation(userRoles) ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenInstallationCompletion(req)}
+                                  className="px-2.5 py-1 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-sm transition-all animate-pulse ring-2 ring-offset-1 ring-emerald-400"
+                                >
+                                  ዝርጋታ ተጠናቋል ✓
+                                </button>
+                              ) : (
+                                <span className="text-[11px] text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded font-medium">
+                                  ዝርጋታ ላይ (ቴክኒክ)
+                                </span>
+                              )}
+                              {(canAssignInstallationPlumber(userRoles) || isAdmin) && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenAssignPlumber(req, "installation", true)}
+                                  className="p-1 text-cyan-600 hover:bg-cyan-50 dark:hover:bg-cyan-950/30 rounded"
+                                  title="የዝርጋታ ባለሙያ ቀይር (Reassign Plumber)"
+                                >
+                                  <UserCheck className="w-4 h-4" />
+                                </button>
+                              )}
+                            </>
                           )}
 
                           {/* 7. Stage 7 -> Final Activation */}
@@ -907,6 +1058,19 @@ export default function CustomNewLineConnectionPage() {
                           {req.status === "FINAL_ACTIVATION_COMPLETED" && (
                             <span className="text-xs text-green-600 dark:text-green-400 font-bold flex items-center gap-1">
                               <CheckCircle2 className="w-4 h-4" /> የነቃ
+                            </span>
+                          )}
+
+                          {/* Rejected / Cancelled Status displays */}
+                          {req.status === "SURVEY_REJECTED_UNFEASIBLE" && (
+                            <span className="text-[11px] text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 px-2 py-0.5 rounded font-bold">
+                              ውድቅ የተደረገ
+                            </span>
+                          )}
+
+                          {req.status === "APPLICATION_CANCELLED" && (
+                            <span className="text-[11px] text-gray-500 bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded font-medium">
+                              የተሰረዘ
                             </span>
                           )}
 
@@ -936,11 +1100,39 @@ export default function CustomNewLineConnectionPage() {
 
           return (
             <div className="p-4 bg-gray-50 dark:bg-gray-900/60 rounded-xl border border-gray-200 dark:border-gray-700 space-y-4 animate-in fade-in">
-              <div className="flex justify-between items-center">
-                <h4 className="font-bold text-xs text-gray-900 dark:text-white flex items-center gap-2">
-                  <Layers className="w-4 h-4 text-blue-600" />
-                  የማመልከቻ {expReq.applicationNumber} ዝርዝር የስራ ሂደት (Workflow Progress)
-                </h4>
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <h4 className="font-bold text-xs text-gray-900 dark:text-white flex items-center gap-2">
+                    <Layers className="w-4 h-4 text-blue-600" />
+                    የማመልከቻ {expReq.applicationNumber} ዝርዝር የስራ ሂደት
+                  </h4>
+                  {/* Drawer Tabs */}
+                  <div className="flex items-center bg-gray-200 dark:bg-gray-800 p-0.5 rounded-lg text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setDrawerTab("DETAILS")}
+                      className={`px-3 py-1 rounded-md font-medium transition-all ${
+                        drawerTab === "DETAILS"
+                          ? "bg-white dark:bg-gray-750 text-blue-600 dark:text-blue-400 shadow-sm font-bold"
+                          : "text-gray-600 dark:text-gray-400 hover:text-gray-900"
+                      }`}
+                    >
+                      አጠቃላይ መረጃ
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDrawerTab("TIMELINE")}
+                      className={`px-3 py-1 rounded-md font-medium flex items-center gap-1.5 transition-all ${
+                        drawerTab === "TIMELINE"
+                          ? "bg-white dark:bg-gray-750 text-blue-600 dark:text-blue-400 shadow-sm font-bold"
+                          : "text-gray-600 dark:text-gray-400 hover:text-gray-900"
+                      }`}
+                    >
+                      <History className="w-3.5 h-3.5" />
+                      የስራ ሂደት ታሪክ እና ኦዲት (Logs)
+                    </button>
+                  </div>
+                </div>
                 <button
                   type="button"
                   onClick={() => setExpandedRequestId(null)}
@@ -953,62 +1145,139 @@ export default function CustomNewLineConnectionPage() {
               {/* Stepper */}
               <CustomNewLineStepper currentStatus={expReq.status} />
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
-                <div className="bg-white dark:bg-gray-800 p-3 rounded-lg border border-gray-200 dark:border-gray-700">
-                  <div className="font-bold text-gray-700 dark:text-gray-300 border-b pb-1 mb-2">የደንበኛ እና አድራሻ መረጃ</div>
-                  <div>ስም: <strong>{expReq.customerFullName}</strong></div>
-                  {expReq.customerFullNameEng && (
-                    <div>English Name: <strong>{expReq.customerFullNameEng}</strong></div>
-                  )}
-                  <div>ስልክ: <strong className="font-mono">{expReq.phoneNumber}</strong></div>
-                  <div>ቅርንጫፍ: <strong>{expReq.branch?.branchDescription || expReq.branch?.name || "—"}</strong></div>
-                  <div>
-                    ቀበሌ: <strong>
-                      {expReq.kebele?.streetsName
-                        ? (expReq.kebele.streetsName.toLowerCase().includes("kebele") || expReq.kebele.streetsName.includes("ቀበሌ")
-                            ? expReq.kebele.streetsName
-                            : `ቀበሌ ${expReq.kebele.streetsName}`)
-                        : (expReq.kebele?.name || "—")}
-                    </strong>
-                  </div>
-                  <div>
-                    ቀጠና: <strong>
-                      {expReq.ketena?.ketenaName
-                        ? (expReq.ketena.ketenaName.toLowerCase().includes("ketena") || expReq.ketena.ketenaName.includes("ቀጠና")
-                            ? expReq.ketena.ketenaName
-                            : `ቀጠና ${expReq.ketena.ketenaName}`)
-                        : (expReq.ketena?.name || "—")}
-                    </strong>
-                  </div>
-                  <div>ቤት ቁጥር: <strong>{expReq.houseNumber || "—"}</strong></div>
-                  {expReq.addressDescription && (
-                    <div className="text-[11px] text-gray-500 mt-1 truncate" title={expReq.addressDescription}>
-                      መግለጫ: {expReq.addressDescription}
+              {/* Drawer Tab Content */}
+              {drawerTab === "TIMELINE" ? (
+                <div className="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-200 dark:border-gray-700">
+                  <CustomActivityTimeline requestId={expReq.id} />
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {/* Rejection / Cancellation Alerts */}
+                  {expReq.rejectionReason && (
+                    <div className="p-3.5 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 rounded-xl text-xs text-rose-900 dark:text-rose-200 flex items-start gap-2.5">
+                      <XCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                      <div>
+                        <div className="font-bold">የዳሰሳ ጥናት ውድቅ የተደረገበት ምክንያት:</div>
+                        <div className="mt-0.5 text-rose-800 dark:text-rose-300">{expReq.rejectionReason}</div>
+                        <div className="text-[10px] text-rose-700 dark:text-rose-400 mt-1">
+                          ውድቅ ያደረገው: {expReq.rejectedBy || "—"} {expReq.rejectedDate ? `| ቀን: ${new Date(expReq.rejectedDate).toLocaleString()}` : ""}
+                        </div>
+                      </div>
                     </div>
                   )}
-                </div>
 
-                <div className="bg-white dark:bg-gray-800 p-3 rounded-lg border border-gray-200 dark:border-gray-700">
-                  <div className="font-bold text-gray-700 dark:text-gray-300 border-b pb-1 mb-2">የቴክኒክ ባለሙያ መረጃ</div>
-                  <div>ዳሰሳ ባለሙያ: <strong>{expReq.surveyPlumber ? `${expReq.surveyPlumber.firstName} ${expReq.surveyPlumber.lastName}` : "ያልተመደበ"}</strong></div>
-                  <div>ዝርጋታ ባለሙያ: <strong>{expReq.installationPlumber ? `${expReq.installationPlumber.firstName} ${expReq.installationPlumber.lastName}` : "ያልተመደበ"}</strong></div>
-                  <div>የባለሙያ ማስታወሻ: <span className="text-gray-500">{expReq.surveyPlumberNotes || "—"}</span></div>
-                </div>
+                  {expReq.cancellationReason && (
+                    <div className="p-3.5 bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl text-xs text-gray-800 dark:text-gray-200 flex items-start gap-2.5">
+                      <Ban className="w-4 h-4 text-gray-600 shrink-0 mt-0.5" />
+                      <div>
+                        <div className="font-bold">ጥያቄው የተሰረዘበት ምክንያት:</div>
+                        <div className="mt-0.5">{expReq.cancellationReason}</div>
+                      </div>
+                    </div>
+                  )}
 
-                <div className="bg-white dark:bg-gray-800 p-3 rounded-lg border border-gray-200 dark:border-gray-700">
-                  <div className="font-bold text-gray-700 dark:text-gray-300 border-b pb-1 mb-2">የክፍያ መረጃ</div>
-                  <div>የተከፈለ: <strong>{expReq.isPaid ? "አዎ ✓" : "አይደለም"}</strong></div>
-                  <div>ደረሰኝ ቁጥር: <strong className="font-mono">{expReq.paymentReceiptNumber || "—"}</strong></div>
-                  <div>ጠቅላላ ክፍያ: <strong className="font-mono text-blue-600">ETB {Number(expReq.totalPayableAmount || 0).toFixed(2)}</strong></div>
-                </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
+                    <div className="bg-white dark:bg-gray-800 p-3 rounded-lg border border-gray-200 dark:border-gray-700">
+                      <div className="font-bold text-gray-700 dark:text-gray-300 border-b pb-1 mb-2">የደንበኛ እና አድራሻ መረጃ</div>
+                      <div>ስም: <strong>{expReq.customerFullName}</strong></div>
+                      {expReq.customerFullNameEng && (
+                        <div>English Name: <strong>{expReq.customerFullNameEng}</strong></div>
+                      )}
+                      <div>ስልክ: <strong className="font-mono">{expReq.phoneNumber}</strong></div>
+                      <div>ቅርንጫፍ: <strong>{expReq.branch?.branchDescription || expReq.branch?.name || "—"}</strong></div>
+                      <div>
+                        ቀበሌ: <strong>
+                          {expReq.kebele?.streetsName
+                            ? (expReq.kebele.streetsName.toLowerCase().includes("kebele") || expReq.kebele.streetsName.includes("ቀበሌ")
+                                ? expReq.kebele.streetsName
+                                : `ቀበሌ ${expReq.kebele.streetsName}`)
+                            : (expReq.kebele?.name || "—")}
+                        </strong>
+                      </div>
+                      <div>
+                        ቀጠና: <strong>
+                          {expReq.ketena?.ketenaName
+                            ? (expReq.ketena.ketenaName.toLowerCase().includes("ketena") || expReq.ketena.ketenaName.includes("ቀጠና")
+                                ? expReq.ketena.ketenaName
+                                : `ቀጠና ${expReq.ketena.ketenaName}`)
+                            : (expReq.ketena?.name || "—")}
+                        </strong>
+                      </div>
+                      <div>ቤት ቁጥር: <strong>{expReq.houseNumber || "—"}</strong></div>
+                      {expReq.addressDescription && (
+                        <div className="text-[11px] text-gray-500 mt-1 truncate" title={expReq.addressDescription}>
+                          መግለጫ: {expReq.addressDescription}
+                        </div>
+                      )}
+                    </div>
 
-                <div className="bg-white dark:bg-gray-800 p-3 rounded-lg border border-gray-200 dark:border-gray-700">
-                  <div className="font-bold text-gray-700 dark:text-gray-300 border-b pb-1 mb-2">የቆጣሪ እና ማግበሪያ መረጃ</div>
-                  <div>ቆጣሪ ቁጥር: <strong className="font-mono">{expReq.meterNumber || "ያልገባ"}</strong></div>
-                  <div>መነሻ ንባብ: <strong>{expReq.initialReading || 0.0}</strong></div>
-                  <div>GPS መጋጠሚያ: <span className="font-mono text-[10px]">{expReq.locationCoordination || "—"}</span></div>
+                    <div className="bg-white dark:bg-gray-800 p-3 rounded-lg border border-gray-200 dark:border-gray-700">
+                      <div className="font-bold text-gray-700 dark:text-gray-300 border-b pb-1 mb-2">የቴክኒክ ባለሙያ መረጃ</div>
+                      <div>ዳሰሳ ባለሙያ: <strong>{expReq.surveyPlumber ? `${expReq.surveyPlumber.firstName} ${expReq.surveyPlumber.lastName}` : "ያልተመደበ"}</strong></div>
+                      <div>ዝርጋታ ባለሙያ: <strong>{expReq.installationPlumber ? `${expReq.installationPlumber.firstName} ${expReq.installationPlumber.lastName}` : "ያልተመደበ"}</strong></div>
+                      <div>የባለሙያ ማስታወሻ: <span className="text-gray-500">{expReq.surveyPlumberNotes || "—"}</span></div>
+                    </div>
+
+                    <div className="bg-white dark:bg-gray-800 p-3 rounded-lg border border-gray-200 dark:border-gray-700">
+                      <div className="font-bold text-gray-700 dark:text-gray-300 border-b pb-1 mb-2">የክፍያ መረጃ</div>
+                      <div>የተከፈለ: <strong>{expReq.isPaid ? "አዎ ✓" : "አይደለም"}</strong></div>
+                      <div>ደረሰኝ ቁጥር: <strong className="font-mono">{expReq.paymentReceiptNumber || "—"}</strong></div>
+                      <div>ጠቅላላ ክፍያ: <strong className="font-mono text-blue-600">ETB {Number(expReq.totalPayableAmount || 0).toFixed(2)}</strong></div>
+                    </div>
+
+                    <div className="bg-white dark:bg-gray-800 p-3 rounded-lg border border-gray-200 dark:border-gray-700">
+                      <div className="font-bold text-gray-700 dark:text-gray-300 border-b pb-1 mb-2">የቆጣሪ እና ማግበሪያ መረጃ</div>
+                      <div>ቆጣሪ ቁጥር: <strong className="font-mono">{expReq.meterNumber || "ያልገባ"}</strong></div>
+                      <div>መነሻ ንባብ: <strong>{expReq.initialReading || 0.0}</strong></div>
+                      <div>GPS መጋጠሚያ: <span className="font-mono text-[10px]">{expReq.locationCoordination || "—"}</span></div>
+                    </div>
+                  </div>
+
+                  {/* Drawer Quick Actions Footer */}
+                  <div className="pt-2 flex items-center justify-end gap-2 flex-wrap border-t border-gray-200 dark:border-gray-700">
+                    {expReq.status === "SURVEY_IN_PROGRESS" && (canAssignSurveyPlumber(userRoles) || isAdmin) && (
+                      <button
+                        type="button"
+                        onClick={() => handleOpenAssignPlumber(expReq, "survey", true)}
+                        className="px-3 py-1.5 text-xs font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:text-amber-300 rounded-lg border border-amber-200 dark:border-amber-800 flex items-center gap-1.5 transition-colors"
+                      >
+                        <UserCheck className="w-3.5 h-3.5" />
+                        የዳሰሳ ባለሙያ ቀይር (Reassign)
+                      </button>
+                    )}
+                    {expReq.status === "INSTALLATION_IN_PROGRESS" && (canAssignInstallationPlumber(userRoles) || isAdmin) && (
+                      <button
+                        type="button"
+                        onClick={() => handleOpenAssignPlumber(expReq, "installation", true)}
+                        className="px-3 py-1.5 text-xs font-semibold text-cyan-700 bg-cyan-50 hover:bg-cyan-100 dark:bg-cyan-950/40 dark:text-cyan-300 rounded-lg border border-cyan-200 dark:border-cyan-800 flex items-center gap-1.5 transition-colors"
+                      >
+                        <UserCheck className="w-3.5 h-3.5" />
+                        የዝርጋታ ባለሙያ ቀይር (Reassign)
+                      </button>
+                    )}
+                    {(expReq.status === "SURVEY_IN_PROGRESS" || expReq.status === "PENDING_SURVEY_ASSIGNMENT") && (canEncodeSurveyItems(userRoles) || canAssignSurveyPlumber(userRoles) || isAdmin) && (
+                      <button
+                        type="button"
+                        onClick={() => handleOpenRejectCancel(expReq, "REJECT_SURVEY_UNFEASIBLE")}
+                        className="px-3 py-1.5 text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 dark:bg-red-950/40 dark:text-red-300 rounded-lg border border-red-200 dark:border-red-800 flex items-center gap-1.5 transition-colors"
+                      >
+                        <XCircle className="w-3.5 h-3.5" />
+                        የዳሰሳ ጥናት ውድቅ አድርግ
+                      </button>
+                    )}
+                    {expReq.status !== "FINAL_ACTIVATION_COMPLETED" && expReq.status !== "APPLICATION_CANCELLED" && expReq.status !== "SURVEY_REJECTED_UNFEASIBLE" && (canRegisterApplication(userRoles) || isAdmin) && (
+                      <button
+                        type="button"
+                        onClick={() => handleOpenRejectCancel(expReq, "CANCEL_APPLICATION")}
+                        className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 rounded-lg border border-gray-300 dark:border-gray-600 flex items-center gap-1.5 transition-colors"
+                      >
+                        <Ban className="w-3.5 h-3.5" />
+                        ጥያቄውን ሰርዝ (Cancel)
+                      </button>
+                    )}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           );
         })()}
@@ -1048,10 +1317,14 @@ export default function CustomNewLineConnectionPage() {
 
       <CustomPlumberAssignModal
         isOpen={isPlumberModalOpen}
-        onClose={() => setIsPlumberModalOpen(false)}
+        onClose={() => {
+          setIsPlumberModalOpen(false);
+          setIsPlumberReassign(false);
+        }}
         onSuccess={loadData}
         request={selectedRequest}
         mode={plumberModalMode}
+        isReassign={isPlumberReassign}
       />
 
       <CustomMaterialSurveyModal
@@ -1059,6 +1332,7 @@ export default function CustomNewLineConnectionPage() {
         onClose={() => setIsSurveyModalOpen(false)}
         onSuccess={loadData}
         request={selectedRequest}
+        onRejectSurvey={(req) => handleOpenRejectCancel(req, "REJECT_SURVEY_UNFEASIBLE")}
       />
 
       <CustomPaymentApprovalModal
@@ -1094,6 +1368,14 @@ export default function CustomNewLineConnectionPage() {
       <CustomCommonMaterialsModal
         isOpen={isCommonMaterialsOpen}
         onClose={() => setIsCommonMaterialsOpen(false)}
+      />
+
+      <CustomRejectCancelModal
+        isOpen={isRejectCancelModalOpen}
+        onClose={() => setIsRejectCancelModalOpen(false)}
+        onSuccess={loadData}
+        request={selectedRequest}
+        defaultActionType={rejectCancelDefaultType}
       />
     </div>
   );

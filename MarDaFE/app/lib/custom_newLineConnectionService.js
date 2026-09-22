@@ -129,7 +129,42 @@ class CustomNewLineConnectionService {
     return res.data;
   }
 
-  // 7. Catalogs & Auxiliary
+  // 7. Supervisory & Management Operations
+  async getApplicationLogs(id) {
+    const res = await axios.get(`${commonUrl}custom-new-line/applications/${id}/logs`, {
+      headers: this.getHeaders(),
+    });
+    return res.data || [];
+  }
+
+  async reassignPlumber(id, { plumberId, mode = "survey", reason = "" }) {
+    const res = await axios.put(
+      `${commonUrl}custom-new-line/applications/${id}/reassign-plumber`,
+      { plumberId, mode, reason },
+      { headers: this.getHeaders() }
+    );
+    return res.data;
+  }
+
+  async rejectOrCancelApplication(id, { actionType = "REJECT_SURVEY_UNFEASIBLE", reason = "" }) {
+    const res = await axios.put(
+      `${commonUrl}custom-new-line/applications/${id}/reject-cancel`,
+      { actionType, reason },
+      { headers: this.getHeaders() }
+    );
+    return res.data;
+  }
+
+  async returnForRevision(id, { remarks = "" }) {
+    const res = await axios.put(
+      `${commonUrl}custom-new-line/applications/${id}/return-revision`,
+      { remarks },
+      { headers: this.getHeaders() }
+    );
+    return res.data;
+  }
+
+  // 8. Catalogs & Auxiliary
   async getCommonMaterials() {
     const res = await axios.get(`${commonUrl}custom-new-line/common-materials`, {
       headers: this.getHeaders(),

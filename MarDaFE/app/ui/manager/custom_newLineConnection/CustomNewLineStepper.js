@@ -35,13 +35,23 @@ export function getStatusBadge(status) {
       return { text: "ዝርጋታ ተጠናቋል / ማግበሪያ ዝግጁ", color: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300" };
     case "FINAL_ACTIVATION_COMPLETED":
       return { text: "የነቃ ቋሚ ደንበኛ", color: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300" };
+    case "SURVEY_REJECTED_UNFEASIBLE":
+      return { text: "ዳሰሳ ውድቅ ተደርጓል (መስመር የለም)", color: "bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300" };
+    case "APPLICATION_CANCELLED":
+      return { text: "ማመልከቻው ተሰርዟል", color: "bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-300" };
+    case "RETURNED_FOR_REVISION":
+      return { text: "ለክለሳ ወደ ቴክኒክ ተመልሷል", color: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300" };
     default:
       return { text: status, color: "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300" };
   }
 }
 
 export default function CustomNewLineStepper({ currentStatus }) {
-  const currentIdx = getStatusStageIndex(currentStatus);
+  const isRejected = currentStatus === "SURVEY_REJECTED_UNFEASIBLE";
+  const isCancelled = currentStatus === "APPLICATION_CANCELLED";
+  const isRevision = currentStatus === "RETURNED_FOR_REVISION";
+
+  const currentIdx = isRevision ? 1 : getStatusStageIndex(currentStatus);
   const isFinal = currentStatus === "FINAL_ACTIVATION_COMPLETED";
 
   return (

@@ -164,20 +164,20 @@ ON fnc_journal_entry (billing_month);
 
 ALTER TABLE `billing_reading`
   ADD COLUMN `m_billing_additional_payment_1_value` DOUBLE NULL DEFAULT NULL AFTER `techemari_kfya`,
-  ADD COLUMN `m_billing_additional_payment_1_value_lable` DOUBLE NULL DEFAULT NULL AFTER `m_billing_additional_payment_1_value`,
+  ADD COLUMN `m_billing_additional_payment_1_value_lable` VARCHAR(255) NULL DEFAULT NULL AFTER `m_billing_additional_payment_1_value`,
   ADD COLUMN `m_billing_additional_payment_2_value` DOUBLE NULL DEFAULT NULL AFTER `m_billing_additional_payment_1_value_lable`,
-  ADD COLUMN `m_billing_additional_payment_2_value_lable` DOUBLE NULL DEFAULT NULL AFTER `m_billing_additional_payment_2_value`,
+  ADD COLUMN `m_billing_additional_payment_2_value_lable` VARCHAR(255) NULL DEFAULT NULL AFTER `m_billing_additional_payment_2_value`,
   ADD COLUMN `m_billing_additional_payment_1_wuzif` DOUBLE NULL DEFAULT NULL AFTER `m_billing_additional_payment_2_value_lable`,
   ADD COLUMN `m_billing_additional_payment_2_wuzif` DOUBLE NULL DEFAULT NULL AFTER `m_billing_additional_payment_1_wuzif`;
 
 
 ALTER TABLE `company_profile`
-  ADD COLUMN `m_billing_additional_payment_1_value_lable` DOUBLE NULL DEFAULT NULL AFTER `m_company_key`,
+  ADD COLUMN `m_billing_additional_payment_1_value_lable` VARCHAR(200) NULL DEFAULT NULL AFTER `m_company_key`,
   ADD COLUMN `m_billing_additional_payment_1_value` DOUBLE NULL DEFAULT NULL AFTER `m_billing_additional_payment_1_value_lable`,
-  ADD COLUMN `m_billing_additional_payment_1_value_option` DOUBLE NULL DEFAULT NULL AFTER `m_billing_additional_payment_1_value`,
-  ADD COLUMN `m_billing_additional_payment_2_value_lable` DOUBLE NULL DEFAULT NULL AFTER `m_billing_additional_payment_1_value_option`,
+  ADD COLUMN `m_billing_additional_payment_1_value_option` VARCHAR(50) NULL DEFAULT NULL AFTER `m_billing_additional_payment_1_value`,
+  ADD COLUMN `m_billing_additional_payment_2_value_lable` VARCHAR(200) NULL DEFAULT NULL AFTER `m_billing_additional_payment_1_value_option`,
   ADD COLUMN `m_billing_additional_payment_2_value` DOUBLE NULL DEFAULT NULL AFTER `m_billing_additional_payment_2_value_lable`,
-  ADD COLUMN `m_billing_additional_payment_2_value_option` DOUBLE NULL DEFAULT NULL AFTER `m_billing_additional_payment_2_value`;
+  ADD COLUMN `m_billing_additional_payment_2_value_option` VARCHAR(50) NULL DEFAULT NULL AFTER `m_billing_additional_payment_2_value`;
 
 
 
@@ -637,3 +637,36 @@ CREATE TABLE IF NOT EXISTS inv_stock_adjustment_line (
 ALTER TABLE inv_purchase_requisition 
 MODIFY COLUMN status ENUM('DRAFT','SUBMITTED','APPROVED_L1','APPROVED_L2','APPROVED','REJECTED','CONVERTED_TO_PO','CANCELLED') 
 NOT NULL DEFAULT 'DRAFT';
+
+
+--------------------------------------------------------------------------------------
+
+DROP TABLE IF EXISTS `sms_setting`;
+CREATE TABLE IF NOT EXISTS `sms_setting` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `city_id` int(11) DEFAULT NULL,
+  `city_name` varchar(150) NOT NULL,
+  `gateway_url` varchar(500) NOT NULL DEFAULT 'https://smsethiopia.et/api/sms/send',
+  `api_key` varchar(500) NOT NULL,
+  `sender_id` varchar(100) DEFAULT 'MarDa ERP',
+  `is_active` tinyint(1) NOT NULL DEFAULT 1,
+  `description` varchar(255) DEFAULT NULL,
+  `created_date` datetime DEFAULT current_timestamp(),
+  `modified_date` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  `protocol` varchar(30) NOT NULL DEFAULT 'HTTP_REST',
+  `smpp_host` varchar(255) DEFAULT NULL,
+  `smpp_port` int(11) DEFAULT 5019,
+  `smpp_system_id` varchar(100) DEFAULT NULL,
+  `smpp_password` varchar(255) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_sms_setting_city` (`city_id`),
+  KEY `idx_sms_setting_active` (`is_active`)
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Dumping data for table `sms_setting`
+--
+
+INSERT INTO `sms_setting` (`id`, `city_id`, `city_name`, `gateway_url`, `api_key`, `sender_id`, `is_active`, `description`, `created_date`, `modified_date`, `protocol`, `smpp_host`, `smpp_port`, `smpp_system_id`, `smpp_password`) VALUES
+(1, NULL, 'Wurabie', 'https://smsethiopia.et/api/sms/send', '2NJFAWWIERUMIQNMY03D4B9O48EMOJOJ:1027', 'Wurabie', 1, 'Global fallback gateway', '2026-09-16 16:12:19', '2026-09-16 18:47:07', 'SMPP', '10.204.181.70', 5019, '8581', 'Wtw@1921');
+COMMIT;

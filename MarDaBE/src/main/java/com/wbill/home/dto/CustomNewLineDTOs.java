@@ -196,4 +196,37 @@ public class CustomNewLineDTOs {
         public String getCustomerFullNameEng() { return customerFullNameEng; }
         public void setCustomerFullNameEng(String customerFullNameEng) { this.customerFullNameEng = customerFullNameEng; }
     }
+
+    // 10. Reassign Plumber DTO (Supervisory / Technical Lead)
+    public static class ReassignPlumberDTO {
+        private Integer plumberId;
+        private String mode; // "survey" | "installation"
+        private String reason;
+
+        public Integer getPlumberId() { return plumberId; }
+        public void setPlumberId(Integer plumberId) { this.plumberId = plumberId; }
+        public String getMode() { return mode; }
+        public void setMode(String mode) { this.mode = mode; }
+        public String getReason() { return reason; }
+        public void setReason(String reason) { this.reason = reason; }
+    }
+
+    // 11. Reject / Cancel DTO (Feasibility failure / Customer cancellation)
+    public static class RejectCancelDTO {
+        private String actionType; // "REJECT_SURVEY_UNFEASIBLE" | "CANCEL_APPLICATION"
+        private String reason;
+
+        public String getActionType() { return actionType; }
+        public void setActionType(String actionType) { this.actionType = actionType; }
+        public String getReason() { return reason; }
+        public void setReason(String reason) { this.reason = reason; }
+    }
+
+    // 12. Return for Revision DTO (Revenue -> Technical)
+    public static class ReturnRevisionDTO {
+        private String remarks;
+
+        public String getRemarks() { return remarks; }
+        public void setRemarks(String remarks) { this.remarks = remarks; }
+    }
 }

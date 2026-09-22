@@ -55,6 +55,75 @@ public class CustomNewLineConnectionService {
         return t.isEmpty() ? null : t;
     }
 
+    // ─── Security & Branch Validation Helpers ──────────────────────────────
+    public boolean isUserAdmin(UserAccount user, String username) {
+        if (user == null && username != null) {
+            user = userAccountRepo.findByUserName(username).orElse(null);
+        }
+        if (user == null) return false;
+        if (user.getUserRole() != null) {
+            String code = user.getUserRole().getRoleCode() != null ? user.getUserRole().getRoleCode().toLowerCase() : "";
+            String name = user.getUserRole().getRoleName() != null ? user.getUserRole().getRoleName().toLowerCase() : "";
+            if (code.contains("admin") || code.contains("billzgjt") || code.contains("gm") ||
+                name.contains("admin") || name.contains("አስተዳዳሪ") || name.contains("ሥራ አስኪያጅ")) {
+                return true;
+            }
+        }
+        if (userAccountRoleRepo != null && username != null) {
+            List<String> codes = userAccountRoleRepo.findRoleCodesByUsername(username);
+            if (codes != null && codes.stream().anyMatch(c -> c.toLowerCase().contains("admin") || c.toLowerCase().contains("gm"))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public void validateBranchAccess(CustomNewLineConnectionRequest req, String username) {
+        if (username == null) return;
+        Optional<UserAccount> userOpt = userAccountRepo.findByUserName(username);
+        if (userOpt.isEmpty()) return;
+        UserAccount user = userOpt.get();
+        if (isUserAdmin(user, username)) return;
+
+        if (user.getBranch() != null && req.getBranch() != null) {
+            if (user.getBranch().getId() != req.getBranch().getId()) {
+                String branchDesc = req.getBranch().getBranchDescription() != null ? req.getBranch().getBranchDescription() : "";
+                throw new IllegalArgumentException("የቅርንጫፍ ወሰን ጥሰት! ይህ ማመልከቻ የሌላ ቅርንጫፍ ነው (" + branchDesc + ")። እርምጃ መውሰድ አይችሉም።");
+            }
+        }
+    }
+
+    public void validateStatusTransition(CustomNewLineConnectionRequest req, String expectedStatus, String actionName) {
+        if (!expectedStatus.equalsIgnoreCase(req.getStatus())) {
+            throw new IllegalStateException(String.format(
+                "ልክ ያልሆነ የስራ ሂደት ቅደም ተከተል! '%s' ለማከናወን የጥያቄው ደረጃ '%s' መሆን አለበት፤ አሁን ያለው ደረጃ '%s' ነው",
+                actionName, expectedStatus, req.getStatus()
+            ));
+        }
+    }
+
+    public void validatePlumberBranch(UserAccount plumber, Branch expectedBranch) {
+        if (expectedBranch == null || plumber == null) return;
+        if (plumber.getBranch() != null && plumber.getBranch().getId() != expectedBranch.getId()) {
+            String pBranchName = plumber.getBranch().getBranchDescription() != null ? plumber.getBranch().getBranchDescription() : "";
+            String eBranchName = expectedBranch.getBranchDescription() != null ? expectedBranch.getBranchDescription() : "";
+            throw new IllegalArgumentException(String.format(
+                "የተመረጠው ባለሙያ '%s %s' የተመደበበት ቅርንጫፍ (%s) ከማመልከቻው ቅርንጫፍ (%s) ጋር አይዛመድም!",
+                plumber.getFirstName(), plumber.getLastName(), pBranchName, eBranchName
+            ));
+        }
+    }
+
+    public void validateStoreBranch(InvStore store, Branch expectedBranch) {
+        if (expectedBranch == null || store == null) return;
+        if (store.getBranch() != null && store.getBranch().getId() != expectedBranch.getId()) {
+            throw new IllegalArgumentException(String.format(
+                "የተመረጠው መደብር '%s' ከማመልከቻው ቅርንጫፍ ጋር አይዛመድም!",
+                store.getStoreName()
+            ));
+        }
+    }
+
     // ─── 1. Application Creation (Customer Service) ─────────────────────────
     public CustomNewLineConnectionRequest createApplication(CreateApplicationDTO dto, String username) {
         int currentYear = LocalDate.now().getYear();
@@ -84,7 +153,27 @@ public class CustomNewLineConnectionService {
         if (dto.getKebeleId() != null) kebeleRepo.findById(dto.getKebeleId()).ifPresent(req::setKebele);
         if (dto.getKetenaId() != null) ketenaRepo.findById(dto.getKetenaId()).ifPresent(req::setKetena);
         if (dto.getCustomerTypeId() != null) customerTypeRepo.findById(dto.getCustomerTypeId()).ifPresent(req::setCustomerType);
-        if (dto.getBranchId() != null) branchRepo.findById(dto.getBranchId()).ifPresent(req::setBranch);
+
+        // Strict branch assignment: non-admins are strictly bound to their assigned branch
+        Branch assignedBranch = null;
+        if (username != null) {
+            Optional<UserAccount> uOpt = userAccountRepo.findByUserName(username);
+            if (uOpt.isPresent()) {
+                UserAccount u = uOpt.get();
+                if (!isUserAdmin(u, username) && u.getBranch() != null) {
+                    assignedBranch = u.getBranch();
+                }
+            }
+        }
+        if (assignedBranch != null) {
+            req.setBranch(assignedBranch);
+        } else if (dto.getBranchId() != null) {
+            branchRepo.findById(dto.getBranchId()).ifPresent(req::setBranch);
+        }
+
+        if (req.getBranch() == null) {
+            throw new IllegalArgumentException("ቅርንጫፍ (Branch) መምረጥ ግዴታ ነው!");
+        }
 
         CustomNewLineConnectionRequest saved = requestRepo.save(req);
 
@@ -103,21 +192,7 @@ public class CustomNewLineConnectionService {
         Optional<UserAccount> userOpt = userAccountRepo.findByUserName(username);
         if (userOpt.isPresent()) {
             UserAccount user = userOpt.get();
-            boolean isAdmin = false;
-            if (user.getUserRole() != null) {
-                String code = user.getUserRole().getRoleCode() != null ? user.getUserRole().getRoleCode().toLowerCase() : "";
-                String name = user.getUserRole().getRoleName() != null ? user.getUserRole().getRoleName().toLowerCase() : "";
-                if (code.contains("admin") || code.contains("billzgjt") || code.contains("gm") ||
-                    name.contains("admin") || name.contains("አስተዳዳሪ") || name.contains("ሥራ አስኪያጅ")) {
-                    isAdmin = true;
-                }
-            }
-            if (!isAdmin && userAccountRoleRepo != null) {
-                List<String> codes = userAccountRoleRepo.findRoleCodesByUsername(username);
-                if (codes != null && codes.stream().anyMatch(c -> c.toLowerCase().contains("admin") || c.toLowerCase().contains("gm"))) {
-                    isAdmin = true;
-                }
-            }
+            boolean isAdmin = isUserAdmin(user, username);
 
             // Non-admin users are strictly scoped to their assigned branch at the database query level
             if (!isAdmin && user.getBranch() != null) {
@@ -167,6 +242,9 @@ public class CustomNewLineConnectionService {
         stats.put("installationInProgress", requestRepo.countByStatusAndBranch("INSTALLATION_IN_PROGRESS", effectiveBranch));
         stats.put("installationCompleted", requestRepo.countByStatusAndBranch("INSTALLATION_COMPLETED", effectiveBranch));
         stats.put("finalActivationCompleted", requestRepo.countByStatusAndBranch("FINAL_ACTIVATION_COMPLETED", effectiveBranch));
+        stats.put("rejectedUnfeasible", requestRepo.countByStatusAndBranch("SURVEY_REJECTED_UNFEASIBLE", effectiveBranch));
+        stats.put("applicationCancelled", requestRepo.countByStatusAndBranch("APPLICATION_CANCELLED", effectiveBranch));
+        stats.put("returnedForRevision", requestRepo.countByStatusAndBranch("RETURNED_FOR_REVISION", effectiveBranch));
         return stats;
     }
 
@@ -175,8 +253,15 @@ public class CustomNewLineConnectionService {
         CustomNewLineConnectionRequest req = requestRepo.findById(requestId)
             .orElseThrow(() -> new IllegalArgumentException("Request not found: " + requestId));
 
+        validateBranchAccess(req, username);
+        if (!"PENDING_SURVEY_ASSIGNMENT".equalsIgnoreCase(req.getStatus()) && !"RETURNED_FOR_REVISION".equalsIgnoreCase(req.getStatus())) {
+            validateStatusTransition(req, "PENDING_SURVEY_ASSIGNMENT", "የዳሰሳ ጥናት ባለሙያ መመደብ");
+        }
+
         UserAccount plumber = userAccountRepo.findById(dto.getPlumberId())
             .orElseThrow(() -> new IllegalArgumentException("Plumber not found: " + dto.getPlumberId()));
+
+        validatePlumberBranch(plumber, req.getBranch());
 
         String oldStatus = req.getStatus();
         req.setSurveyPlumber(plumber);
@@ -195,6 +280,11 @@ public class CustomNewLineConnectionService {
     public CustomNewLineConnectionRequest submitSurvey(Long requestId, SubmitSurveyDTO dto, String username) {
         CustomNewLineConnectionRequest req = requestRepo.findById(requestId)
             .orElseThrow(() -> new IllegalArgumentException("Request not found: " + requestId));
+
+        validateBranchAccess(req, username);
+        if (!"SURVEY_IN_PROGRESS".equalsIgnoreCase(req.getStatus()) && !"RETURNED_FOR_REVISION".equalsIgnoreCase(req.getStatus())) {
+            validateStatusTransition(req, "SURVEY_IN_PROGRESS", "የዳሰሳ ጥናት መመዝገብ");
+        }
 
         // Clear existing line items and fees for fresh submission
         itemRepo.deleteByRequestId(requestId);
@@ -317,6 +407,9 @@ public class CustomNewLineConnectionService {
         CustomNewLineConnectionRequest req = requestRepo.findById(requestId)
             .orElseThrow(() -> new IllegalArgumentException("Request not found: " + requestId));
 
+        validateBranchAccess(req, username);
+        validateStatusTransition(req, "PENDING_PAYMENT_APPROVAL", "ክፍያ ማጽደቅ");
+
         // If Revenue Officer updated material items or prices, recalculate totals
         if (dto.getUpdatedItems() != null && !dto.getUpdatedItems().isEmpty()) {
             itemRepo.deleteByRequestId(req.getId());
@@ -438,6 +531,9 @@ public class CustomNewLineConnectionService {
         CustomNewLineConnectionRequest req = requestRepo.findById(requestId)
             .orElseThrow(() -> new IllegalArgumentException("Request not found: " + requestId));
 
+        validateBranchAccess(req, username);
+        validateStatusTransition(req, "PENDING_STORE_COLLECTION", "የስቶር እቃዎች ማስረከብ");
+
         InvStore targetStore = null;
         if (storeRepo != null) {
             if (dto.getStoreId() != null) {
@@ -454,6 +550,10 @@ public class CustomNewLineConnectionService {
             if (targetStore == null) {
                 targetStore = storeRepo.findByIsMainStoreTrue().orElse(null);
             }
+        }
+
+        if (targetStore != null) {
+            validateStoreBranch(targetStore, req.getBranch());
         }
 
         List<CustomNewLineItem> utilityItems = req.getItems() != null
@@ -610,8 +710,13 @@ public class CustomNewLineConnectionService {
         CustomNewLineConnectionRequest req = requestRepo.findById(requestId)
             .orElseThrow(() -> new IllegalArgumentException("Request not found: " + requestId));
 
+        validateBranchAccess(req, username);
+        validateStatusTransition(req, "MATERIALS_COLLECTED", "የዝርጋታ ባለሙያ መመደብ");
+
         UserAccount plumber = userAccountRepo.findById(dto.getPlumberId())
             .orElseThrow(() -> new IllegalArgumentException("Plumber not found: " + dto.getPlumberId()));
+
+        validatePlumberBranch(plumber, req.getBranch());
 
         String oldStatus = req.getStatus();
         req.setInstallationPlumber(plumber);
@@ -632,6 +737,9 @@ public class CustomNewLineConnectionService {
         CustomNewLineConnectionRequest req = requestRepo.findById(requestId)
             .orElseThrow(() -> new IllegalArgumentException("Request not found: " + requestId));
 
+        validateBranchAccess(req, username);
+        validateStatusTransition(req, "INSTALLATION_IN_PROGRESS", "የዝርጋታ ማጠናቀቂያ ማረጋገጥ");
+
         String oldStatus = req.getStatus();
         req.setInstallationCompletedDate(LocalDateTime.now());
         req.setInstallationNotes(dto.getNotes());
@@ -651,8 +759,15 @@ public class CustomNewLineConnectionService {
         CustomNewLineConnectionRequest req = requestRepo.findById(requestId)
             .orElseThrow(() -> new IllegalArgumentException("Request not found: " + requestId));
 
+        validateBranchAccess(req, username);
+        validateStatusTransition(req, "INSTALLATION_COMPLETED", "የደንበኛ ማግበሪያ ማጠናቀቅ");
+
         String oldStatus = req.getStatus();
         String meterNum = cleanString(dto.getMeterNumber());
+        if (meterNum != null && customerRepo.existsByMeterNumber(meterNum)) {
+            throw new IllegalArgumentException("የቆጣሪ ቁጥር '" + meterNum + "' በሌላ ነባር ደንበኛ ላይ አስቀድሞ ተመዝግቧል! እባክዎ ትክክለኛውን የቆጣሪ ቁጥር ያረጋግጡ።");
+        }
+
         String locCoord = cleanString(dto.getLocationCoordination());
         String engName = cleanString(dto.getCustomerFullNameEng());
         if (engName == null) {
@@ -917,6 +1032,123 @@ public class CustomNewLineConnectionService {
         result.put("items", catalogList);
 
         return result;
+    }
+
+    // ─── 11. Supervisory & Management Operations ────────────────────────────
+    public CustomNewLineConnectionRequest reassignPlumber(Long requestId, ReassignPlumberDTO dto, String username) {
+        CustomNewLineConnectionRequest req = requestRepo.findById(requestId)
+            .orElseThrow(() -> new IllegalArgumentException("Request not found: " + requestId));
+
+        validateBranchAccess(req, username);
+
+        UserAccount newPlumber = userAccountRepo.findById(dto.getPlumberId())
+            .orElseThrow(() -> new IllegalArgumentException("Plumber not found: " + dto.getPlumberId()));
+
+        validatePlumberBranch(newPlumber, req.getBranch());
+
+        String mode = dto.getMode() != null ? dto.getMode().toLowerCase() : "survey";
+        String oldPlumberName = "ያልተመደበ";
+        String actionName;
+
+        if ("installation".equals(mode)) {
+            if (!"INSTALLATION_IN_PROGRESS".equalsIgnoreCase(req.getStatus()) && !"MATERIALS_COLLECTED".equalsIgnoreCase(req.getStatus())) {
+                throw new IllegalStateException("የዝርጋታ ባለሙያ ለመቀየር የጥያቄው ደረጃ ዝርጋታ ላይ ወይም እቃ የተወሰደ መሆን አለበት");
+            }
+            if (req.getInstallationPlumber() != null) {
+                oldPlumberName = req.getInstallationPlumber().getFirstName() + " " + req.getInstallationPlumber().getLastName();
+            }
+            req.setInstallationPlumber(newPlumber);
+            req.setInstallationAssignedDate(LocalDateTime.now());
+            req.setStatus("INSTALLATION_IN_PROGRESS");
+            actionName = "INSTALLATION_PLUMBER_REASSIGNED";
+        } else {
+            if (!"SURVEY_IN_PROGRESS".equalsIgnoreCase(req.getStatus()) && !"PENDING_SURVEY_ASSIGNMENT".equalsIgnoreCase(req.getStatus()) && !"RETURNED_FOR_REVISION".equalsIgnoreCase(req.getStatus())) {
+                throw new IllegalStateException("የዳሰሳ ጥናት ባለሙያ ለመቀየር የጥያቄው ደረጃ ዳሰሳ ላይ መሆን አለበት");
+            }
+            if (req.getSurveyPlumber() != null) {
+                oldPlumberName = req.getSurveyPlumber().getFirstName() + " " + req.getSurveyPlumber().getLastName();
+            }
+            req.setSurveyPlumber(newPlumber);
+            req.setSurveyAssignedDate(LocalDateTime.now());
+            req.setStatus("SURVEY_IN_PROGRESS");
+            actionName = "SURVEY_PLUMBER_REASSIGNED";
+        }
+
+        CustomNewLineConnectionRequest updated = requestRepo.save(req);
+        String newPlumberName = newPlumber.getFirstName() + " " + newPlumber.getLastName();
+        String reasonStr = dto.getReason() != null && !dto.getReason().isBlank() ? " (ምክንያት: " + dto.getReason().trim() + ")" : "";
+
+        logAction(updated, actionName, req.getStatus(), req.getStatus(), username, "TECHNICAL_SUPERVISOR",
+                  String.format("ባለሙያ ተቀይሯል። የቀድሞ ባለሙያ: %s, አዲስ የተመደበ: %s%s", oldPlumberName, newPlumberName, reasonStr));
+
+        return updated;
+    }
+
+    public CustomNewLineConnectionRequest rejectOrCancelApplication(Long requestId, RejectCancelDTO dto, String username) {
+        CustomNewLineConnectionRequest req = requestRepo.findById(requestId)
+            .orElseThrow(() -> new IllegalArgumentException("Request not found: " + requestId));
+
+        validateBranchAccess(req, username);
+
+        String actionType = dto.getActionType() != null ? dto.getActionType().trim() : "REJECT_SURVEY_UNFEASIBLE";
+        String oldStatus = req.getStatus();
+
+        if ("FINAL_ACTIVATION_COMPLETED".equalsIgnoreCase(oldStatus)) {
+            throw new IllegalStateException("የነቃ ደንበኛን እዚህ ማሰረዝ አይቻልም");
+        }
+
+        String newStatus;
+        String logActionType;
+        String logComments;
+
+        if ("CANCEL_APPLICATION".equalsIgnoreCase(actionType)) {
+            newStatus = "APPLICATION_CANCELLED";
+            logActionType = "APPLICATION_CANCELLED";
+            req.setCancellationReason(dto.getReason());
+            logComments = "ማመልከቻው ተሰርዟል። ምክንያት: " + (dto.getReason() != null ? dto.getReason() : "በደንበኛ ጥያቄ");
+        } else {
+            newStatus = "SURVEY_REJECTED_UNFEASIBLE";
+            logActionType = "SURVEY_REJECTED_UNFEASIBLE";
+            req.setRejectionReason(dto.getReason());
+            logComments = "የቴክኒክ ዳሰሳ ጥናት ውድቅ ተደርጓል (መስመር የለም / አይቻልም)። ምክንያት: " + (dto.getReason() != null ? dto.getReason() : "ቴክኒካል መስፈርት አያሟላም");
+        }
+
+        req.setRejectedBy(username);
+        req.setRejectedDate(LocalDateTime.now());
+        req.setStatus(newStatus);
+
+        CustomNewLineConnectionRequest updated = requestRepo.save(req);
+
+        logAction(updated, logActionType, oldStatus, newStatus, username, "MANAGEMENT", logComments);
+
+        return updated;
+    }
+
+    public CustomNewLineConnectionRequest returnForRevision(Long requestId, ReturnRevisionDTO dto, String username) {
+        CustomNewLineConnectionRequest req = requestRepo.findById(requestId)
+            .orElseThrow(() -> new IllegalArgumentException("Request not found: " + requestId));
+
+        validateBranchAccess(req, username);
+        validateStatusTransition(req, "PENDING_PAYMENT_APPROVAL", "ወደ ቴክኒክ ክፍል ለክለሳ መመለስ");
+
+        String oldStatus = req.getStatus();
+        req.setStatus("RETURNED_FOR_REVISION");
+
+        CustomNewLineConnectionRequest updated = requestRepo.save(req);
+        String reasonStr = dto.getRemarks() != null && !dto.getRemarks().isBlank() ? dto.getRemarks().trim() : "እቃዎችና የዋጋ ግምት እንዲከለስ በገቢዎች ክፍል ተመልሷል";
+
+        logAction(updated, "SURVEY_RETURNED_FOR_REVISION", oldStatus, "RETURNED_FOR_REVISION", username, "REVENUE",
+                  "ለክለሳ ወደ ቴክኒክ ክፍል ተመልሷል፡ " + reasonStr);
+
+        return updated;
+    }
+
+    @Transactional(readOnly = true)
+    public List<CustomNewLineActivityLog> getApplicationLogs(Long requestId, String username) {
+        CustomNewLineConnectionRequest req = requestRepo.findById(requestId)
+            .orElseThrow(() -> new IllegalArgumentException("Request not found: " + requestId));
+        validateBranchAccess(req, username);
+        return logRepo.findByRequestIdOrderByCreatedAtDesc(requestId);
     }
 
     // ─── Helper: Activity Logger ────────────────────────────────────────────

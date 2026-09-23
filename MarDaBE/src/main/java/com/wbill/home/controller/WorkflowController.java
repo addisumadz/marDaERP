@@ -15,7 +15,7 @@ import java.security.Principal;
 import java.util.*;
 
 @RestController
-@RequestMapping("/api/card_managenment/workflows")
+@RequestMapping("/api/mardaerp/workflows")
 @CrossOrigin(origins = "*")
 public class WorkflowController {
 

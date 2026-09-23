@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/api/card_managenment/sms")
+@RequestMapping("/api/mardaerp/sms")
 @CrossOrigin(origins = "*")
 public class SmsTestController {
 

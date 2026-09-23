@@ -27,7 +27,7 @@ import java.util.Map;
 @CrossOrigin(origins = "http://192.168.100.106:9000")
 
 @RestController
-@RequestMapping("/api/card_managenment")
+@RequestMapping("/api/mardaerp")
 public class CompanyProfileController {
 
 	@Autowired

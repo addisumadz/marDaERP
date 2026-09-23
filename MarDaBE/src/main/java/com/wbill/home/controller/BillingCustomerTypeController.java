@@ -17,7 +17,7 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 
 @RestController
-@RequestMapping("/api/card_managenment/billing-customer-types")
+@RequestMapping("/api/mardaerp/billing-customer-types")
 @CrossOrigin(origins = "*")
 public class BillingCustomerTypeController {
 

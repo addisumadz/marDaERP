@@ -21,7 +21,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
 @RestController
-@RequestMapping("/api/card_managenment/billing-meter-rents")
+@RequestMapping("/api/mardaerp/billing-meter-rents")
 @CrossOrigin(origins = "*")
 public class BillingMeterRentController {
 

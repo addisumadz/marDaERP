@@ -1,11 +1,11 @@
 "use client";
 import { useState, useEffect, useMemo } from "react";
-import { X, Plus, Trash2, Calculator, Printer, Send, Loader2 } from "lucide-react";
+import { X, Plus, Trash2, Calculator, Printer, Send, Loader2, Lock, CheckCircle2 } from "lucide-react";
 import { toast } from "react-toastify";
 import customNewLineConnectionService from "../../../lib/custom_newLineConnectionService";
 import { generateCostEstimationPdf } from "./customNewLinePdf";
 
-export default function CustomMaterialSurveyModal({ isOpen, onClose, onSuccess, request, onRejectSurvey }) {
+export default function CustomMaterialSurveyModal({ isOpen, onClose, onSuccess, request, onRejectSurvey, readOnly = false }) {
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [commonMaterials, setCommonMaterials] = useState([]);
@@ -17,6 +17,25 @@ export default function CustomMaterialSurveyModal({ isOpen, onClose, onSuccess, 
   const [items, setItems] = useState([]);
   const [fees, setFees] = useState([]);
   const [selectedCommonId, setSelectedCommonId] = useState("");
+
+  // Determine if survey is locked in read-only mode (e.g. payment approved)
+  const isReadOnly = useMemo(() => {
+    if (readOnly) return true;
+    if (!request) return false;
+    return Boolean(
+      request.isPaid ||
+      request.paymentReceiptNumber ||
+      request.paymentApprovedDate ||
+      [
+        "PENDING_STORE_COLLECTION",
+        "MATERIALS_COLLECTED",
+        "INSTALLATION_ASSIGNED",
+        "INSTALLATION_IN_PROGRESS",
+        "INSTALLATION_COMPLETED",
+        "FINAL_ACTIVATION_COMPLETED",
+      ].includes(request.status)
+    );
+  }, [readOnly, request]);
 
   useEffect(() => {
     if (isOpen && request) {
@@ -57,8 +76,10 @@ export default function CustomMaterialSurveyModal({ isOpen, onClose, onSuccess, 
           const avail = matched ? (Number(matched.availableStock) || 0) : 0;
           const storePrice = matched ? (Number(matched.unitPrice) || 0) : (Number(it.utilityUnitPrice) || 0);
           const sQty = Number(it.surveyedQuantity) || 0;
-          const uQty = Math.min(sQty, avail);
-          const oQty = Math.max(0, sQty - avail);
+          const uQty = it.utilityQuantity != null ? Number(it.utilityQuantity) : Math.min(sQty, avail);
+          const oQty = it.outsideQuantity != null ? Number(it.outsideQuantity) : Math.max(0, sQty - avail);
+          const uPrice = it.utilityUnitPrice != null ? Number(it.utilityUnitPrice) : storePrice;
+          const oPrice = it.outsideUnitPrice != null ? Number(it.outsideUnitPrice) : storePrice;
 
           return {
             commonMaterialId: it.commonMaterial?.id || matched?.commonMaterialId || null,
@@ -70,9 +91,9 @@ export default function CustomMaterialSurveyModal({ isOpen, onClose, onSuccess, 
             unitPrice: storePrice,
             surveyedQuantity: sQty,
             utilityQuantity: uQty,
-            utilityUnitPrice: storePrice,
+            utilityUnitPrice: uPrice,
             outsideQuantity: oQty,
-            outsideUnitPrice: storePrice,
+            outsideUnitPrice: oPrice,
             remarks: it.remarks || "",
           };
         });
@@ -289,8 +310,8 @@ export default function CustomMaterialSurveyModal({ isOpen, onClose, onSuccess, 
     });
 
     const totalMaterials = utilityTotal + outsideTotal;
-    const serviceCharge = totalMaterials * 0.55; // 55% of all materials
-    const transportCharge = utilityTotal * 0.25; // 25% of utility materials
+    const transportCharge = totalMaterials * 0.25; // 25% of all materials (including market)
+    const serviceCharge = (totalMaterials + transportCharge) * 0.55; // 55% of (totalMaterials + transportCharge)
     const totalPayable = utilityTotal + serviceCharge + transportCharge + feesTotal;
 
     return {
@@ -385,9 +406,18 @@ export default function CustomMaterialSurveyModal({ isOpen, onClose, onSuccess, 
         {/* Header */}
         <div className="px-6 py-3.5 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center bg-gradient-to-r from-blue-700 to-indigo-700 text-white shrink-0">
           <div className="flex items-center gap-2.5">
-            <Calculator className="w-5 h-5 text-blue-200" />
+            {isReadOnly ? <Lock className="w-5 h-5 text-emerald-200" /> : <Calculator className="w-5 h-5 text-blue-200" />}
             <div>
-              <h2 className="text-base font-bold">የጥያቄ ማስተካከያ እና የእቃዎች ዝርዝር መሙያ ቅጽ</h2>
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-base font-bold">
+                  {isReadOnly ? "የዳሰሳ ጥናትና የእቃዎች ዝርዝር (ዕይታ ብቻ / Read-only)" : "የጥያቄ ማስተካከያ እና የእቃዎች ዝርዝር መሙያ ቅጽ"}
+                </h2>
+                {isReadOnly && (
+                  <span className="inline-flex items-center gap-1 text-[11px] font-bold bg-emerald-500/30 text-emerald-100 border border-emerald-300/40 px-2 py-0.5 rounded-full">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-300" /> ክፍያ ጸድቋል {request.paymentReceiptNumber ? `(ደረሰኝ ቁ.: ${request.paymentReceiptNumber})` : ""}
+                  </span>
+                )}
+              </div>
               <span className="text-xs text-blue-100 font-mono">ማመልከቻ ቁጥር: {request.applicationNumber}</span>
             </div>
           </div>
@@ -491,12 +521,18 @@ export default function CustomMaterialSurveyModal({ isOpen, onClose, onSuccess, 
               rows={2}
               value={plumberNotes}
               onChange={(e) => setPlumberNotes(e.target.value)}
-              placeholder="ባለሙያው በመስክ ላይ ያገኘውን ሁኔታ፣ የመስመር ርቀት፣ የቁፋሮ ሁኔታ ወይም ልዩ ሁኔታዎችን እዚህ ይመዝግቡ..."
-              className="w-full px-3 py-2 text-xs border border-blue-200 dark:border-blue-800 rounded-lg bg-white dark:bg-gray-800 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
+              disabled={isReadOnly}
+              readOnly={isReadOnly}
+              placeholder={isReadOnly ? "ምንም ማስታወሻ አልተመዘገበም" : "ባለሙያው በመስክ ላይ ያገኘውን ሁኔታ፣ የመስመር ርቀት፣ የቁፋሮ ሁኔታ ወይም ልዩ ሁኔታዎችን እዚህ ይመዝግቡ..."}
+              className={`w-full px-3 py-2 text-xs border rounded-lg outline-none ${
+                isReadOnly
+                  ? "bg-gray-100 dark:bg-gray-700/60 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 cursor-not-allowed"
+                  : "border-blue-200 dark:border-blue-800 bg-white dark:bg-gray-800 dark:text-white focus:ring-2 focus:ring-blue-500"
+              }`}
             />
           </div>
 
-          {/* 3. Items Table (የእቃዎች ዝርዝር - Matching Image Layout) */}
+          {/* 3. Items Table (የእቃዎች ዝርዝር) */}
           <div className="space-y-2">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
               <div className="flex flex-wrap items-center gap-2">
@@ -509,26 +545,42 @@ export default function CustomMaterialSurveyModal({ isOpen, onClose, onSuccess, 
                   </span>
                 )}
               </div>
-              <div className="flex items-center gap-2 w-full sm:w-auto">
-                <button
-                  type="button"
-                  onClick={handleAddCustomItem}
-                  className="flex items-center gap-1 px-3 py-1.5 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 rounded-lg text-xs font-medium transition-colors"
-                >
-                  <Plus className="w-3.5 h-3.5" /> ሌላ ያልተካተተ እቃ
-                </button>
-              </div>
+              {!isReadOnly && (
+                <div className="flex items-center gap-2 w-full sm:w-auto">
+                  <button
+                    type="button"
+                    onClick={handleAddCustomItem}
+                    className="flex items-center gap-1 px-3 py-1.5 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 rounded-lg text-xs font-medium transition-colors"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> ሌላ ያልተካተተ እቃ
+                  </button>
+                </div>
+              )}
             </div>
 
-            {/* Instruction banner */}
-            <div className="bg-blue-50/70 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900/40 px-3 py-2 rounded-lg text-[11px] text-blue-900 dark:text-blue-300 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1">
-              <span>
-                💡 <strong>ለቴክኒካል ባለሙያ:</strong> እባክዎ <strong>"የተገመተ ብዛት"</strong> ብቻ ያስገቡ። በቅርንጫፉ መጋዘን ክምችት መሰረት <strong>ከድርጅቱ</strong> እና <strong>ከውጭ (Market)</strong> የተገዛው እንዲሁም ዋጋው ከመጋዘኑ በራስ-ሰር ይሰላል።
-              </span>
-              <span className="font-semibold text-blue-700 dark:text-blue-400 shrink-0">
-                የተመረጡ: {items.filter((it) => (Number(it.surveyedQuantity) || 0) > 0).length} እቃዎች
-              </span>
-            </div>
+            {/* Instruction banner / Locked banner */}
+            {isReadOnly ? (
+              <div className="bg-emerald-50/80 dark:bg-emerald-950/30 border border-emerald-300 dark:border-emerald-800 px-3 py-2 rounded-lg text-[11px] text-emerald-900 dark:text-emerald-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1">
+                <span className="flex items-center gap-1.5">
+                  <Lock className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                  <span>
+                    <strong>የተረጋገጠ መረጃ:</strong> የዚህ ማመልከቻ ክፍያ በገቢዎች ክፍል ስለተረጋገጠ የእቃዎች ዝርዝር፣ ብዛት እና ዋጋ ላይ ለውጥ ማድረግ አይቻልም (Read-only)።
+                  </span>
+                </span>
+                <span className="font-semibold text-emerald-700 dark:text-emerald-400 shrink-0">
+                  የተረጋገጡ: {items.filter((it) => (Number(it.surveyedQuantity) || 0) > 0).length} እቃዎች
+                </span>
+              </div>
+            ) : (
+              <div className="bg-blue-50/70 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900/40 px-3 py-2 rounded-lg text-[11px] text-blue-900 dark:text-blue-300 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1">
+                <span>
+                  💡 <strong>ለቴክኒካል ባለሙያ:</strong> እባክዎ <strong>"የተገመተ ብዛት"</strong> ብቻ ያስገቡ። በቅርንጫፉ መጋዘን ክምችት መሰረት <strong>ከድርጅቱ</strong> እና <strong>ከውጭ (Market)</strong> የተገዛው እንዲሁም ዋጋው ከመጋዘኑ በራስ-ሰር ይሰላል።
+                </span>
+                <span className="font-semibold text-blue-700 dark:text-blue-400 shrink-0">
+                  የተመረጡ: {items.filter((it) => (Number(it.surveyedQuantity) || 0) > 0).length} እቃዎች
+                </span>
+              </div>
+            )}
 
             {/* Replicated Items Table */}
             <div className="overflow-x-auto border border-gray-200 dark:border-gray-700 rounded-xl">
@@ -538,8 +590,12 @@ export default function CustomMaterialSurveyModal({ isOpen, onClose, onSuccess, 
                     <th rowSpan={2} className="px-2.5 py-2 text-center w-8">#</th>
                     <th rowSpan={2} className="px-3 py-2 min-w-[200px]">የሚያስፈልገው የእቃ አይነት</th>
                     <th rowSpan={2} className="px-2 py-2 text-center w-16">መለኪያ</th>
-                    <th rowSpan={2} className="px-2 py-2 text-center w-24 bg-blue-100/80 dark:bg-blue-900/50 text-blue-900 dark:text-blue-100 border-2 border-blue-400 dark:border-blue-600">
-                      የተገመተ ብዛት <span className="block text-[9px] font-normal text-blue-700 dark:text-blue-300">(መሙያ)</span>
+                    <th rowSpan={2} className={`px-2 py-2 text-center w-24 ${
+                      isReadOnly
+                        ? "bg-gray-200/80 dark:bg-gray-700 text-gray-800 dark:text-gray-200"
+                        : "bg-blue-100/80 dark:bg-blue-900/50 text-blue-900 dark:text-blue-100 border-2 border-blue-400 dark:border-blue-600"
+                    }`}>
+                      የተገመተ ብዛት {!isReadOnly && <span className="block text-[9px] font-normal text-blue-700 dark:text-blue-300">(መሙያ)</span>}
                     </th>
                     <th colSpan={3} className="px-3 py-1 text-center bg-blue-50 dark:bg-blue-950/40 border-l border-r border-blue-200 dark:border-blue-800 text-blue-950 dark:text-blue-200">
                       ከድርጅቱ የተገዛ <span className="text-[10px] font-normal text-gray-500">(ከመጋዘን ክምችት)</span>
@@ -548,7 +604,7 @@ export default function CustomMaterialSurveyModal({ isOpen, onClose, onSuccess, 
                       ከውጭ የተገዛ (Market) <span className="text-[10px] font-normal text-gray-500">(የጎደለው)</span>
                     </th>
                     <th rowSpan={2} className="px-2 py-2 min-w-[100px]">ምርመራ</th>
-                    <th rowSpan={2} className="px-2 py-2 text-center w-10"></th>
+                    {!isReadOnly && <th rowSpan={2} className="px-2 py-2 text-center w-10"></th>}
                   </tr>
                   <tr className="border-t border-gray-200 dark:border-gray-700">
                     {/* Utility columns */}
@@ -564,7 +620,7 @@ export default function CustomMaterialSurveyModal({ isOpen, onClose, onSuccess, 
                 <tbody className="divide-y divide-gray-200 dark:divide-gray-700 bg-white dark:bg-gray-800">
                   {items.length === 0 ? (
                     <tr>
-                      <td colSpan={12} className="px-4 py-8 text-center text-gray-400">
+                      <td colSpan={isReadOnly ? 11 : 12} className="px-4 py-8 text-center text-gray-400">
                         እስካሁን ምንም እቃ አልተጨመረም።
                       </td>
                     </tr>
@@ -586,7 +642,7 @@ export default function CustomMaterialSurveyModal({ isOpen, onClose, onSuccess, 
                           <td className="px-2 py-2 text-center font-mono text-gray-400">{idx + 1}</td>
                           <td className="px-3 py-2">
                             <div className="flex flex-col">
-                              {it.isCustom ? (
+                              {it.isCustom && !isReadOnly ? (
                                 <input
                                   type="text"
                                   value={it.itemNameAm || it.itemName}
@@ -621,17 +677,27 @@ export default function CustomMaterialSurveyModal({ isOpen, onClose, onSuccess, 
                             {it.unitOfMeasure}
                           </td>
 
-                          {/* TECHNICAL ENCODES ONLY THIS FIELD */}
-                          <td className="px-2 py-2 text-center bg-blue-50/40 dark:bg-blue-900/10">
-                            <input
-                              type="number"
-                              min="0"
-                              step="0.1"
-                              value={it.surveyedQuantity === 0 ? "" : it.surveyedQuantity}
-                              onChange={(e) => handleSurveyedQtyChange(idx, e.target.value)}
-                              placeholder="0"
-                              className="w-20 text-center font-bold px-2 py-1.5 border-2 border-blue-500 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm focus:ring-2 focus:ring-blue-500 outline-none text-xs"
-                            />
+                          {/* TECHNICAL ENCODES ONLY THIS FIELD (DISABLED WHEN READ-ONLY) */}
+                          <td className={`px-2 py-2 text-center ${isReadOnly ? "bg-gray-50/50 dark:bg-gray-800/40" : "bg-blue-50/40 dark:bg-blue-900/10"}`}>
+                            {isReadOnly ? (
+                              <input
+                                type="number"
+                                readOnly
+                                disabled
+                                value={it.surveyedQuantity === 0 ? "" : it.surveyedQuantity}
+                                className="w-20 text-center font-bold px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-100 dark:bg-gray-700/60 text-gray-900 dark:text-white cursor-not-allowed text-xs"
+                              />
+                            ) : (
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.1"
+                                value={it.surveyedQuantity === 0 ? "" : it.surveyedQuantity}
+                                onChange={(e) => handleSurveyedQtyChange(idx, e.target.value)}
+                                placeholder="0"
+                                className="w-20 text-center font-bold px-2 py-1.5 border-2 border-blue-500 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm focus:ring-2 focus:ring-blue-500 outline-none text-xs"
+                              />
+                            )}
                           </td>
 
                           {/* UTILITY COLUMNS - DISABLED FOR TECHNICAL */}
@@ -682,36 +748,42 @@ export default function CustomMaterialSurveyModal({ isOpen, onClose, onSuccess, 
 
                           {/* REMARKS */}
                           <td className="px-2 py-2">
-                            <input
-                              type="text"
-                              value={it.remarks}
-                              onChange={(e) => handleUpdateItem(idx, "remarks", e.target.value)}
-                              placeholder="ምርመራ"
-                              className="w-full px-2 py-1 border border-gray-200 dark:border-gray-700 rounded bg-transparent outline-none text-xs"
-                            />
+                            {isReadOnly ? (
+                              <span className="text-gray-700 dark:text-gray-300 px-1">{it.remarks || "—"}</span>
+                            ) : (
+                              <input
+                                type="text"
+                                value={it.remarks}
+                                onChange={(e) => handleUpdateItem(idx, "remarks", e.target.value)}
+                                placeholder="ምርመራ"
+                                className="w-full px-2 py-1 border border-gray-200 dark:border-gray-700 rounded bg-transparent outline-none text-xs"
+                              />
+                            )}
                           </td>
 
-                          {/* ACTION / RESET */}
-                          <td className="px-1 py-2 text-center">
-                            {isSelected ? (
-                              <button
-                                type="button"
-                                onClick={() => handleResetItemQty(idx)}
-                                title="ብዛቱን ሰርዝ (ወደ 0 መልስ)"
-                                className="px-1.5 py-0.5 text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded text-xs font-bold"
-                              >
-                                ✕
-                              </button>
-                            ) : it.isCustom ? (
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveItem(idx)}
-                                className="p-1 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            ) : null}
-                          </td>
+                          {/* ACTION / RESET (HIDDEN WHEN READ-ONLY) */}
+                          {!isReadOnly && (
+                            <td className="px-1 py-2 text-center">
+                              {isSelected ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleResetItemQty(idx)}
+                                  title="ብዛቱን ሰርዝ (ወደ 0 መልስ)"
+                                  className="px-1.5 py-0.5 text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded text-xs font-bold"
+                                >
+                                  ✕
+                                </button>
+                              ) : it.isCustom ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveItem(idx)}
+                                  className="p-1 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              ) : null}
+                            </td>
+                          )}
                         </tr>
                       );
                     })
@@ -732,7 +804,7 @@ export default function CustomMaterialSurveyModal({ isOpen, onClose, onSuccess, 
                       <td className="px-2 py-2 text-right font-mono text-amber-700 dark:text-amber-300 border-r border-amber-200 dark:border-amber-800">
                         ETB {totals.outsideTotal.toFixed(2)}
                       </td>
-                      <td colSpan={2}></td>
+                      <td colSpan={isReadOnly ? 1 : 2}></td>
                     </tr>
                   </tfoot>
                 )}
@@ -746,13 +818,15 @@ export default function CustomMaterialSurveyModal({ isOpen, onClose, onSuccess, 
               <h3 className="font-bold text-gray-900 dark:text-white text-sm">
                 ተጨማሪ ክፍያዎች (Additional Fees & Services)
               </h3>
-              <button
-                type="button"
-                onClick={handleAddCustomFee}
-                className="flex items-center gap-1 px-2.5 py-1 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 text-gray-700 dark:text-gray-300 rounded text-xs font-medium"
-              >
-                <Plus className="w-3 h-3" /> ክፍያ ጨምር
-              </button>
+              {!isReadOnly && (
+                <button
+                  type="button"
+                  onClick={handleAddCustomFee}
+                  className="flex items-center gap-1 px-2.5 py-1 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 text-gray-700 dark:text-gray-300 rounded text-xs font-medium"
+                >
+                  <Plus className="w-3 h-3" /> ክፍያ ጨምር
+                </button>
+              )}
             </div>
 
             <div className="overflow-x-auto border border-gray-200 dark:border-gray-700 rounded-xl">
@@ -765,7 +839,7 @@ export default function CustomMaterialSurveyModal({ isOpen, onClose, onSuccess, 
                     <th className="px-2 py-2 text-center w-24">የባለሙያ ግምት / ብዛት</th>
                     <th className="px-2 py-2 text-right w-28">የአንዱ ዋጋ</th>
                     <th className="px-3 py-2 text-right w-32">ጠቅላላ ዋጋ</th>
-                    <th className="px-2 py-2 w-10"></th>
+                    {!isReadOnly && <th className="px-2 py-2 w-10"></th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200 dark:divide-gray-700 bg-white dark:bg-gray-800">
@@ -775,51 +849,69 @@ export default function CustomMaterialSurveyModal({ isOpen, onClose, onSuccess, 
                       <tr key={idx} className="hover:bg-gray-50/50 dark:hover:bg-gray-750">
                         <td className="px-2 py-1.5 text-center font-mono text-gray-400">{idx + 1}</td>
                         <td className="px-3 py-1.5 font-medium">
-                          <input
-                            type="text"
-                            value={f.feeNameAm || f.feeName}
-                            onChange={(e) => handleUpdateFee(idx, "feeNameAm", e.target.value)}
-                            className="w-full px-2 py-1 border border-gray-200 dark:border-gray-700 rounded bg-transparent outline-none"
-                          />
+                          {isReadOnly ? (
+                            <span>{f.feeNameAm || f.feeName}</span>
+                          ) : (
+                            <input
+                              type="text"
+                              value={f.feeNameAm || f.feeName}
+                              onChange={(e) => handleUpdateFee(idx, "feeNameAm", e.target.value)}
+                              className="w-full px-2 py-1 border border-gray-200 dark:border-gray-700 rounded bg-transparent outline-none"
+                            />
+                          )}
                         </td>
                         <td className="px-2 py-1.5 text-center">
-                          <input
-                            type="text"
-                            value={f.unitName}
-                            onChange={(e) => handleUpdateFee(idx, "unitName", e.target.value)}
-                            className="w-full text-center px-1 py-1 border border-gray-200 dark:border-gray-700 rounded bg-transparent outline-none"
-                          />
+                          {isReadOnly ? (
+                            <span>{f.unitName}</span>
+                          ) : (
+                            <input
+                              type="text"
+                              value={f.unitName}
+                              onChange={(e) => handleUpdateFee(idx, "unitName", e.target.value)}
+                              className="w-full text-center px-1 py-1 border border-gray-200 dark:border-gray-700 rounded bg-transparent outline-none"
+                            />
+                          )}
                         </td>
                         <td className="px-2 py-1.5">
-                          <input
-                            type="number"
-                            step="0.1"
-                            value={f.quantity}
-                            onChange={(e) => handleUpdateFee(idx, "quantity", e.target.value)}
-                            className="w-full text-center font-mono px-2 py-1 border border-gray-200 dark:border-gray-700 rounded bg-transparent outline-none"
-                          />
+                          {isReadOnly ? (
+                            <div className="text-center font-mono">{f.quantity}</div>
+                          ) : (
+                            <input
+                              type="number"
+                              step="0.1"
+                              value={f.quantity}
+                              onChange={(e) => handleUpdateFee(idx, "quantity", e.target.value)}
+                              className="w-full text-center font-mono px-2 py-1 border border-gray-200 dark:border-gray-700 rounded bg-transparent outline-none"
+                            />
+                          )}
                         </td>
                         <td className="px-2 py-1.5">
-                          <input
-                            type="number"
-                            step="0.5"
-                            value={f.unitPrice}
-                            onChange={(e) => handleUpdateFee(idx, "unitPrice", e.target.value)}
-                            className="w-full text-right font-mono px-2 py-1 border border-gray-200 dark:border-gray-700 rounded bg-transparent outline-none"
-                          />
+                          {isReadOnly ? (
+                            <div className="text-right font-mono">ETB {Number(f.unitPrice || 0).toFixed(2)}</div>
+                          ) : (
+                            <input
+                              type="number"
+                              step="0.5"
+                              value={f.unitPrice}
+                              onChange={(e) => handleUpdateFee(idx, "unitPrice", e.target.value)}
+                              className="w-full text-right font-mono px-2 py-1 border border-gray-200 dark:border-gray-700 rounded bg-transparent outline-none"
+                            />
+                          )}
                         </td>
                         <td className="px-3 py-1.5 text-right font-mono font-bold text-gray-900 dark:text-white">
                           {lineTotal}
                         </td>
-                        <td className="px-1 py-1.5 text-center">
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveFee(idx)}
-                            className="p-1 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </td>
+                        {!isReadOnly && (
+                          <td className="px-1 py-1.5 text-center">
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveFee(idx)}
+                              className="p-1 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </td>
+                        )}
                       </tr>
                     );
                   })}
@@ -828,7 +920,7 @@ export default function CustomMaterialSurveyModal({ isOpen, onClose, onSuccess, 
                   <tr>
                     <td colSpan={5} className="px-3 py-2 text-right">ተጨማሪ ክፍያዎች ጠቅላላ:</td>
                     <td className="px-3 py-2 text-right font-mono">ETB {totals.feesTotal.toFixed(2)}</td>
-                    <td></td>
+                    {!isReadOnly && <td></td>}
                   </tr>
                 </tfoot>
               </table>
@@ -848,12 +940,12 @@ export default function CustomMaterialSurveyModal({ isOpen, onClose, onSuccess, 
                   <span className="font-mono font-bold">ETB {totals.utilityTotal.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span>የአገልግሎት ክፍያ (55%):</span>
-                  <span className="font-mono font-bold">ETB {totals.serviceCharge.toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between">
                   <span>የትራንስፖርት ክፍያ (25%):</span>
                   <span className="font-mono font-bold">ETB {totals.transportCharge.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>የአገልግሎት ክፍያ (55%):</span>
+                  <span className="font-mono font-bold">ETB {totals.serviceCharge.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>ተጨማሪ ክፍያዎች:</span>
@@ -877,7 +969,7 @@ export default function CustomMaterialSurveyModal({ isOpen, onClose, onSuccess, 
             {items.length} እቃዎች | ጠቅላላ ተከፋይ: ETB {totals.totalPayable.toFixed(2)}
           </span>
           <div className="flex items-center gap-2.5">
-            {onRejectSurvey && (
+            {!isReadOnly && onRejectSurvey && (
               <button
                 type="button"
                 onClick={() => {
@@ -894,19 +986,25 @@ export default function CustomMaterialSurveyModal({ isOpen, onClose, onSuccess, 
               type="button"
               onClick={onClose}
               disabled={submitting}
-              className="px-4 py-2 text-xs font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-colors"
+              className={`px-5 py-2 text-xs font-semibold rounded-lg transition-colors ${
+                isReadOnly
+                  ? "bg-gray-800 text-white hover:bg-gray-900 dark:bg-gray-200 dark:text-gray-900 dark:hover:bg-white shadow-sm font-bold"
+                  : "text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
+              }`}
             >
-              ይቅር
+              {isReadOnly ? "ዝጋ" : "ይቅር"}
             </button>
-            <button
-              type="button"
-              onClick={handleSubmitSurvey}
-              disabled={submitting || items.length === 0}
-              className="flex items-center gap-2 px-5 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm transition-colors disabled:opacity-50"
-            >
-              {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-              {submitting ? "በመላክ ላይ..." : "አረጋግጥና ወደ ገቢዎች ላክ"}
-            </button>
+            {!isReadOnly && (
+              <button
+                type="button"
+                onClick={handleSubmitSurvey}
+                disabled={submitting || items.length === 0}
+                className="flex items-center gap-2 px-5 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm transition-colors disabled:opacity-50"
+              >
+                {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                {submitting ? "በመላክ ላይ..." : "አረጋግጥና ወደ ገቢዎች ላክ"}
+              </button>
+            )}
           </div>
         </div>
       </div>

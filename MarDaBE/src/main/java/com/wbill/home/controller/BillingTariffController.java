@@ -19,7 +19,7 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 
 @RestController
-@RequestMapping("/api/card_managenment/billing-tariffs")
+@RequestMapping("/api/mardaerp/billing-tariffs")
 @CrossOrigin(origins = "*")
 public class BillingTariffController {
 

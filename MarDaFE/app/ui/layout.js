@@ -2,6 +2,7 @@
 import Head from "next/head";
 import Sidebar from "../ui/components/Sidebar";
 import Header from "../ui/components/Header";
+import IdleTimer from "./components/common/IdleTimer";
 import { useState, useEffect } from "react";
 
 export default function Layout({ children }) {
@@ -9,6 +10,7 @@ export default function Layout({ children }) {
 
   return (
     <div className="dark:bg-boxdark-2 dark:text-bodydark">
+      <IdleTimer />
       {/* <Head>
         <title>{metadata.title}</title>
         <meta name="description" content={metadata.description} />

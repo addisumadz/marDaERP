@@ -15,7 +15,7 @@ import java.util.List;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/api/card_managenment/inv-items")
+@RequestMapping("/api/mardaerp/inv-items")
 @CrossOrigin(origins = "*", maxAge = 3600)
 public class InvItemController {
 

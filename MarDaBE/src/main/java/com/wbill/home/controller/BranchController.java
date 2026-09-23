@@ -18,7 +18,7 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 
 @RestController
-@RequestMapping("/api/card_managenment/branchs")
+@RequestMapping("/api/mardaerp/branchs")
 @CrossOrigin(origins = "*")
 public class BranchController {
 

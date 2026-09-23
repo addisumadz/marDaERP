@@ -12,7 +12,7 @@ import java.util.List;
 
  
 @RestController
-@RequestMapping("/api/card_managenment")
+@RequestMapping("/api/mardaerp")
 public class SettingController {
 
     @Autowired

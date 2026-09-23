@@ -312,13 +312,14 @@ public class CustomMaintenanceService {
             }
         }
 
-        // Apply Static Rates: 55% Service Charge, 25% Transportation Charge
+        // Apply Static Rates: 25% Transportation Charge on all materials, 55% Service Charge on (totalMaterials + transportCharge)
         BigDecimal totalMaterials = utilityMaterialsTotal.add(outsideMaterialsTotal);
-        BigDecimal serviceChargePercent = new BigDecimal("55.00");
-        BigDecimal serviceCharge = totalMaterials.multiply(new BigDecimal("0.55")).setScale(2, RoundingMode.HALF_UP);
-
         BigDecimal transportChargePercent = new BigDecimal("25.00");
-        BigDecimal transportCharge = utilityMaterialsTotal.multiply(new BigDecimal("0.25")).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal transportCharge = totalMaterials.multiply(new BigDecimal("0.25")).setScale(2, RoundingMode.HALF_UP);
+
+        BigDecimal serviceChargePercent = new BigDecimal("55.00");
+        BigDecimal serviceChargeBase = totalMaterials.add(transportCharge);
+        BigDecimal serviceCharge = serviceChargeBase.multiply(new BigDecimal("0.55")).setScale(2, RoundingMode.HALF_UP);
 
         // Total Payable = Utility Materials + Service Charge + Transport Charge + Additional Fees
         BigDecimal totalPayable = utilityMaterialsTotal
@@ -402,8 +403,9 @@ public class CustomMaintenanceService {
             }
 
             BigDecimal totalMaterials = utilityMaterialsTotal.add(outsideMaterialsTotal);
-            BigDecimal serviceCharge = totalMaterials.multiply(new BigDecimal("0.55")).setScale(2, RoundingMode.HALF_UP);
-            BigDecimal transportCharge = utilityMaterialsTotal.multiply(new BigDecimal("0.25")).setScale(2, RoundingMode.HALF_UP);
+            BigDecimal transportCharge = totalMaterials.multiply(new BigDecimal("0.25")).setScale(2, RoundingMode.HALF_UP);
+            BigDecimal serviceChargeBase = totalMaterials.add(transportCharge);
+            BigDecimal serviceCharge = serviceChargeBase.multiply(new BigDecimal("0.55")).setScale(2, RoundingMode.HALF_UP);
 
             BigDecimal additionalFeesTotal = req.getAdditionalFeesTotal() != null ? req.getAdditionalFeesTotal() : BigDecimal.ZERO;
             if (dto.getUpdatedFees() != null && !dto.getUpdatedFees().isEmpty()) {

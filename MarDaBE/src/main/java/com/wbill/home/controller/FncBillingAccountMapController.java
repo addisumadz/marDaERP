@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/card_managenment/fnc-billing-account-map")
+@RequestMapping("/api/mardaerp/fnc-billing-account-map")
 @CrossOrigin(origins = "*", maxAge = 3600)
 public class FncBillingAccountMapController {
 

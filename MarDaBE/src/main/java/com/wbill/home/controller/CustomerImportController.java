@@ -11,7 +11,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 // @RequestMapping("/api/customers/import")
-@RequestMapping("/api/card_managenment/customer/import")
+@RequestMapping("/api/mardaerp/customer/import")
 public class CustomerImportController {
 
     private final CustomerImportService importService;

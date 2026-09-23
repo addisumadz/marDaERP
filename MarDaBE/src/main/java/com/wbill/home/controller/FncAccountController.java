@@ -16,7 +16,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 @RestController
-@RequestMapping("/api/card_managenment/fnc-accounts")
+@RequestMapping("/api/mardaerp/fnc-accounts")
 @CrossOrigin(origins = "*", maxAge = 3600)
 public class FncAccountController {
 

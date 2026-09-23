@@ -24,6 +24,7 @@ import com.wbill.home.repository.UserRecordRepository;
 import com.wbill.home.service.Security.UserDetailsImpl;
 import com.wbill.home.service.jwt.JwtUtils;
 import com.wbill.home.springjwt.payload.response.JwtResponse;
+import com.wbill.home.springjwt.payload.response.MessageResponse;
 
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -34,7 +35,7 @@ import org.slf4j.LoggerFactory;
 // @CrossOrigin(origins = "http://192.168.8.104:9000")
 @RestController
 @RequestMapping("/api/auth")
-// @RequestMapping("/hims/api/card_managenment") // for Public Host
+// @RequestMapping("/hims/api/mardaerp") // for Public Host
 
 public class AuthController {
     private static final Logger log = LoggerFactory.getLogger(AuthController.class);
@@ -66,6 +67,12 @@ public class AuthController {
         String ipAddress = getClientIp(request);
 
         try {
+            // Check if IP address is rate limited (max 15 failed attempts per 5-minute window)
+            if (loginAttemptService.isIpRateLimited(ipAddress, 15, 5)) {
+                log.warn("[AUTH] IP address rate limited: IP={}", ipAddress);
+                return ResponseEntity.status(429).body(new ErrorResponse("Too many login attempts from this IP address. Please try again in 5 minutes."));
+            }
+
             // Check if account is locked
             if (loginAttemptService.isAccountLocked(username)) {
                 long remainingMinutes = loginAttemptService.getRemainingLockoutTime(username);
@@ -132,6 +139,16 @@ public class AuthController {
             log.error("[AUTH] Authentication error for username={}, IP={}: {}", username, ipAddress, e.getMessage());
             return ResponseEntity.status(500).body(new ErrorResponse("Authentication failed"));
         }
+    }
+
+    @PostMapping("/signout")
+    public ResponseEntity<?> logoutUser(jakarta.servlet.http.HttpServletRequest request) {
+        String ipAddress = getClientIp(request);
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        String username = (auth != null && auth.isAuthenticated()) ? auth.getName() : "anonymous";
+        log.info("[AUTH] Signout processed for username={} from IP={}", username, ipAddress);
+        SecurityContextHolder.clearContext();
+        return ResponseEntity.ok(new MessageResponse("User signed out successfully"));
     }
 
     /**

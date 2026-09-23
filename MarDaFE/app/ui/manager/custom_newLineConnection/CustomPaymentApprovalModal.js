@@ -416,8 +416,8 @@ export default function CustomPaymentApprovalModal({
     });
 
     const totalMaterials = utilityTotal + outsideTotal;
-    const serviceCharge = totalMaterials * 0.55; // 55% of all materials
-    const transportCharge = utilityTotal * 0.25; // 25% of utility materials
+    const transportCharge = totalMaterials * 0.25; // 25% of all materials (including market)
+    const serviceCharge = (totalMaterials + transportCharge) * 0.55; // 55% of (totalMaterials + transportCharge)
     const totalPayable = utilityTotal + serviceCharge + transportCharge + feesTotal;
 
     return {
@@ -1278,12 +1278,12 @@ export default function CustomPaymentApprovalModal({
                     <span className="font-mono font-bold">ETB {totals.outsideTotal.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span>የአገልግሎት ክፍያ (55%):</span>
-                    <span className="font-mono font-bold">ETB {totals.serviceCharge.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between">
                     <span>የትራንስፖርት ክፍያ (25%):</span>
                     <span className="font-mono font-bold">ETB {totals.transportCharge.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>የአገልግሎት ክፍያ (55%):</span>
+                    <span className="font-mono font-bold">ETB {totals.serviceCharge.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span>ተጨማሪ ክፍያዎች:</span>

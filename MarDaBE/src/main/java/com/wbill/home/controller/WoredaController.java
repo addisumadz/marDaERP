@@ -12,7 +12,7 @@ import java.util.Optional;
 
  
 @RestController
-@RequestMapping("/api/card_managenment/")
+@RequestMapping("/api/mardaerp/")
 public class WoredaController {
 
     @Autowired

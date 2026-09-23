@@ -157,8 +157,8 @@ export default function CustomPaymentApprovalModal({
     });
 
     const totalMaterials = utilityMaterialsTotal + outsideMaterialsTotal;
-    const serviceCharge = totalMaterials * 0.55;
-    const transportCharge = utilityMaterialsTotal * 0.25;
+    const transportCharge = totalMaterials * 0.25;
+    const serviceCharge = (totalMaterials + transportCharge) * 0.55;
 
     let additionalFeesTotal = 0;
     fees.forEach((f) => {

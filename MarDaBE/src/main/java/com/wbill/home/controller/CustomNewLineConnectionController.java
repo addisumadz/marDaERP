@@ -18,7 +18,7 @@ import java.util.List;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/api/card_managenment/custom-new-line")
+@RequestMapping("/api/mardaerp/custom-new-line")
 @CrossOrigin(origins = "*")
 public class CustomNewLineConnectionController {
 

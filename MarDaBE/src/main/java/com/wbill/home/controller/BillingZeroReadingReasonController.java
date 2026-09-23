@@ -18,7 +18,7 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 
 @RestController
-@RequestMapping("/api/card_managenment/billing-zero-reading-reasons")
+@RequestMapping("/api/mardaerp/billing-zero-reading-reasons")
 @CrossOrigin(origins = "*")
 public class BillingZeroReadingReasonController {
 

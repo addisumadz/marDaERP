@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/card_managenment/users")
+@RequestMapping("/api/mardaerp/users")
 @CrossOrigin(origins = "*")
 public class UserAccountController {
   private final UserAccountService service;

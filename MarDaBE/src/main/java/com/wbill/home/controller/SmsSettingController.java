@@ -15,7 +15,7 @@ import com.wbill.home.dto.SmsSettingDTO;
 import com.wbill.home.service.SmsSettingService;
 
 @RestController
-@RequestMapping("/api/card_managenment/sms-settings")
+@RequestMapping("/api/mardaerp/sms-settings")
 @CrossOrigin(origins = "*")
 public class SmsSettingController {
 

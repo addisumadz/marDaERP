@@ -8,6 +8,7 @@ import { DropdownService } from "../../../lib/dropdownService";
 import { AddressStreetsService } from "../../../lib/addressStreetsService";
 import { AddressKetenaService } from "../../../lib/addressKetenaService";
 import { UserAccountService } from "../../../lib/userAccountService";
+import { transliterateNamePhonetic, handleAmharicInputChange } from "../../../helpers/amharicInput";
 
 const dropdownService = new DropdownService();
 const streetsService = new AddressStreetsService();
@@ -27,6 +28,10 @@ export default function CustomApplicationModal({
   const [isKetenasLoading, setIsKetenasLoading] = useState(false);
   const [resolvedBranchId, setResolvedBranchId] = useState(userBranchId);
   const [resolvedBranchName, setResolvedBranchName] = useState(userBranchName);
+
+  // Amharic phonetic keyboard and phone digit state
+  const [isAmharicKeyboardOn, setIsAmharicKeyboardOn] = useState(true);
+  const [phoneDigits, setPhoneDigits] = useState("");
 
   // Dropdown reference lists
   const [kebeles, setKebeles] = useState([]);
@@ -53,6 +58,8 @@ export default function CustomApplicationModal({
     if (isOpen) {
       loadDropdowns();
       setKetenas([]);
+      setPhoneDigits("");
+      setIsAmharicKeyboardOn(true);
 
       const initialBranchId = userBranchId ? String(userBranchId) : "";
       setResolvedBranchId(userBranchId);
@@ -62,7 +69,7 @@ export default function CustomApplicationModal({
         applicantName: "",
         customerFullName: "",
         customerFullNameEng: "",
-        phoneNumber: "+251",
+        phoneNumber: "",
         nationalIdNumber: "",
         houseNumber: "",
         kebeleId: "",
@@ -170,15 +177,37 @@ export default function CustomApplicationModal({
     return `ቀጠና ${nameStr}`;
   };
 
+  const handlePhoneChange = (e) => {
+    let raw = e.target.value || "";
+    // Keep only numeric digits
+    let digits = raw.replace(/\D/g, "");
+    // If user pasted with 251 or 0 prefix, strip it
+    if (digits.startsWith("251")) {
+      digits = digits.slice(3);
+    } else if (digits.startsWith("0")) {
+      digits = digits.slice(1);
+    }
+    // Restrict strictly to 9 numbers
+    digits = digits.slice(0, 9);
+    setPhoneDigits(digits);
+    setForm((prev) => ({
+      ...prev,
+      phoneNumber: digits ? `+251${digits}` : "",
+    }));
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.customerFullName.trim()) {
       toast.error("የደንበኛ ሙሉ ስም ማስገባት ግዴታ ነው");
       return;
     }
-    if (!form.phoneNumber || form.phoneNumber.length < 9) {
-      toast.error("ትክክለኛ ስልክ ቁጥር ያስገቡ");
+    if (!phoneDigits || phoneDigits.length !== 9) {
+      toast.error("እባክዎ ከ +251 ቀጥሎ ያሉትን 9 አሃዞች በትክክል ያስገቡ (ለምሳሌ፡ 912345678)");
       return;
+    }
+    if (!phoneDigits.startsWith("9") && !phoneDigits.startsWith("7")) {
+      toast.warning("የሞባይል ስልክ ቁጥር በ 9 ወይም 7 መጀመር አለበት");
     }
 
     setSubmitting(true);
@@ -197,11 +226,13 @@ export default function CustomApplicationModal({
         return isNaN(num) ? null : num;
       };
 
+      const fullPhoneNumber = `+251${phoneDigits}`;
+
       const payload = {
         applicantName: cleanStr(form.applicantName) || cleanStr(form.customerFullName),
         customerFullName: cleanStr(form.customerFullName),
         customerFullNameEng: cleanStr(form.customerFullNameEng),
-        phoneNumber: cleanStr(form.phoneNumber),
+        phoneNumber: cleanStr(fullPhoneNumber),
         nationalIdNumber: cleanStr(form.nationalIdNumber),
         houseNumber: cleanStr(form.houseNumber),
         kebeleId: cleanId(form.kebeleId),
@@ -242,23 +273,71 @@ export default function CustomApplicationModal({
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                የደንበኛ ሙሉ ስም (አማርኛ) <span className="text-red-500">*</span>
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300">
+                  የደንበኛ ሙሉ ስም (አማርኛ) <span className="text-red-500">*</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setIsAmharicKeyboardOn((prev) => !prev)}
+                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold border transition-colors ${
+                    isAmharicKeyboardOn
+                      ? "bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-700"
+                      : "bg-gray-100 text-gray-600 border-gray-300 dark:bg-gray-700 dark:text-gray-300"
+                  }`}
+                  title="በእንግሊዝኛ ፊደል ሲጽፉ በራስ-ሰር ወደ አማርኛ ይቀይራል"
+                >
+                  <span>{isAmharicKeyboardOn ? "⌨️ አማርኛ (በራስ-ሰር)" : "🔤 English (Latin)"}</span>
+                </button>
+              </div>
               <input
                 type="text"
                 required
                 value={form.customerFullName}
-                onChange={(e) => setForm({ ...form, customerFullName: e.target.value })}
+                onChange={(e) => {
+                  handleAmharicInputChange(
+                    e,
+                    (val) => setForm((prev) => ({ ...prev, customerFullName: val })),
+                    isAmharicKeyboardOn
+                  );
+                }}
+                onBlur={(e) => {
+                  if (isAmharicKeyboardOn && e.target.value) {
+                    setForm((prev) => ({
+                      ...prev,
+                      customerFullName: transliterateNamePhonetic(e.target.value),
+                    }));
+                  }
+                }}
                 placeholder="ለምሳሌ: አምላኩ ተካላ አህመድ"
                 className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700/50 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
               />
+              <p className="text-[10px] text-gray-400 mt-1">
+                {isAmharicKeyboardOn
+                  ? "💡 በዊንዶውስ 10 የአማርኛ ኪቦርድ ህግ (ለምሳሌ፡ alemu -> አለሙ፣ kebede -> ከበደ)"
+                  : "የቀጥታ ፊደላት አጻጻፍ በርቷል"}
+              </p>
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                Customer Full Name (English)
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300">
+                  Customer Full Name (English)
+                </label>
+                {form.customerFullNameEng && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const amh = transliterateNamePhonetic(form.customerFullNameEng);
+                      if (amh) setForm((prev) => ({ ...prev, customerFullName: amh }));
+                    }}
+                    className="text-[10px] text-blue-600 dark:text-blue-400 hover:underline font-semibold"
+                    title="ይህን ስም ወደ አማርኛ ስም መሙያ ይገልብጡ"
+                  >
+                    🔄 ወደ አማርኛ ገልብጥ
+                  </button>
+                )}
+              </div>
               <input
                 type="text"
                 value={form.customerFullNameEng}
@@ -275,24 +354,51 @@ export default function CustomApplicationModal({
               <input
                 type="text"
                 value={form.applicantName}
-                onChange={(e) => setForm({ ...form, applicantName: e.target.value })}
+                onChange={(e) => {
+                  handleAmharicInputChange(
+                    e,
+                    (val) => setForm((prev) => ({ ...prev, applicantName: val })),
+                    isAmharicKeyboardOn
+                  );
+                }}
+                onBlur={(e) => {
+                  if (isAmharicKeyboardOn && e.target.value) {
+                    setForm((prev) => ({
+                      ...prev,
+                      applicantName: transliterateNamePhonetic(e.target.value),
+                    }));
+                  }
+                }}
                 placeholder="ጠያቂው የተለየ ከሆነ ያስገቡ"
                 className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700/50 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                ስልክ ቁጥር <span className="text-red-500">*</span>
+              <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1 flex items-center justify-between">
+                <span>ስልክ ቁጥር (Phone Number) <span className="text-red-500">*</span></span>
+                <span className="text-[10px] font-mono text-gray-400">
+                  {phoneDigits.length}/9 ቁጥሮች
+                </span>
               </label>
-              <input
-                type="text"
-                required
-                value={form.phoneNumber}
-                onChange={(e) => setForm({ ...form, phoneNumber: e.target.value })}
-                placeholder="+251912345678"
-                className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700/50 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
-              />
+              <div className="flex rounded-lg shadow-sm border border-gray-300 dark:border-gray-600 overflow-hidden focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500 bg-gray-50 dark:bg-gray-700/50">
+                <span className="inline-flex items-center px-3 bg-gray-200/80 dark:bg-gray-600/80 border-r border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 font-mono text-xs font-bold select-none">
+                  +251
+                </span>
+                <input
+                  type="tel"
+                  inputMode="numeric"
+                  required
+                  maxLength={9}
+                  value={phoneDigits}
+                  onChange={handlePhoneChange}
+                  placeholder="9XXXXXXXX"
+                  className="w-full px-3 py-2 text-sm font-mono tracking-wider bg-transparent dark:text-white outline-none"
+                />
+              </div>
+              <p className="text-[10px] text-gray-400 mt-1">
+                ከ +251 ቀጥሎ ያሉትን 9 አሃዞች ብቻ ያስገቡ (በ 9 ወይም 7 የሚጀምር)
+              </p>
             </div>
 
             <div>
@@ -418,7 +524,13 @@ export default function CustomApplicationModal({
             <textarea
               rows={2}
               value={form.addressDescription}
-              onChange={(e) => setForm({ ...form, addressDescription: e.target.value })}
+              onChange={(e) => {
+                handleAmharicInputChange(
+                  e,
+                  (val) => setForm((prev) => ({ ...prev, addressDescription: val })),
+                  isAmharicKeyboardOn
+                );
+              }}
               placeholder="ለምሳሌ: ከመስጊዱ በስተጀርባ፣ ከዋናው አስፋልት 100 ሜትር ገባ ብሎ..."
               className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700/50 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
             />

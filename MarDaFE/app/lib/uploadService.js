@@ -17,7 +17,7 @@ export const uploadCsvFile = async (file) => {
   // The key 'file' MUST match the @RequestParam("file") in your Spring controller
   formData.append("file", file);
 
-  const response = await fetch(`${API_BASE_URL}/api/card_managenment/upload`, {
+  const response = await fetch(`${API_BASE_URL}/api/mardaerp/upload`, {
     method: "POST",
     body: formData,
     // IMPORTANT: Do NOT set the 'Content-Type' header yourself.

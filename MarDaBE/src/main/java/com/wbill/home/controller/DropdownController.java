@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/card_managenment/dropdowns")
+@RequestMapping("/api/mardaerp/dropdowns")
 public class DropdownController {
 
     @Autowired

@@ -90,7 +90,7 @@ import com.wbill.home.util.EthiopianCalendarUtil;
  * Handles REST requests related to readings.
  */
 @RestController
-@RequestMapping("/api/card_managenment")
+@RequestMapping("/api/mardaerp")
 public class ReadingController {
     private static final Logger log = LoggerFactory.getLogger(ReadingController.class);
 

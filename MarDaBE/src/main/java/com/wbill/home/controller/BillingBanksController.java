@@ -18,7 +18,7 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 
 @RestController
-@RequestMapping("/api/card_managenment/billing-banks")
+@RequestMapping("/api/mardaerp/billing-banks")
 @CrossOrigin(origins = "*", maxAge = 3600)
 public class BillingBanksController {
 

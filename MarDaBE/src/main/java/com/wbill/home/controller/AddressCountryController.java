@@ -15,7 +15,7 @@ import java.util.List;
 import java.util.Optional;
 
 @RestController
-@RequestMapping("/api/card_managenment/address-countries")
+@RequestMapping("/api/mardaerp/address-countries")
 @CrossOrigin(origins = "*")
 public class AddressCountryController {
 

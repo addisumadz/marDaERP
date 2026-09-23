@@ -11,7 +11,7 @@ import com.wbill.home.model.hrms.HrmsBiometricDevice;
 import com.wbill.home.service.hrms.HrmsBiometricSyncService;
 
 @RestController
-@RequestMapping({"/api/card_managenment/hrms/biometric", "/api/hrms/biometric"})
+@RequestMapping({"/api/mardaerp/hrms/biometric", "/api/hrms/biometric"})
 @CrossOrigin(origins = "*", maxAge = 3600)
 public class HrmsBiometricController {
 

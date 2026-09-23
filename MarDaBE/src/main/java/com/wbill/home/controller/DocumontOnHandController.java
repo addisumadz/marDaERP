@@ -14,7 +14,7 @@ import java.util.Optional;
 //@CrossOrigin(origins = "http://192.168.100.106:9000")
 //@CrossOrigin(origins = "http://192.168.100.105:9000")
 @RestController
-@RequestMapping("/api/card_managenment/")
+@RequestMapping("/api/mardaerp/")
 public class DocumontOnHandController {
 
     @Autowired

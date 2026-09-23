@@ -13,7 +13,7 @@ import java.util.List;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/api/card_managenment/inv-store-users")
+@RequestMapping("/api/mardaerp/inv-store-users")
 @CrossOrigin(origins = "*", maxAge = 3600)
 public class InvStoreUserController {
 

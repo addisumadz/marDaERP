@@ -20,7 +20,7 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 
 @RestController
-@RequestMapping("/api/card_managenment/fnc-opening-balances")
+@RequestMapping("/api/mardaerp/fnc-opening-balances")
 @CrossOrigin(origins = "*", maxAge = 3600)
 public class FncOpeningBalanceController {
 

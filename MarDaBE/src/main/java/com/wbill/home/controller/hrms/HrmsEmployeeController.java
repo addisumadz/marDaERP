@@ -9,7 +9,7 @@ import com.wbill.home.model.hrms.HrmsEmployee;
 import com.wbill.home.service.hrms.HrmsEmployeeService;
 
 @RestController
-@RequestMapping({"/api/card_managenment/hrms/employees", "/api/hrms/employees"})
+@RequestMapping({"/api/mardaerp/hrms/employees", "/api/hrms/employees"})
 @CrossOrigin(origins = "*", maxAge = 3600)
 public class HrmsEmployeeController {
 

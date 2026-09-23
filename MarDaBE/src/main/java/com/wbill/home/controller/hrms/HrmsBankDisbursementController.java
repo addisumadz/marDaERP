@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.*;
 import com.wbill.home.service.hrms.HrmsBankExportService;
 
 @RestController
-@RequestMapping({"/api/card_managenment/hrms/bank-disbursement", "/api/hrms/bank-disbursement"})
+@RequestMapping({"/api/mardaerp/hrms/bank-disbursement", "/api/hrms/bank-disbursement"})
 @CrossOrigin(origins = "*", maxAge = 3600)
 public class HrmsBankDisbursementController {
 

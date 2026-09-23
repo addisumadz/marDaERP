@@ -18,7 +18,7 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 
 @RestController
-@RequestMapping("/api/card_managenment/billing-meter-sizes")
+@RequestMapping("/api/mardaerp/billing-meter-sizes")
 @CrossOrigin(origins = "*")
 public class BillingMeterSizeController {
 

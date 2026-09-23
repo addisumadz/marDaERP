@@ -18,7 +18,7 @@ import java.util.Map;
 import java.util.Optional;
 
 @RestController
-@RequestMapping("/api/card_managenment/address-ketenas")
+@RequestMapping("/api/mardaerp/address-ketenas")
 @CrossOrigin(origins = "*")
 public class AddressKetenaController {
 

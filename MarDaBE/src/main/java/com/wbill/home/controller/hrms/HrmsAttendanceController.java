@@ -12,7 +12,7 @@ import com.wbill.home.repository.hrms.HrmsShiftScheduleRepository;
 import com.wbill.home.service.hrms.HrmsAttendanceEvaluationService;
 
 @RestController
-@RequestMapping({"/api/card_managenment/hrms/attendance", "/api/hrms/attendance"})
+@RequestMapping({"/api/mardaerp/hrms/attendance", "/api/hrms/attendance"})
 @CrossOrigin(origins = "*", maxAge = 3600)
 public class HrmsAttendanceController {
 

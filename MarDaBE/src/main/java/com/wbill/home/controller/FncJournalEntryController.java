@@ -17,7 +17,7 @@ import java.util.List;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/api/card_managenment/fnc-journal-entries")
+@RequestMapping("/api/mardaerp/fnc-journal-entries")
 @CrossOrigin(origins = "*", maxAge = 3600)
 public class FncJournalEntryController {
 

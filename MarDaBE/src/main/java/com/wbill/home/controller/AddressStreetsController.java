@@ -19,7 +19,7 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 
 @RestController
-@RequestMapping("/api/card_managenment/address-streets")
+@RequestMapping("/api/mardaerp/address-streets")
 @CrossOrigin(origins = "*", maxAge = 3600)
 public class AddressStreetsController {
 

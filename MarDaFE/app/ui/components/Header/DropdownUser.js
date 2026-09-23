@@ -7,15 +7,15 @@ import { useRouter } from "next/navigation";
 const DropdownUser = () => {
   const { data: session, status } = useSession();
   const router = useRouter();
-  if (status === "authenticated") {
-    if (session.isTokenExpierd == 1) {
-      (async () => {
-        signOutHandler();
-        await signOut({ redirect: false });
+
+  useEffect(() => {
+    if (status === "authenticated" && (session?.isTokenExpired === 1 || session?.isTokenExpierd === 1)) {
+      signOutHandler();
+      signOut({ redirect: false }).then(() => {
         router.push("/signin");
-      })();
+      });
     }
-  }
+  }, [status, session, router]);
 
   const [dropdownOpen, setDropdownOpen] = useState(false);
 

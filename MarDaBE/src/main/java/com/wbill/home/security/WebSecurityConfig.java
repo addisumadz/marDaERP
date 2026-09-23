@@ -155,25 +155,25 @@ public class WebSecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         // ✅ Public authentication endpoints
                         .requestMatchers("/api/auth/**").permitAll()
-                        // ✅ Public legacy mobile (ZPI-compatible) endpoints - These use internal
-                        // authentication
+                        // ✅ Public company profile latest (needed by unauthenticated login screen)
+                        .requestMatchers(HttpMethod.GET, 
+                                "/api/mardaerp/company-profile/latest", 
+                                "/api/card_managenment/company-profile/latest").permitAll()
+                        // ✅ Public legacy mobile (ZPI-compatible) endpoints - These use internal authentication
                         .requestMatchers("/Billing_Inventory/billing/**").permitAll()
                         // ✅ New Mobile App endpoint - Uses internal authentication mechanism
                         .requestMatchers("/mardamobileapp/billing/**").permitAll()
-                        // 🔒 SECURITY: Cashier payments require JWT authentication
-                        .requestMatchers(HttpMethod.PUT, "/api/card_managenment/*/cashier-payment").authenticated()
-                        // ⚠️ LEGACY: Card management endpoints currently public for backward
-                        // compatibility
-                        // TODO: Review and restrict these endpoints in future security audit
-                        .requestMatchers("/api/card_managenment/**").permitAll()
-                        // ✅ HRMS Enterprise endpoints
-                        .requestMatchers("/api/hrms/**").permitAll()
                         // ✅ Permit Spring Boot error endpoint
                         .requestMatchers("/error", "/error/**").permitAll()
                         // ✅ Permit health probe without authentication
                         .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
                         // ✅ Allow all CORS preflight requests
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                        // 🔒 SECURITY: All MardaERP business, HRMS, and legacy endpoints require JWT authentication
+                        .requestMatchers("/api/mardaerp/**").authenticated()
+                        .requestMatchers("/api/card_managenment/**").authenticated()
+                        .requestMatchers("/api/mardaerpRole/**", "/api/card_managenmentRole/**").authenticated()
+                        .requestMatchers("/api/hrms/**").authenticated()
                         // 🔒 SECURITY: All other requests require authentication
                         .anyRequest().authenticated())
                 .authenticationProvider(authenticationProvider())

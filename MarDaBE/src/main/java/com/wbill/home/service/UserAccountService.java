@@ -14,6 +14,8 @@ import com.wbill.home.repository.UserRoleRepository;
 import jakarta.persistence.EntityNotFoundException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -144,16 +146,26 @@ public class UserAccountService {
 
   // Change password (separate management)
   public void changePassword(Integer id, PasswordChangeDTO payload) {
-    if (payload == null || payload.newPassword == null) {
+    if (payload == null || payload.newPassword == null || payload.newPassword.isBlank()) {
       throw new IllegalArgumentException("New password is required");
     }
     UserAccount u = repo.findById(id).orElseThrow(() -> new EntityNotFoundException("UserAccount not found: " + id));
-    // If currentPassword provided, verify; if missing (super admin flow), skip verification
-    if (payload.currentPassword != null && !payload.currentPassword.isBlank()) {
+
+    // Verify caller privileges: Only authenticated ROLE_ADMIN can bypass currentPassword
+    Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+    boolean isAdmin = auth != null && auth.isAuthenticated() && auth.getAuthorities().stream()
+        .anyMatch(a -> a.getAuthority().equalsIgnoreCase("ROLE_ADMIN") 
+                    || a.getAuthority().equalsIgnoreCase("ADMIN"));
+
+    if (!isAdmin) {
+      if (payload.currentPassword == null || payload.currentPassword.isBlank()) {
+        throw new IllegalArgumentException("Current password is required");
+      }
       if (!passwordEncoder.matches(payload.currentPassword, u.getPassword())) {
         throw new IllegalArgumentException("Current password is incorrect");
       }
     }
+
     u.setPassword(passwordEncoder.encode(payload.newPassword));
     u.setModifiedDate(new Date());
     repo.save(u);

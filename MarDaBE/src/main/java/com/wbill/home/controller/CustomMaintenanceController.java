@@ -19,7 +19,7 @@ import java.util.List;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/api/card_managenment/custom-maintenance")
+@RequestMapping("/api/mardaerp/custom-maintenance")
 @CrossOrigin(origins = "*")
 public class CustomMaintenanceController {
 

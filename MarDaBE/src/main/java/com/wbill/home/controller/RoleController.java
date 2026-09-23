@@ -13,7 +13,7 @@ import java.util.Optional;
 
  
 @RestController
-@RequestMapping("/api/card_managenmentRole")
+@RequestMapping("/api/mardaerpRole")
 public class RoleController {
 
 	@Autowired

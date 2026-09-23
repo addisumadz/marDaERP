@@ -81,18 +81,32 @@ const authOptions = {
       return token;
     },
     async session({ session, token }) {
-      // Check if JWT token is expired
-      const payload = token?.accessToken?.split?.(".")?.[1];
-      const decodedJwt = payload
-        ? JSON.parse(Buffer.from(payload, "base64").toString("utf8"))
-        : null;
+      // Safely decode and check if JWT token is expired
+      let decodedJwt = null;
+      try {
+        const payload = token?.accessToken?.split?.(".")?.[1];
+        if (payload) {
+          const base64 = payload.replace(/-/g, "+").replace(/_/g, "/");
+          const pad = base64.length % 4;
+          const paddedBase64 = pad ? base64 + "=".repeat(4 - pad) : base64;
+          decodedJwt = JSON.parse(Buffer.from(paddedBase64, "base64").toString("utf8"));
+        }
+      } catch (e) {
+        console.error("[NextAuth][session] Error decoding JWT token payload:", e.message);
+      }
 
-      if (decodedJwt?.exp * 1000 > Date.now()) {
-        // Token is valid - copy all token data to session
+      const isExpired = !decodedJwt?.exp || (decodedJwt.exp * 1000 <= Date.now());
+
+      if (!isExpired) {
+        // Token is valid - copy token data to session
         session = { ...token };
-        session.isTokenExpierd = 0;
+        session.isTokenExpired = 0;
+        session.isTokenExpierd = 0; // backward compatibility
       } else {
-        session.isTokenExpierd = 1;
+        session = { ...token };
+        session.isTokenExpired = 1;
+        session.isTokenExpierd = 1; // backward compatibility
+        session.error = "AccessTokenExpired";
       }
 
       // Ensure roles are available in session.user and at session level for middleware

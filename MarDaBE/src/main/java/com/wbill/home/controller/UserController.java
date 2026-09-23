@@ -25,7 +25,7 @@ import java.util.Optional;
 import java.util.Set;
  
 @RestController
-@RequestMapping("/api/card_managenment")
+@RequestMapping("/api/mardaerp")
 public class UserController {
 
     @Autowired

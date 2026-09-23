@@ -28,7 +28,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 
 @RestController
-@RequestMapping("/api/card_managenment/customer")
+@RequestMapping("/api/mardaerp/customer")
 public class BillingCustomerInfoController {
     // System.out.println("Finding customer with id: ");
 

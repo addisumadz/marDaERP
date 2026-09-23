@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/card_managenment/page-permissions")
+@RequestMapping("/api/mardaerp/page-permissions")
 @CrossOrigin(origins = "*", maxAge = 3600)
 @PreAuthorize("hasAuthority('systemadmin')")
 public class PagePermissionAdminController {

@@ -12,7 +12,7 @@ import java.security.Principal;
 import java.util.*;
 
 @RestController
-@RequestMapping("/api/card_managenment/inv-adjustments")
+@RequestMapping("/api/mardaerp/inv-adjustments")
 @CrossOrigin(origins = "*", maxAge = 3600)
 public class InvStockAdjustmentController {
 

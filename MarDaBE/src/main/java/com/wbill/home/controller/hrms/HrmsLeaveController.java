@@ -10,7 +10,7 @@ import com.wbill.home.model.hrms.HrmsLeaveType;
 import com.wbill.home.service.hrms.HrmsLeaveService;
 
 @RestController
-@RequestMapping({"/api/card_managenment/hrms/leave", "/api/hrms/leave"})
+@RequestMapping({"/api/mardaerp/hrms/leave", "/api/hrms/leave"})
 @CrossOrigin(origins = "*", maxAge = 3600)
 public class HrmsLeaveController {
 

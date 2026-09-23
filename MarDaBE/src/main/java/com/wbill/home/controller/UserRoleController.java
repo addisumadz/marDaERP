@@ -18,7 +18,7 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 
 @RestController
-@RequestMapping("/api/card_managenment/user-roles")
+@RequestMapping("/api/mardaerp/user-roles")
 @CrossOrigin(origins = "*")
 public class UserRoleController {
 

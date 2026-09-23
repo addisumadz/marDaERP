@@ -237,11 +237,11 @@ export function generateCostEstimationPdf(request) {
   doc.text(`ከድርጅቱ የተገዙ እቃዎች:`, 110, currentY + 13);
   doc.text(`ETB ${Number(request.materialsUtilityTotal || 0).toFixed(2)}`, 190, currentY + 13, { align: "right" });
 
-  doc.text(`የአገልግሎት ክፍያ (55%):`, 110, currentY + 20);
-  doc.text(`ETB ${Number(request.serviceChargeAmount || 0).toFixed(2)}`, 190, currentY + 20, { align: "right" });
+  doc.text(`የትራንስፖርት (25%):`, 110, currentY + 20);
+  doc.text(`ETB ${Number(request.transportChargeAmount || 0).toFixed(2)}`, 190, currentY + 20, { align: "right" });
 
-  doc.text(`የትራንስፖርት (25%):`, 110, currentY + 27);
-  doc.text(`ETB ${Number(request.transportChargeAmount || 0).toFixed(2)}`, 190, currentY + 27, { align: "right" });
+  doc.text(`የአገልግሎት ክፍያ (55%):`, 110, currentY + 27);
+  doc.text(`ETB ${Number(request.serviceChargeAmount || 0).toFixed(2)}`, 190, currentY + 27, { align: "right" });
 
   doc.text(`ተጨማሪ ክፍያዎች:`, 110, currentY + 34);
   doc.text(`ETB ${Number(request.additionalFeesTotal || 0).toFixed(2)}`, 190, currentY + 34, { align: "right" });

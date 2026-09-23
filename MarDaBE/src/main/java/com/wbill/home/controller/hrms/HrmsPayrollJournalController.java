@@ -9,7 +9,7 @@ import com.wbill.home.model.FncJournalEntry;
 import com.wbill.home.service.hrms.HrmsJournalIntegrationService;
 
 @RestController
-@RequestMapping({"/api/card_managenment/hrms/payroll-journal", "/api/hrms/payroll-journal"})
+@RequestMapping({"/api/mardaerp/hrms/payroll-journal", "/api/hrms/payroll-journal"})
 @CrossOrigin(origins = "*", maxAge = 3600)
 public class HrmsPayrollJournalController {
 

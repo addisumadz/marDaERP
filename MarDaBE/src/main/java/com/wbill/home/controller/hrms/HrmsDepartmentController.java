@@ -12,7 +12,7 @@ import com.wbill.home.repository.hrms.HrmsJobGradeRepository;
 import com.wbill.home.repository.hrms.HrmsPositionRepository;
 
 @RestController
-@RequestMapping({"/api/card_managenment/hrms/departments", "/api/hrms/departments"})
+@RequestMapping({"/api/mardaerp/hrms/departments", "/api/hrms/departments"})
 @CrossOrigin(origins = "*", maxAge = 3600)
 public class HrmsDepartmentController {
 

@@ -20,7 +20,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 @RestController
-@RequestMapping("/api/card_managenment/inv-stock")
+@RequestMapping("/api/mardaerp/inv-stock")
 @CrossOrigin(origins = "*", maxAge = 3600)
 public class InvStockController {
 

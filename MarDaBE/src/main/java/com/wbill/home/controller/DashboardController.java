@@ -12,7 +12,7 @@ import com.wbill.home.model.DashboardSummary;
 import com.wbill.home.service.DashboardService;
 
 @RestController
-@RequestMapping("/api/card_managenment/dashboard")
+@RequestMapping("/api/mardaerp/dashboard")
 public class DashboardController {
 
     @Autowired

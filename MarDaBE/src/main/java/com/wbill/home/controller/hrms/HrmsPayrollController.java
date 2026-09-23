@@ -15,7 +15,7 @@ import com.wbill.home.repository.hrms.*;
 import com.wbill.home.service.hrms.HrmsPayrollCalculationEngine;
 
 @RestController
-@RequestMapping({"/api/card_managenment/hrms/payroll", "/api/hrms/payroll"})
+@RequestMapping({"/api/mardaerp/hrms/payroll", "/api/hrms/payroll"})
 @CrossOrigin(origins = "*", maxAge = 3600)
 public class HrmsPayrollController {
 

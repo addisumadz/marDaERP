@@ -69,6 +69,9 @@ import {
   canFinalizeCustomerActivation,
   getUserRoleBadge,
   isAdminRole,
+  isTechnicalRole,
+  isRevenueOfficerRole,
+  isStoreRole,
 } from "./customNewLineUserRoles";
 
 export default function CustomNewLineConnectionPage() {
@@ -243,6 +246,25 @@ export default function CustomNewLineConnectionPage() {
 
   // Contextual View / Relative Action Handlers
   const handleViewAction = (req) => {
+    // If the logged-in user is a Revenue Officer and the request has passed payment (or is at payment stage),
+    // open Step 4 (CustomPaymentApprovalModal) which displays the approved payment summary in read-only mode
+    const isPureRevenue = isRevenueOfficerRole(userRoles) && !isStoreRole(userRoles) && !isTechnicalRole(userRoles);
+    if (
+      isPureRevenue &&
+      (req.status === "PENDING_PAYMENT_APPROVAL" ||
+        req.isPaid ||
+        [
+          "PENDING_STORE_COLLECTION",
+          "MATERIALS_COLLECTED",
+          "INSTALLATION_IN_PROGRESS",
+          "INSTALLATION_COMPLETED",
+          "FINAL_ACTIVATION_COMPLETED",
+        ].includes(req.status))
+    ) {
+      handleOpenPayment(req);
+      return;
+    }
+
     switch (req.status) {
       case "PENDING_SURVEY_ASSIGNMENT":
         if (canAssignSurveyPlumber(userRoles)) {
@@ -289,6 +311,22 @@ export default function CustomNewLineConnectionPage() {
   };
 
   const getViewActionTitle = (req) => {
+    const isPureRevenue = isRevenueOfficerRole(userRoles) && !isStoreRole(userRoles) && !isTechnicalRole(userRoles);
+    if (
+      isPureRevenue &&
+      (req.status === "PENDING_PAYMENT_APPROVAL" ||
+        req.isPaid ||
+        [
+          "PENDING_STORE_COLLECTION",
+          "MATERIALS_COLLECTED",
+          "INSTALLATION_IN_PROGRESS",
+          "INSTALLATION_COMPLETED",
+          "FINAL_ACTIVATION_COMPLETED",
+        ].includes(req.status))
+    ) {
+      return "የክፍያ ማጠቃለያ እና እቃዎች ዝርዝር ይመልከቱ";
+    }
+
     switch (req.status) {
       case "PENDING_SURVEY_ASSIGNMENT":
         return "የዳሰሳ ጥናት ባለሙያ መመደቢያ ይመልከቱ / መድብ";
@@ -940,7 +978,7 @@ export default function CustomNewLineConnectionPage() {
                           {/* 3. Stage 3 -> Revenue Payment Approval */}
                           {req.status === "PENDING_PAYMENT_APPROVAL" && (
                             <>
-                              {canApprovePayment(userRoles) ? (
+                              {canApprovePayment(userRoles) && !req.isPaid ? (
                                 <button
                                   type="button"
                                   onClick={() => handleOpenPayment(req)}
@@ -950,7 +988,7 @@ export default function CustomNewLineConnectionPage() {
                                 </button>
                               ) : (
                                 <span className="text-[11px] text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/40 px-2 py-0.5 rounded font-medium">
-                                  ክፍያ በመጠባበቅ (ገቢዎች)
+                                  {req.isPaid ? "ክፍያ ጸድቋል ✓" : "ክፍያ በመጠባበቅ (ገቢዎች)"}
                                 </span>
                               )}
                               <button
@@ -1219,7 +1257,16 @@ export default function CustomNewLineConnectionPage() {
                     </div>
 
                     <div className="bg-white dark:bg-gray-800 p-3 rounded-lg border border-gray-200 dark:border-gray-700">
-                      <div className="font-bold text-gray-700 dark:text-gray-300 border-b pb-1 mb-2">የክፍያ መረጃ</div>
+                      <div className="font-bold text-gray-700 dark:text-gray-300 border-b pb-1 mb-2 flex items-center justify-between">
+                        <span>የክፍያ መረጃ</span>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenPayment(expReq)}
+                          className="text-[10px] font-semibold text-purple-600 hover:text-purple-800 dark:text-purple-400 dark:hover:text-purple-300 underline"
+                        >
+                          ዝርዝር ይመልከቱ
+                        </button>
+                      </div>
                       <div>የተከፈለ: <strong>{expReq.isPaid ? "አዎ ✓" : "አይደለም"}</strong></div>
                       <div>ደረሰኝ ቁጥር: <strong className="font-mono">{expReq.paymentReceiptNumber || "—"}</strong></div>
                       <div>ጠቅላላ ክፍያ: <strong className="font-mono text-blue-600">ETB {Number(expReq.totalPayableAmount || 0).toFixed(2)}</strong></div>

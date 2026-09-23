@@ -67,13 +67,32 @@ export default function CustomPaymentApprovalModal({
     ]);
   }, [effectiveRoles]);
 
-  // Technical role users must NEVER have payment confirmation capability
+  // Determine if payment has already been approved for this request
+  const isPaymentApproved = useMemo(() => {
+    if (!request) return false;
+    return Boolean(
+      request.isPaid ||
+      (request.status &&
+        request.status !== "PENDING_PAYMENT_APPROVAL" &&
+        request.status !== "SURVEY_IN_PROGRESS" &&
+        request.status !== "PENDING_SURVEY_ASSIGNMENT" &&
+        request.status !== "RETURNED_FOR_REVISION") ||
+      request.paymentReceiptNumber ||
+      request.paymentApprovedDate
+    );
+  }, [request]);
+
+  // Technical role users must NEVER have payment confirmation capability.
+  // When payment is already approved, NO ONE (including Revenue Office) can edit items/prices or approve payment again.
   const canConfirmPayment = useMemo(() => {
+    if (isPaymentApproved) {
+      return false;
+    }
     if (isTechnical && !isRevenueOfficer) {
       return false;
     }
     return isRevenueOfficer || (isAdminRole(effectiveRoles) && !isTechnical);
-  }, [isTechnical, isRevenueOfficer, effectiveRoles]);
+  }, [isPaymentApproved, isTechnical, isRevenueOfficer, effectiveRoles]);
 
   // Catalogs & Store Data
   const [commonMaterials, setCommonMaterials] = useState([]);
@@ -524,10 +543,19 @@ export default function CustomPaymentApprovalModal({
           <div className="flex items-center gap-2.5">
             <Banknote className="w-5 h-5 text-purple-200" />
             <div>
-              <h2 className="text-base font-bold">
-                {canConfirmPayment
-                  ? "ደረጃ 4፡ የክፍያ ማረጋገጫ እና ማጽደቂያ (Step 4: Review Items, Update Prices & Approve Payment)"
-                  : "ደረጃ 4፡ የዋጋ ግምት እና የክፍያ ማጠቃለያ (Step 4: Review Items & Payment Summary)"}
+              <h2 className="text-base font-bold flex items-center gap-2 flex-wrap">
+                {isPaymentApproved ? (
+                  <>
+                    <span>ደረጃ 4፡ የዋጋ ግምት እና የጸደቀ ክፍያ (Step 4: Review Items & Payment Summary)</span>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500 text-white flex items-center gap-1 shadow-sm">
+                      <CheckCircle className="w-3 h-3" /> ክፍያ ጸድቋል (Paid)
+                    </span>
+                  </>
+                ) : canConfirmPayment ? (
+                  "ደረጃ 4፡ የክፍያ ማረጋገጫ እና ማጽደቂያ (Step 4: Review Items, Update Prices & Approve Payment)"
+                ) : (
+                  "ደረጃ 4፡ የዋጋ ግምት እና የክፍያ ማጠቃለያ (Step 4: Review Items & Payment Summary)"
+                )}
               </h2>
               <span className="text-xs text-purple-100 font-mono">
                 ማመልከቻ ቁጥር: {request.applicationNumber} • ደንበኛ: {request.customerFullName}
@@ -707,11 +735,23 @@ export default function CustomPaymentApprovalModal({
             </div>
 
             {/* Instruction banner */}
-            <div className="bg-purple-50/70 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-900/40 px-3 py-2 rounded-lg text-[11px] text-purple-900 dark:text-purple-300 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1">
+            <div className={`px-3 py-2 rounded-lg text-[11px] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1 border ${
+              isPaymentApproved
+                ? "bg-emerald-50/80 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800 text-emerald-900 dark:text-emerald-200"
+                : "bg-purple-50/70 dark:bg-purple-950/20 border-purple-200 dark:border-purple-900/40 text-purple-900 dark:text-purple-300"
+            }`}>
               <span>
-                💡 <strong>ለክፍያ ማረጋገጫ:</strong> <strong>"የተገመተ ብዛት"</strong> ወይም <strong>የአንዱ ዋጋ</strong> ማስተካከል ይችላሉ። በመጋዘን ክምችት መሰረት <strong>ከድርጅቱ</strong> እና <strong>ከውጭ (Market) (የጎደለው)</strong> እቃዎች በራስ-ሰር ይከፋፈላሉ።
+                {isPaymentApproved ? (
+                  <>
+                    🔒 <strong>የተጠናቀቀ የክፍያ መረጃ:</strong> ክፍያው ስለጸደቀ የእቃዎች ዝርዝር፣ ብዛት እና ዋጋዎች ለውጥ ማድረግ አይቻልም (Read-only)።
+                  </>
+                ) : (
+                  <>
+                    💡 <strong>ለክፍያ ማረጋገጫ:</strong> <strong>"የተገመተ ብዛት"</strong> ወይም <strong>የአንዱ ዋጋ</strong> ማስተካከል ይችላሉ። በመጋዘን ክምችት መሰረት <strong>ከድርጅቱ</strong> እና <strong>ከውጭ (Market) (የጎደለው)</strong> እቃዎች በራስ-ሰር ይከፋፈላሉ።
+                  </>
+                )}
               </span>
-              <span className="font-semibold text-purple-700 dark:text-purple-400 shrink-0">
+              <span className={`font-semibold shrink-0 ${isPaymentApproved ? "text-emerald-700 dark:text-emerald-400" : "text-purple-700 dark:text-purple-400"}`}>
                 የተመረጡ: {items.filter((it) => (Number(it.surveyedQuantity) || 0) > 0).length} እቃዎች
               </span>
             </div>
@@ -1070,7 +1110,61 @@ export default function CustomPaymentApprovalModal({
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 pt-2">
             {/* Left side: Payment Confirmation Inputs (7 cols) */}
             <div className="lg:col-span-7">
-              {canConfirmPayment ? (
+              {isPaymentApproved ? (
+                /* Payment Already Approved - Read-Only Completed Summary Card */
+                <div className="bg-emerald-50/80 dark:bg-emerald-950/30 p-4 rounded-xl border border-emerald-300 dark:border-emerald-800 space-y-3 shadow-sm">
+                  <div className="flex items-center justify-between border-b border-emerald-200 dark:border-emerald-800 pb-2">
+                    <h4 className="font-bold text-sm text-emerald-900 dark:text-emerald-200 flex items-center gap-2">
+                      <CheckCircle className="w-4 h-4 text-emerald-600" />
+                      የተረጋገጠ የክፍያ መረጃ (Payment Approved & Recorded)
+                    </h4>
+                    <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-600 text-white shadow-sm">
+                      <CheckCircle className="w-3 h-3" /> ክፍያ ተጠናቋል
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                    <div className="bg-white dark:bg-gray-800 p-2.5 rounded-lg border border-emerald-100 dark:border-emerald-900/50">
+                      <span className="text-[11px] text-gray-500 dark:text-gray-400 block mb-0.5">የደረሰኝ ቁጥር (Receipt No.):</span>
+                      <span className="font-mono font-bold text-sm text-emerald-800 dark:text-emerald-300">
+                        {request.paymentReceiptNumber || receiptNumber || "—"}
+                      </span>
+                    </div>
+
+                    <div className="bg-white dark:bg-gray-800 p-2.5 rounded-lg border border-emerald-100 dark:border-emerald-900/50">
+                      <span className="text-[11px] text-gray-500 dark:text-gray-400 block mb-0.5">የባንክ ማጣቀሻ / ቼክ ቁጥር (Ref No.):</span>
+                      <span className="font-mono font-semibold text-gray-800 dark:text-gray-200">
+                        {request.paymentReferenceNumber || referenceNumber || "—"}
+                      </span>
+                    </div>
+
+                    <div className="bg-white dark:bg-gray-800 p-2.5 rounded-lg border border-emerald-100 dark:border-emerald-900/50">
+                      <span className="text-[11px] text-gray-500 dark:text-gray-400 block mb-0.5">ያጸደቀው ባለሙያ (Approved By):</span>
+                      <span className="font-semibold text-gray-800 dark:text-gray-200">
+                        {request.paymentApprovedBy || "ገቢዎች ክፍል (Revenue Officer)"}
+                      </span>
+                    </div>
+
+                    <div className="bg-white dark:bg-gray-800 p-2.5 rounded-lg border border-emerald-100 dark:border-emerald-900/50">
+                      <span className="text-[11px] text-gray-500 dark:text-gray-400 block mb-0.5">የጸደቀበት ቀን (Approved Date):</span>
+                      <span className="font-mono text-gray-800 dark:text-gray-200">
+                        {request.paymentApprovedDate
+                          ? new Date(request.paymentApprovedDate).toLocaleString()
+                          : "—"}
+                      </span>
+                    </div>
+                  </div>
+
+                  {(request.paymentRemarks || request.remarks || remarks) && (
+                    <div className="bg-white dark:bg-gray-800 p-2.5 rounded-lg border border-emerald-100 dark:border-emerald-900/50 text-xs">
+                      <span className="text-[11px] text-gray-500 dark:text-gray-400 block mb-0.5">የክፍያ ማስታወሻ (Remarks):</span>
+                      <p className="text-gray-700 dark:text-gray-300 font-medium">
+                        {request.paymentRemarks || request.remarks || remarks}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              ) : canConfirmPayment ? (
                 <div className="bg-purple-50/60 dark:bg-purple-950/20 p-4 rounded-xl border border-purple-200 dark:border-purple-800 space-y-3 shadow-sm">
                   <h4 className="font-bold text-sm text-purple-900 dark:text-purple-200 flex items-center gap-2 border-b border-purple-200 dark:border-purple-800 pb-1.5">
                     <Banknote className="w-4 h-4 text-purple-600" />
@@ -1234,7 +1328,7 @@ export default function CustomPaymentApprovalModal({
               disabled={submitting}
               className="px-4 py-2 text-xs font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-colors"
             >
-              ይቅር
+              {isPaymentApproved ? "ዝጋ" : "ይቅር"}
             </button>
 
             {canConfirmPayment ? (

@@ -124,6 +124,7 @@ export function isNewLineActionRequiredForRole(status, roles = []) {
     return [
       "PENDING_SURVEY_ASSIGNMENT",
       "SURVEY_IN_PROGRESS",
+      "RETURNED_FOR_REVISION",
       "PENDING_PAYMENT_APPROVAL",
       "PENDING_STORE_COLLECTION",
       "MATERIALS_COLLECTED",
@@ -135,6 +136,7 @@ export function isNewLineActionRequiredForRole(status, roles = []) {
   switch (status) {
     case "PENDING_SURVEY_ASSIGNMENT":
     case "SURVEY_IN_PROGRESS":
+    case "RETURNED_FOR_REVISION":
     case "MATERIALS_COLLECTED":
     case "INSTALLATION_IN_PROGRESS":
       return isTech && !isRev && !isStore;
@@ -164,6 +166,7 @@ export function isMaintenanceActionRequiredForRole(status, roles = []) {
     return [
       "PENDING_SURVEY_ASSIGNMENT",
       "SURVEY_IN_PROGRESS",
+      "RETURNED_FOR_REVISION",
       "PENDING_PAYMENT_APPROVAL",
       "PENDING_STORE_COLLECTION",
       "MATERIALS_COLLECTED",
@@ -174,6 +177,7 @@ export function isMaintenanceActionRequiredForRole(status, roles = []) {
   switch (status) {
     case "PENDING_SURVEY_ASSIGNMENT":
     case "SURVEY_IN_PROGRESS":
+    case "RETURNED_FOR_REVISION":
     case "MATERIALS_COLLECTED":
     case "MAINTENANCE_IN_PROGRESS":
       return isTech && !isRev && !isStore;
@@ -185,3 +189,4 @@ export function isMaintenanceActionRequiredForRole(status, roles = []) {
       return false;
   }
 }
+

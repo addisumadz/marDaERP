@@ -74,6 +74,11 @@ export default function CustomPaymentApprovalModal({
   const [referenceNumber, setReferenceNumber] = useState("");
   const [remarks, setRemarks] = useState("");
 
+  // Return for Revision state
+  const [isRevisionOpen, setIsRevisionOpen] = useState(false);
+  const [revisionRemarks, setRevisionRemarks] = useState("");
+  const [returningRevision, setReturningRevision] = useState(false);
+
   // Review & Editable Items State
   const [items, setItems] = useState([]);
   const [fees, setFees] = useState([]);
@@ -84,6 +89,8 @@ export default function CustomPaymentApprovalModal({
       setReceiptNumber("");
       setReferenceNumber("");
       setRemarks("");
+      setIsRevisionOpen(false);
+      setRevisionRemarks("");
     }
   }, [isOpen, request?.id]);
 
@@ -225,7 +232,29 @@ export default function CustomPaymentApprovalModal({
     }
   };
 
+  const handleReturnForRevision = async (e) => {
+    if (e) e.preventDefault();
+    if (!revisionRemarks.trim()) {
+      toast.error("እባክዎ ለክለሳ የሚመለስበትን ምክንያት ይግለጹ");
+      return;
+    }
+    setReturningRevision(true);
+    try {
+      await customMaintenanceService.returnForRevision(request.id, {
+        remarks: revisionRemarks.trim(),
+      });
+      toast.success("ለክለሳ ወደ ቴክኒክ ክፍል በተሳካ ሁኔታ ተመልሷል");
+      onSuccess();
+      onClose();
+    } catch (err) {
+      toast.error(err.response?.data?.message || "ወደ ቴክኒክ መመለስ አልተቻለም");
+    } finally {
+      setReturningRevision(false);
+    }
+  };
+
   if (!isOpen || !request) return null;
+
 
   return (
     <div className="fixed inset-0 z-99999 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 pt-8 sm:pt-14 overflow-y-auto">
@@ -432,7 +461,49 @@ export default function CustomPaymentApprovalModal({
                 />
               </div>
 
-              <div className="flex justify-end gap-2 pt-3 border-t border-gray-100 dark:border-gray-700">
+              {/* Revision Drawer */}
+              {isRevisionOpen && (
+                <div className="p-3.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700 rounded-xl space-y-2">
+                  <label className="block font-bold text-amber-900 dark:text-amber-200">
+                    ወደ ቴክኒክ ክፍል የሚላክ የክለሳ ምክንያት / ማስታወሻ <span className="text-red-500">*</span>
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={revisionRemarks}
+                    onChange={(e) => setRevisionRemarks(e.target.value)}
+                    placeholder="ለምሳሌ: የእቃዎቹ ብዛት ወይም ዋጋ ማስተካከያ ስለሚያስፈልገው እንደገና ይፈተሽ..."
+                    className="w-full px-3 py-1.5 text-xs border border-amber-300 dark:border-amber-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-amber-500 font-medium"
+                  />
+                  <div className="flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsRevisionOpen(false)}
+                      className="px-3 py-1 text-xs text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+                    >
+                      ዝጋ
+                    </button>
+                    <button
+                      type="button"
+                      disabled={returningRevision}
+                      onClick={handleReturnForRevision}
+                      className="px-4 py-1 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-lg shadow-sm disabled:opacity-50"
+                    >
+                      {returningRevision ? "በመመለስ ላይ..." : "ወደ ቴክኒክ ክፍል ላክ"}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex flex-wrap items-center justify-end gap-2 pt-3 border-t border-gray-100 dark:border-gray-700">
+                <button
+                  type="button"
+                  onClick={() => setIsRevisionOpen((prev) => !prev)}
+                  disabled={submitting}
+                  className="px-3 py-2 text-xs font-bold text-amber-800 dark:text-amber-200 bg-amber-100/70 hover:bg-amber-200/70 dark:bg-amber-900/40 rounded-xl border border-amber-300 dark:border-amber-700 transition-colors flex items-center gap-1.5"
+                >
+                  <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
+                  ለክለሳ ወደ ቴክኒክ መልስ
+                </button>
                 <button
                   type="button"
                   onClick={onClose}

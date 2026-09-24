@@ -165,6 +165,56 @@ public class CustomMaintenanceController {
         }
     }
 
+    // ─── Supervisory & Management Operations ────────────────────────────
+    @PutMapping("/requests/{id}/reassign-plumber")
+    public ResponseEntity<?> reassignPlumber(
+            @PathVariable Long id,
+            @RequestBody ReassignPlumberDTO dto,
+            Principal principal) {
+        try {
+            String username = principal != null ? principal.getName() : "technical_lead";
+            return ResponseEntity.ok(service.reassignPlumber(id, dto, username));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Collections.singletonMap("message", e.getMessage()));
+        }
+    }
+
+    @PutMapping("/requests/{id}/reject-cancel")
+    public ResponseEntity<?> rejectOrCancelRequest(
+            @PathVariable Long id,
+            @RequestBody RejectCancelDTO dto,
+            Principal principal) {
+        try {
+            String username = principal != null ? principal.getName() : "management";
+            return ResponseEntity.ok(service.rejectOrCancelRequest(id, dto, username));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Collections.singletonMap("message", e.getMessage()));
+        }
+    }
+
+    @PutMapping("/requests/{id}/return-revision")
+    public ResponseEntity<?> returnForRevision(
+            @PathVariable Long id,
+            @RequestBody ReturnRevisionDTO dto,
+            Principal principal) {
+        try {
+            String username = principal != null ? principal.getName() : "revenue";
+            return ResponseEntity.ok(service.returnForRevision(id, dto, username));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Collections.singletonMap("message", e.getMessage()));
+        }
+    }
+
+    @GetMapping("/requests/{id}/logs")
+    public ResponseEntity<?> getMaintenanceLogs(@PathVariable Long id, Principal principal) {
+        try {
+            String username = principal != null ? principal.getName() : null;
+            return ResponseEntity.ok(service.getMaintenanceLogs(id, username));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Collections.singletonMap("message", e.getMessage()));
+        }
+    }
+
     // ─── 9. Maintenance Types Catalog ───────────────────────────────────────
     @GetMapping("/maintenance-types")
     public ResponseEntity<?> getMaintenanceTypes() {

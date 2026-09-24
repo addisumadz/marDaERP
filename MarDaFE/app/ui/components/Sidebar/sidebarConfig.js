@@ -361,7 +361,7 @@ export const menuGroups = [
                 title: "Inventory Settings",
                 path: "#",
                 icon: Settings,
-                roles: ["M_BRANCH_STORE", "M_GEBI_OFFICER", "systemadmin", "billzgjt"],
+                roles: ["M_BRANCH_STORE", "M_GEBI_OFFICER", "M_TECHNICAL_MANAGER", "systemadmin", "billzgjt"],
                 children: [
                     {
                         title: "Item Categories",
@@ -382,6 +382,16 @@ export const menuGroups = [
                         title: "Units of Measure",
                         path: "/ui/manager/invUnits",
                         icon: Ruler,
+                    },
+                    {
+                        title: "New Line Common Materials",
+                        path: "/ui/manager/invNewLineMaterials",
+                        icon: GitBranch,
+                    },
+                    {
+                        title: "Maintenance Common Materials",
+                        path: "/ui/manager/invMaintenanceMaterials",
+                        icon: Wrench,
                     },
                     {
                         title: "Stores",

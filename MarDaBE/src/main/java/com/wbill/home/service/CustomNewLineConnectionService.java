@@ -880,7 +880,16 @@ public class CustomNewLineConnectionService {
     }
 
     public CustomCommonMaterial saveCommonMaterial(CustomCommonMaterial material) {
+        if (material.getInvItem() != null && material.getInvItem().getId() > 0 && invItemRepo != null) {
+            material.setInvItem(invItemRepo.findById(material.getInvItem().getId()).orElse(null));
+        } else {
+            material.setInvItem(null);
+        }
         return commonMaterialRepo.save(material);
+    }
+
+    public void deleteCommonMaterial(Long id) {
+        commonMaterialRepo.deleteById(id);
     }
 
     @Transactional(readOnly = true)

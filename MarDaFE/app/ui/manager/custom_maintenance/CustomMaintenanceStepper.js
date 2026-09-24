@@ -32,17 +32,43 @@ export function getStatusBadge(status) {
       return { text: "የጥገና ስራ ላይ", color: "bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-300" };
     case "MAINTENANCE_COMPLETED":
       return { text: "ጥገና ተጠናቋል", color: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300" };
+    case "SURVEY_REJECTED_UNFEASIBLE":
+      return { text: "ዳሰሳ ውድቅ ተደርጓል (ጥገና አይቻልም)", color: "bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300" };
+    case "APPLICATION_CANCELLED":
+      return { text: "የጥገና ማመልከቻው ተሰርዟል", color: "bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-300" };
+    case "RETURNED_FOR_REVISION":
+      return { text: "ለክለሳ ወደ ቴክኒክ ተመልሷል", color: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300" };
     default:
       return { text: status, color: "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300" };
   }
 }
 
 export default function CustomMaintenanceStepper({ currentStatus }) {
-  const currentIdx = getStatusStageIndex(currentStatus);
+  const isRejected = currentStatus === "SURVEY_REJECTED_UNFEASIBLE";
+  const isCancelled = currentStatus === "APPLICATION_CANCELLED";
+  const isRevision = currentStatus === "RETURNED_FOR_REVISION";
+
+  const currentIdx = isRevision ? 1 : getStatusStageIndex(currentStatus);
   const isFinal = currentStatus === "MAINTENANCE_COMPLETED";
 
   return (
     <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 px-4 py-3 overflow-x-auto">
+      {(isRejected || isCancelled || isRevision) && (
+        <div className={`mb-3 p-2.5 rounded-lg text-xs font-semibold flex items-center justify-between ${
+          isRejected ? "bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-900" :
+          isCancelled ? "bg-gray-100 text-gray-700 border border-gray-300 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700" :
+          "bg-amber-50 text-amber-800 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900"
+        }`}>
+          <span>
+            {isRejected && "⚠️ ይህ የጥገና ጥያቄ በዳሰሳ ጥናት ወቅት ውድቅ ተደርጓል (ጥገና ማድረግ አይቻልም)።"}
+            {isCancelled && "🛑 ይህ የጥገና ማመልከቻ ተሰርዟል።"}
+            {isRevision && "🔄 ይህ የጥገና ጥያቄ በእቃዎች/ዋጋ ማስተካከያ ምክንያት በገቢዎች ክፍል ለክለሳ ወደ ቴክኒክ ክፍል ተመልሷል።"}
+          </span>
+          <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-white/70 dark:bg-gray-900/70">
+            {currentStatus}
+          </span>
+        </div>
+      )}
       <div className="flex items-center justify-between min-w-[680px] py-1">
         {STAGES.map((step, idx) => {
           const isDone = isFinal || idx < currentIdx;
@@ -93,3 +119,4 @@ export default function CustomMaintenanceStepper({ currentStatus }) {
     </div>
   );
 }
+

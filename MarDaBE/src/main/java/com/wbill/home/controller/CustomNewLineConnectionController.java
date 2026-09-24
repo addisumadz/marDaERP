@@ -238,6 +238,12 @@ public class CustomNewLineConnectionController {
         return ResponseEntity.ok(service.saveCommonMaterial(material));
     }
 
+    @DeleteMapping("/common-materials/{id}")
+    public ResponseEntity<?> deleteCommonMaterial(@PathVariable Long id) {
+        service.deleteCommonMaterial(id);
+        return ResponseEntity.ok(Collections.singletonMap("success", true));
+    }
+
     @GetMapping("/fee-types")
     public ResponseEntity<?> getFeeTypes() {
         return ResponseEntity.ok(service.getAllFeeTypes());

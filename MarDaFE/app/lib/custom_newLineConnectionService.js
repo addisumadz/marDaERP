@@ -179,6 +179,13 @@ class CustomNewLineConnectionService {
     return res.data;
   }
 
+  async deleteCommonMaterial(id) {
+    const res = await axios.delete(`${commonUrl}custom-new-line/common-materials/${id}`, {
+      headers: this.getHeaders(),
+    });
+    return res.data;
+  }
+
   async getFeeTypes() {
     const res = await axios.get(`${commonUrl}custom-new-line/fee-types`, {
       headers: this.getHeaders(),

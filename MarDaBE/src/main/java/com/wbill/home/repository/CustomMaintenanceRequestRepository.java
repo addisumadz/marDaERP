@@ -20,12 +20,13 @@ public interface CustomMaintenanceRequestRepository extends JpaRepository<Custom
     List<CustomMaintenanceRequest> findByStatus(String status);
 
     @Query("SELECT r FROM CustomMaintenanceRequest r WHERE " +
-           "(:status IS NULL OR r.status = :status) AND " +
+           "(:status IS NULL OR r.status = :status OR (:status = 'REJECTED_OR_CANCELLED' AND (r.status = 'SURVEY_REJECTED_UNFEASIBLE' OR r.status = 'APPLICATION_CANCELLED' OR r.status = 'RETURNED_FOR_REVISION'))) AND " +
            "(:branchId IS NULL OR r.branch.id = :branchId) AND " +
            "(:maintenanceTypeId IS NULL OR (r.maintenanceType IS NOT NULL AND r.maintenanceType.id = :maintenanceTypeId)) AND " +
            "(:searchTerm IS NULL OR " +
            "LOWER(r.requestNumber) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR " +
            "LOWER(r.customerFullName) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR " +
+           "LOWER(r.customerFullNameEng) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR " +
            "LOWER(r.accountNumber) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR " +
            "LOWER(r.meterNumber) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR " +
            "r.phoneNumber LIKE CONCAT('%', :searchTerm, '%')) " +
@@ -44,6 +45,12 @@ public interface CustomMaintenanceRequestRepository extends JpaRepository<Custom
     @Query("SELECT COUNT(r) FROM CustomMaintenanceRequest r WHERE r.status = :status AND (:branchId IS NULL OR r.branch.id = :branchId)")
     long countByStatusAndBranch(@Param("status") String status, @Param("branchId") Integer branchId);
 
+    @Query("SELECT COUNT(r) FROM CustomMaintenanceRequest r WHERE " +
+           "(r.status = 'SURVEY_REJECTED_UNFEASIBLE' OR r.status = 'APPLICATION_CANCELLED' OR r.status = 'RETURNED_FOR_REVISION') AND " +
+           "(:branchId IS NULL OR r.branch.id = :branchId)")
+    long countRejectedOrCancelledByBranch(@Param("branchId") Integer branchId);
+
     @Query("SELECT COUNT(r) FROM CustomMaintenanceRequest r WHERE r.requestNumber LIKE CONCAT(:prefix, '%')")
     long countByRequestNumberPrefix(@Param("prefix") String prefix);
+
 }

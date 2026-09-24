@@ -1,13 +1,37 @@
 "use client";
 import { useState, useEffect, useMemo } from "react";
-import { X, Plus, Trash2, Calculator, Printer, Send, Loader2, RefreshCw } from "lucide-react";
+import { X, Plus, Trash2, Calculator, Printer, Send, Loader2, RefreshCw, Lock, CheckCircle2 } from "lucide-react";
 import { toast } from "react-toastify";
 import customMaintenanceService from "../../../lib/customMaintenanceService";
 import { generateCostEstimationPdf } from "./customMaintenancePdf";
 
-export default function CustomMaintenanceMaterialSurveyModal({ isOpen, onClose, onSuccess, request }) {
+export default function CustomMaintenanceMaterialSurveyModal({
+  isOpen,
+  onClose,
+  onSuccess,
+  request,
+  onRejectSurvey,
+  readOnly = false,
+}) {
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+
+  // Determine if survey is locked in read-only mode (e.g. payment approved)
+  const isReadOnly = useMemo(() => {
+    if (readOnly) return true;
+    if (!request) return false;
+    return Boolean(
+      request.isPaid ||
+      request.paymentReceiptNumber ||
+      request.paymentApprovedDate ||
+      [
+        "PENDING_STORE_COLLECTION",
+        "MATERIALS_COLLECTED",
+        "MAINTENANCE_IN_PROGRESS",
+        "MAINTENANCE_COMPLETED",
+      ].includes(request.status)
+    );
+  }, [readOnly, request]);
 
   // Catalogs
   const [maintenanceTypes, setMaintenanceTypes] = useState([]);
@@ -50,8 +74,31 @@ export default function CustomMaintenanceMaterialSurveyModal({ isOpen, onClose, 
 
       await loadCatalogStockForType(activeTypeId, branchId);
 
-      // Populate fees if empty
-      if (!request.additionalFees || request.additionalFees.length === 0) {
+      // Check if fees exist on request or fetch from backend
+      let reqFees = (request.additionalFees && request.additionalFees.length > 0) ? request.additionalFees : [];
+      if (reqFees.length === 0 && request.id) {
+        try {
+          const fetchedFees = await customMaintenanceService.getRequestFees(request.id);
+          if (fetchedFees && fetchedFees.length > 0) reqFees = fetchedFees;
+        } catch (e) {
+          console.warn("Could not fetch fees:", e);
+        }
+      }
+
+      if (reqFees.length > 0) {
+        setFees(
+          reqFees.map((f) => ({
+            id: f.id,
+            feeTypeId: f.feeType?.id || f.feeTypeId,
+            feeName: f.feeName,
+            feeNameAm: f.feeNameAm || f.feeName,
+            unitName: f.unitName || "ብር",
+            quantity: Number(f.quantity) || 1,
+            unitPrice: Number(f.unitPrice) || 0,
+            remarks: f.remarks || "",
+          }))
+        );
+      } else {
         setFees(
           (fTypes || []).map((ft) => ({
             feeTypeId: ft.id,
@@ -63,19 +110,8 @@ export default function CustomMaintenanceMaterialSurveyModal({ isOpen, onClose, 
             remarks: "",
           }))
         );
-      } else {
-        setFees(
-          request.additionalFees.map((f) => ({
-            feeTypeId: f.feeType?.id || null,
-            feeName: f.feeName,
-            feeNameAm: f.feeNameAm || f.feeName,
-            unitName: f.unitName || "ብር",
-            quantity: Number(f.quantity) || 1,
-            unitPrice: Number(f.unitPrice) || 0,
-            remarks: f.remarks || "",
-          }))
-        );
       }
+
     } catch (e) {
       console.error(e);
       toast.error("ካታሎጎችንና የመጋዘን መረጃዎችን መጫን አልተቻለም");
@@ -101,9 +137,19 @@ export default function CustomMaintenanceMaterialSurveyModal({ isOpen, onClose, 
       }
       setCommonMaterials(storeCatalog);
 
-      // If request has previously saved items, map them
-      if (request.items && request.items.length > 0) {
-        const mapped = request.items.map((it) => {
+      // If request has previously saved items, map them (or fetch from backend if empty)
+      let reqItems = (request.items && request.items.length > 0) ? request.items : [];
+      if (reqItems.length === 0 && request.id) {
+        try {
+          const fetchedItems = await customMaintenanceService.getRequestItems(request.id);
+          if (fetchedItems && fetchedItems.length > 0) reqItems = fetchedItems;
+        } catch (e) {
+          console.warn("Could not fetch request items:", e);
+        }
+      }
+
+      if (reqItems.length > 0) {
+        const mapped = reqItems.map((it) => {
           const matched = storeCatalog.find(
             (c) =>
               (c.commonMaterialId && it.maintenanceCommonMaterial?.id && c.commonMaterialId === it.maintenanceCommonMaterial.id) ||
@@ -113,8 +159,10 @@ export default function CustomMaintenanceMaterialSurveyModal({ isOpen, onClose, 
           const avail = matched ? Number(matched.availableStock) || 0 : 0;
           const storePrice = matched ? Number(matched.unitPrice) || 0 : Number(it.utilityUnitPrice) || 0;
           const sQty = Number(it.surveyedQuantity) || 0;
-          const uQty = Math.min(sQty, avail);
-          const oQty = Math.max(0, sQty - avail);
+          const uQty = it.utilityQuantity != null ? Number(it.utilityQuantity) : Math.min(sQty, avail);
+          const oQty = it.outsideQuantity != null ? Number(it.outsideQuantity) : Math.max(0, sQty - avail);
+          const uPrice = it.utilityUnitPrice != null ? Number(it.utilityUnitPrice) : storePrice;
+          const oPrice = it.outsideUnitPrice != null ? Number(it.outsideUnitPrice) : storePrice;
 
           return {
             maintenanceCommonMaterialId: it.maintenanceCommonMaterial?.id || matched?.commonMaterialId || null,
@@ -126,9 +174,9 @@ export default function CustomMaintenanceMaterialSurveyModal({ isOpen, onClose, 
             unitPrice: storePrice,
             surveyedQuantity: sQty,
             utilityQuantity: uQty,
-            utilityUnitPrice: storePrice,
+            utilityUnitPrice: uPrice,
             outsideQuantity: oQty,
-            outsideUnitPrice: storePrice,
+            outsideUnitPrice: oPrice,
             remarks: it.remarks || "",
           };
         });
@@ -375,17 +423,26 @@ export default function CustomMaintenanceMaterialSurveyModal({ isOpen, onClose, 
     <div className="fixed inset-0 z-99999 flex items-center justify-center bg-black/60 backdrop-blur-sm p-3 pt-8 sm:pt-14 overflow-y-auto">
       <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-100 dark:border-gray-700 w-full max-w-6xl my-6 overflow-hidden animate-in fade-in zoom-in duration-200 flex flex-col max-h-[92vh]">
         {/* Header */}
-        <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center bg-gradient-to-r from-blue-700 via-indigo-700 to-sky-700 text-white shrink-0">
-          <div>
-            <div className="flex items-center gap-2">
-              <Calculator className="w-5 h-5 text-blue-200" />
-              <h2 className="text-lg font-bold">የጥገና ዕቃዎች እና ክፍያዎች ግምት መሙያ (Material & Fee Encoding)</h2>
-            </div>
-            <div className="text-xs text-blue-100 mt-0.5 flex items-center gap-3">
-              <span>የጥገና ቁጥር: <strong className="font-mono">{request.requestNumber}</strong></span>
-              <span>ደንበኛ: <strong>{request.customerFullName}</strong></span>
-              <span>ሂሳብ ቁጥር: <strong className="font-mono">{request.accountNumber}</strong></span>
-              <span>ቅርንጫፍ: <strong>{request.branch?.branchName || "—"}</strong></span>
+        <div className="px-6 py-3.5 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center bg-gradient-to-r from-blue-700 via-indigo-700 to-sky-700 text-white shrink-0">
+          <div className="flex items-center gap-2.5">
+            {isReadOnly ? <Lock className="w-5 h-5 text-emerald-200" /> : <Calculator className="w-5 h-5 text-blue-200" />}
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-base font-bold">
+                  {isReadOnly ? "የጥገና ዳሰሳ ጥናትና የእቃዎች ዝርዝር (ዕይታ ብቻ / Read-only)" : "የጥገና ዕቃዎች እና ክፍያዎች ግምት መሙያ (Material & Fee Encoding)"}
+                </h2>
+                {isReadOnly && (
+                  <span className="inline-flex items-center gap-1 text-[11px] font-bold bg-emerald-500/30 text-emerald-100 border border-emerald-300/40 px-2 py-0.5 rounded-full">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-300" /> ክፍያ ጸድቋል {request.paymentReceiptNumber ? `(ደረሰኝ ቁ.: ${request.paymentReceiptNumber})` : ""}
+                  </span>
+                )}
+              </div>
+              <div className="text-xs text-blue-100 mt-0.5 flex flex-wrap items-center gap-3">
+                <span>የጥገና ቁጥር: <strong className="font-mono">{request.requestNumber}</strong></span>
+                <span>ደንበኛ: <strong>{request.customerFullName}</strong></span>
+                <span>ሂሳብ ቁጥር: <strong className="font-mono">{request.accountNumber}</strong></span>
+                <span>ቅርንጫፍ: <strong>{request.branch?.branchDescription || request.branch?.branchName || request.branch?.name || "—"}</strong></span>
+              </div>
             </div>
           </div>
           <button onClick={onClose} className="p-1 rounded-lg hover:bg-white/20 text-white transition-colors">
@@ -404,8 +461,9 @@ export default function CustomMaintenanceMaterialSurveyModal({ isOpen, onClose, 
               <div className="flex gap-2 items-center">
                 <select
                   value={selectedTypeId}
+                  disabled={isReadOnly}
                   onChange={(e) => handleMaintenanceTypeChange(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-blue-300 dark:border-gray-500 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white font-medium focus:ring-2 focus:ring-blue-500 outline-none"
+                  className="w-full px-3 py-2 text-sm border border-blue-300 dark:border-gray-500 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white font-medium focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-gray-100 dark:disabled:bg-gray-700 disabled:opacity-80"
                 >
                   {maintenanceTypes.map((t) => (
                     <option key={t.id} value={t.id}>
@@ -413,14 +471,16 @@ export default function CustomMaintenanceMaterialSurveyModal({ isOpen, onClose, 
                     </option>
                   ))}
                 </select>
-                <button
-                  type="button"
-                  onClick={() => loadCatalogStockForType(selectedTypeId)}
-                  title="ካታሎጉን እንደገና ጫን"
-                  className="p-2 bg-blue-100 hover:bg-blue-200 text-blue-800 rounded-lg transition-colors"
-                >
-                  <RefreshCw className="w-4 h-4" />
-                </button>
+                {!isReadOnly && (
+                  <button
+                    type="button"
+                    onClick={() => loadCatalogStockForType(selectedTypeId)}
+                    title="ካታሎጉን እንደገና ጫን"
+                    className="p-2 bg-blue-100 hover:bg-blue-200 text-blue-800 rounded-lg transition-colors"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                  </button>
+                )}
               </div>
               <span className="text-[11px] text-gray-500 dark:text-gray-400 mt-1 block">
                 የጥገና ዓይነት ሲቀይሩ ለዚያ ጥገና የተመደቡ የተለመዱ ዕቃዎች በራስ-ሰር ይጫናሉ።
@@ -448,9 +508,10 @@ export default function CustomMaintenanceMaterialSurveyModal({ isOpen, onClose, 
             <textarea
               rows={2}
               value={plumberNotes}
+              readOnly={isReadOnly}
               onChange={(e) => setPlumberNotes(e.target.value)}
               placeholder="ስለ መስመሩ ሁኔታ፣ ስለተደረገው ምርመራ ወይም ያጋጠመ ችግር ማስታወሻ ያስገቡ..."
-              className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700/50 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
+              className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700/50 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none read-only:bg-gray-100 dark:read-only:bg-gray-750"
             />
           </div>
 
@@ -461,38 +522,40 @@ export default function CustomMaintenanceMaterialSurveyModal({ isOpen, onClose, 
                 <span>1. የተለመዱ የጥገና ዕቃዎች ካታሎግ (Materials Catalog)</span>
                 <span className="text-xs font-normal text-gray-500">({items.length} ዕቃዎች)</span>
               </h3>
-              <div className="flex items-center gap-2">
-                {/* Add from dropdown */}
-                <select
-                  value={selectedCommonId}
-                  onChange={(e) => setSelectedCommonId(e.target.value)}
-                  className="text-xs px-2.5 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 dark:text-white max-w-xs"
-                >
-                  <option value="">-- ከካታሎግ ዕቃ መርጠው ያክሉ --</option>
-                  {commonMaterials.map((m) => (
-                    <option key={m.commonMaterialId || m.id} value={m.commonMaterialId || m.id}>
-                      {m.materialNameAm || m.materialName} ({m.availableStock} አለ)
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  onClick={handleAddCommonMaterial}
-                  disabled={!selectedCommonId}
-                  className="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-xs font-semibold flex items-center gap-1"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  አክል
-                </button>
-                <button
-                  type="button"
-                  onClick={handleAddCustomItem}
-                  className="px-2.5 py-1.5 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg text-xs font-semibold flex items-center gap-1"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  ልዩ ዕቃ
-                </button>
-              </div>
+              {!isReadOnly && (
+                <div className="flex items-center gap-2">
+                  {/* Add from dropdown */}
+                  <select
+                    value={selectedCommonId}
+                    onChange={(e) => setSelectedCommonId(e.target.value)}
+                    className="text-xs px-2.5 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 dark:text-white max-w-xs"
+                  >
+                    <option value="">-- ከካታሎግ ዕቃ መርጠው ያክሉ --</option>
+                    {commonMaterials.map((m) => (
+                      <option key={m.commonMaterialId || m.id} value={m.commonMaterialId || m.id}>
+                        {m.materialNameAm || m.materialName} ({m.availableStock} አለ)
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={handleAddCommonMaterial}
+                    disabled={!selectedCommonId}
+                    className="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-xs font-semibold flex items-center gap-1"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    አክል
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleAddCustomItem}
+                    className="px-2.5 py-1.5 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg text-xs font-semibold flex items-center gap-1"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    ልዩ ዕቃ
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Table */}
@@ -567,10 +630,11 @@ export default function CustomMaintenanceMaterialSurveyModal({ isOpen, onClose, 
                               type="number"
                               min="0"
                               step="any"
+                              disabled={isReadOnly}
                               value={it.surveyedQuantity === 0 ? "" : it.surveyedQuantity}
                               onChange={(e) => handleSurveyedQtyChange(idx, e.target.value)}
                               placeholder="0"
-                              className="w-full px-2 py-1 text-center font-bold text-sm border border-blue-300 dark:border-blue-600 rounded bg-white dark:bg-gray-700 text-blue-900 dark:text-blue-200 focus:ring-2 focus:ring-blue-500 outline-none font-mono"
+                              className="w-full px-2 py-1 text-center font-bold text-sm border border-blue-300 dark:border-blue-600 rounded bg-white dark:bg-gray-700 text-blue-900 dark:text-blue-200 focus:ring-2 focus:ring-blue-500 outline-none font-mono disabled:bg-gray-100 dark:disabled:bg-gray-750 disabled:opacity-75"
                             />
                           </td>
                           <td className="py-2 px-3 text-right font-mono font-bold text-emerald-700 dark:text-emerald-400">
@@ -589,14 +653,16 @@ export default function CustomMaintenanceMaterialSurveyModal({ isOpen, onClose, 
                             {oTotal.toFixed(2)}
                           </td>
                           <td className="py-2 px-3 text-center">
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveItem(idx)}
-                              className="text-gray-400 hover:text-red-600 p-1 transition-colors"
-                              title="አስወግድ"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                            {!isReadOnly && (
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveItem(idx)}
+                                className="text-gray-400 hover:text-red-600 p-1 transition-colors"
+                                title="አስወግድ"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                           </td>
                         </tr>
                       );
@@ -613,14 +679,16 @@ export default function CustomMaintenanceMaterialSurveyModal({ isOpen, onClose, 
               <h3 className="text-sm font-bold text-gray-800 dark:text-white">
                 2. ተጨማሪ የአገልግሎት ክፍያዎች (Labor & Inspection Fees)
               </h3>
-              <button
-                type="button"
-                onClick={handleAddFee}
-                className="px-2.5 py-1.5 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg text-xs font-semibold flex items-center gap-1"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                ክፍያ አክል
-              </button>
+              {!isReadOnly && (
+                <button
+                  type="button"
+                  onClick={handleAddFee}
+                  className="px-2.5 py-1.5 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg text-xs font-semibold flex items-center gap-1"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  ክፍያ አክል
+                </button>
+              )}
             </div>
 
             <div className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-x-auto shadow-sm">
@@ -648,9 +716,10 @@ export default function CustomMaintenanceMaterialSurveyModal({ isOpen, onClose, 
                         <td className="py-2 px-3">
                           <input
                             type="text"
+                            disabled={isReadOnly}
                             value={f.feeNameAm || f.feeName}
                             onChange={(e) => handleFeeChange(idx, "feeNameAm", e.target.value)}
-                            className="w-full px-2 py-1 text-xs border border-gray-200 dark:border-gray-600 rounded bg-transparent focus:ring-1 focus:ring-blue-500 outline-none font-medium"
+                            className="w-full px-2 py-1 text-xs border border-gray-200 dark:border-gray-600 rounded bg-transparent focus:ring-1 focus:ring-blue-500 outline-none font-medium disabled:opacity-80"
                           />
                         </td>
                         <td className="py-2 px-3 text-center text-gray-500">{f.unitName || "ብር"}</td>
@@ -659,9 +728,10 @@ export default function CustomMaintenanceMaterialSurveyModal({ isOpen, onClose, 
                             type="number"
                             min="1"
                             step="any"
+                            disabled={isReadOnly}
                             value={f.quantity}
                             onChange={(e) => handleFeeChange(idx, "quantity", e.target.value)}
-                            className="w-16 px-1.5 py-1 text-center text-xs border border-gray-200 dark:border-gray-600 rounded font-mono"
+                            className="w-16 px-1.5 py-1 text-center text-xs border border-gray-200 dark:border-gray-600 rounded font-mono disabled:opacity-80"
                           />
                         </td>
                         <td className="py-2 px-3 text-right">
@@ -669,22 +739,25 @@ export default function CustomMaintenanceMaterialSurveyModal({ isOpen, onClose, 
                             type="number"
                             min="0"
                             step="any"
+                            disabled={isReadOnly}
                             value={f.unitPrice}
                             onChange={(e) => handleFeeChange(idx, "unitPrice", e.target.value)}
-                            className="w-24 px-1.5 py-1 text-right text-xs border border-gray-200 dark:border-gray-600 rounded font-mono"
+                            className="w-24 px-1.5 py-1 text-right text-xs border border-gray-200 dark:border-gray-600 rounded font-mono disabled:opacity-80"
                           />
                         </td>
                         <td className="py-2 px-3 text-right font-mono font-bold text-gray-900 dark:text-white">
                           {total.toFixed(2)}
                         </td>
                         <td className="py-2 px-3 text-center">
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveFee(idx)}
-                            className="text-gray-400 hover:text-red-600 p-1"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          {!isReadOnly && (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveFee(idx)}
+                              className="text-gray-400 hover:text-red-600 p-1"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </td>
                       </tr>
                     );
@@ -764,21 +837,40 @@ export default function CustomMaintenanceMaterialSurveyModal({ isOpen, onClose, 
             </button>
 
             <div className="flex items-center gap-3">
+              {!isReadOnly && onRejectSurvey && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onRejectSurvey(request);
+                  }}
+                  disabled={submitting}
+                  className="px-3 py-2 text-xs font-bold text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 dark:bg-red-950/40 dark:hover:bg-red-900/50 rounded-lg border border-red-200 dark:border-red-800 transition-colors"
+                >
+                  ያልተፈቀደ / አይቻልም (ውድቅ አድርግ)
+                </button>
+              )}
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2 text-xs font-semibold text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 rounded-lg transition-colors"
+                className={`px-4 py-2 text-xs font-semibold rounded-lg transition-colors ${
+                  isReadOnly
+                    ? "bg-gray-800 text-white hover:bg-gray-900 dark:bg-gray-200 dark:text-gray-900 dark:hover:bg-white shadow-sm font-bold"
+                    : "text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200"
+                }`}
               >
-                ሰርዝ
+                {isReadOnly ? "ዝጋ" : "ሰርዝ"}
               </button>
-              <button
-                type="submit"
-                disabled={submitting}
-                className="px-5 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm flex items-center gap-1.5 transition-colors disabled:opacity-50"
-              >
-                {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                ግምቱን ለክፍያ ላክ (Submit Estimation)
-              </button>
+              {!isReadOnly && (
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="px-5 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                >
+                  {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                  ግምቱን ለክፍያ ላክ (Submit Estimation)
+                </button>
+              )}
             </div>
           </div>
         </form>
@@ -786,3 +878,4 @@ export default function CustomMaintenanceMaterialSurveyModal({ isOpen, onClose, 
     </div>
   );
 }
+

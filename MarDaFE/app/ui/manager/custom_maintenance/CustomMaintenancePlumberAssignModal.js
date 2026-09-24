@@ -11,6 +11,7 @@ export default function CustomMaintenancePlumberAssignModal({
   onSuccess,
   request,
   mode = "survey",
+  isReassign = false,
 }) {
   const [plumbers, setPlumbers] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -105,7 +106,14 @@ export default function CustomMaintenancePlumberAssignModal({
 
     setSubmitting(true);
     try {
-      if (isSurvey) {
+      if (isReassign) {
+        await customMaintenanceService.reassignPlumber(request.id, {
+          plumberId: Number(selectedPlumberId),
+          mode,
+          reason: notes.trim(),
+        });
+        toast.success("ባለሙያው በተሳካ ሁኔታ ተቀይሯል");
+      } else if (isSurvey) {
         await customMaintenanceService.assignSurveyPlumber(request.id, {
           plumberId: Number(selectedPlumberId),
           notes,
@@ -169,14 +177,20 @@ export default function CustomMaintenancePlumberAssignModal({
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-base sm:text-lg font-bold">
-                  {isSurvey ? "ለዳሰሳ ጥናት ባለሙያ መድብ" : "ለጥገና ስራ ባለሙያ መድብ"}
+                  {isReassign
+                    ? isSurvey
+                      ? "የዳሰሳ ጥናት ባለሙያ መቀየሪያ (Reassign Survey Plumber)"
+                      : "የጥገና ባለሙያ መቀየሪያ (Reassign Maintenance Plumber)"
+                    : isSurvey
+                    ? "ለዳሰሳ ጥናት ባለሙያ መድብ"
+                    : "ለጥገና ስራ ባለሙያ መድብ"}
                 </h2>
                 <span className="flex items-center gap-1 text-[10px] text-blue-100 bg-white/10 px-2 py-0.5 rounded border border-white/20">
                   <GripHorizontal className="w-3 h-3" /> Move
                 </span>
               </div>
               <span className="text-[11px] text-blue-200 font-mono block">
-                {isSurvey ? "[ደረጃ 2: የዳሰሳ ጥናትና ግምት]" : "[ደረጃ 6: የተግባር ጥገና አፈፃፀም]"}
+                {isReassign ? "[የባለሙያ ዳግም ምደባ]" : isSurvey ? "[ደረጃ 2: የዳሰሳ ጥናትና ግምት]" : "[ደረጃ 6: የተግባር ጥገና አፈፃፀም]"}
               </span>
             </div>
           </div>

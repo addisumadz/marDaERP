@@ -53,6 +53,65 @@ public class CustomMaintenanceService {
         return t.isEmpty() ? null : t;
     }
 
+    // ─── Security & Branch Validation Helpers ──────────────────────────────
+    public boolean isUserAdmin(UserAccount user, String username) {
+        if (user == null && username != null) {
+            user = userAccountRepo.findByUserName(username).orElse(null);
+        }
+        if (user == null) return false;
+        if (user.getUserRole() != null) {
+            String code = user.getUserRole().getRoleCode() != null ? user.getUserRole().getRoleCode().toLowerCase() : "";
+            String name = user.getUserRole().getRoleName() != null ? user.getUserRole().getRoleName().toLowerCase() : "";
+            if (code.contains("admin") || code.contains("billzgjt") || code.contains("gm") ||
+                name.contains("admin") || name.contains("አስተዳዳሪ") || name.contains("ሥራ አስኪያጅ")) {
+                return true;
+            }
+        }
+        if (userAccountRoleRepo != null && username != null) {
+            List<String> codes = userAccountRoleRepo.findRoleCodesByUsername(username);
+            if (codes != null && codes.stream().anyMatch(c -> c.toLowerCase().contains("admin") || c.toLowerCase().contains("gm"))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public void validateBranchAccess(CustomMaintenanceRequest req, String username) {
+        if (username == null) return;
+        Optional<UserAccount> userOpt = userAccountRepo.findByUserName(username);
+        if (userOpt.isEmpty()) return;
+        UserAccount user = userOpt.get();
+        if (isUserAdmin(user, username)) return;
+
+        if (user.getBranch() != null && req.getBranch() != null) {
+            if (user.getBranch().getId() != req.getBranch().getId()) {
+                String branchDesc = req.getBranch().getBranchDescription() != null ? req.getBranch().getBranchDescription() : "";
+                throw new IllegalArgumentException("የቅርንጫፍ ወሰን ጥሰት! ይህ የጥገና ጥያቄ የሌላ ቅርንጫፍ ነው (" + branchDesc + ")። እርምጃ መውሰድ አይችሉም።");
+            }
+        }
+    }
+
+    public void validateStatusTransition(CustomMaintenanceRequest req, String expectedStatus, String actionName) {
+        if (!expectedStatus.equalsIgnoreCase(req.getStatus())) {
+            throw new IllegalStateException(String.format(
+                "ልክ ያልሆነ የስራ ሂደት ቅደም ተከተል! '%s' ለማከናወን የጥያቄው ደረጃ '%s' መሆን አለበት፤ አሁን ያለው ደረጃ '%s' ነው",
+                actionName, expectedStatus, req.getStatus()
+            ));
+        }
+    }
+
+    public void validatePlumberBranch(UserAccount plumber, Branch expectedBranch) {
+        if (expectedBranch == null || plumber == null) return;
+        if (plumber.getBranch() != null && plumber.getBranch().getId() != expectedBranch.getId()) {
+            String pBranchName = plumber.getBranch().getBranchDescription() != null ? plumber.getBranch().getBranchDescription() : "";
+            String eBranchName = expectedBranch.getBranchDescription() != null ? expectedBranch.getBranchDescription() : "";
+            throw new IllegalArgumentException(String.format(
+                "የተመረጠው ባለሙያ '%s %s' የተመደበበት ቅርንጫፍ (%s) ከጥገና ጥያቄው ቅርንጫፍ (%s) ጋር አይዛመድም!",
+                plumber.getFirstName(), plumber.getLastName(), pBranchName, eBranchName
+            ));
+        }
+    }
+
     // ─── 1. Maintenance Request Intake (Customer Service) ───────────────────
     public CustomMaintenanceRequest createRequest(CreateMaintenanceRequestDTO dto, String username) {
         if (dto.getCustomerId() == null) {
@@ -199,6 +258,7 @@ public class CustomMaintenanceService {
         stats.put("materialsCollected", requestRepo.countByStatusAndBranch("MATERIALS_COLLECTED", effectiveBranch));
         stats.put("maintenanceInProgress", requestRepo.countByStatusAndBranch("MAINTENANCE_IN_PROGRESS", effectiveBranch));
         stats.put("maintenanceCompleted", requestRepo.countByStatusAndBranch("MAINTENANCE_COMPLETED", effectiveBranch));
+        stats.put("rejectedOrCancelled", requestRepo.countRejectedOrCancelledByBranch(effectiveBranch));
         return stats;
     }
 
@@ -709,6 +769,14 @@ public class CustomMaintenanceService {
     }
 
     public CustomMaintenanceCommonMaterial saveCommonMaterial(CustomMaintenanceCommonMaterial material) {
+        if (material.getMaintenanceType() != null && material.getMaintenanceType().getId() != null) {
+            typeRepo.findById(material.getMaintenanceType().getId()).ifPresent(material::setMaintenanceType);
+        }
+        if (material.getInvItem() != null && material.getInvItem().getId() > 0 && invItemRepo != null) {
+            material.setInvItem(invItemRepo.findById(material.getInvItem().getId()).orElse(null));
+        } else {
+            material.setInvItem(null);
+        }
         return commonMaterialRepo.save(material);
     }
 
@@ -862,6 +930,123 @@ public class CustomMaintenanceService {
         return result;
     }
 
+    // ─── 12. Supervisory & Management Operations ────────────────────────────
+    public CustomMaintenanceRequest reassignPlumber(Long requestId, ReassignPlumberDTO dto, String username) {
+        CustomMaintenanceRequest req = requestRepo.findById(requestId)
+            .orElseThrow(() -> new IllegalArgumentException("Maintenance request not found: " + requestId));
+
+        validateBranchAccess(req, username);
+
+        UserAccount newPlumber = userAccountRepo.findById(dto.getPlumberId())
+            .orElseThrow(() -> new IllegalArgumentException("Plumber not found: " + dto.getPlumberId()));
+
+        validatePlumberBranch(newPlumber, req.getBranch());
+
+        String mode = dto.getMode() != null ? dto.getMode().toLowerCase() : "survey";
+        String oldPlumberName = "ያልተመደበ";
+        String actionName;
+
+        if ("maintenance".equals(mode)) {
+            if (!"MAINTENANCE_IN_PROGRESS".equalsIgnoreCase(req.getStatus()) && !"MATERIALS_COLLECTED".equalsIgnoreCase(req.getStatus())) {
+                throw new IllegalStateException("የጥገና ባለሙያ ለመቀየር የጥያቄው ደረጃ ጥገና ላይ ወይም እቃ የተወሰደ መሆን አለበት");
+            }
+            if (req.getMaintenancePlumber() != null) {
+                oldPlumberName = req.getMaintenancePlumber().getFirstName() + " " + req.getMaintenancePlumber().getLastName();
+            }
+            req.setMaintenancePlumber(newPlumber);
+            req.setMaintenanceAssignedDate(LocalDateTime.now());
+            req.setStatus("MAINTENANCE_IN_PROGRESS");
+            actionName = "MAINTENANCE_PLUMBER_REASSIGNED";
+        } else {
+            if (!"SURVEY_IN_PROGRESS".equalsIgnoreCase(req.getStatus()) && !"PENDING_SURVEY_ASSIGNMENT".equalsIgnoreCase(req.getStatus()) && !"RETURNED_FOR_REVISION".equalsIgnoreCase(req.getStatus())) {
+                throw new IllegalStateException("የዳሰሳ ጥናት ባለሙያ ለመቀየር የጥያቄው ደረጃ ዳሰሳ ላይ መሆን አለበት");
+            }
+            if (req.getSurveyPlumber() != null) {
+                oldPlumberName = req.getSurveyPlumber().getFirstName() + " " + req.getSurveyPlumber().getLastName();
+            }
+            req.setSurveyPlumber(newPlumber);
+            req.setSurveyAssignedDate(LocalDateTime.now());
+            req.setStatus("SURVEY_IN_PROGRESS");
+            actionName = "SURVEY_PLUMBER_REASSIGNED";
+        }
+
+        CustomMaintenanceRequest updated = requestRepo.save(req);
+        String newPlumberName = newPlumber.getFirstName() + " " + newPlumber.getLastName();
+        String reasonStr = dto.getReason() != null && !dto.getReason().isBlank() ? " (ምክንያት: " + dto.getReason().trim() + ")" : "";
+
+        logAction(updated, actionName, req.getStatus(), req.getStatus(), username, "TECHNICAL_SUPERVISOR",
+                  String.format("ባለሙያ ተቀይሯል። የቀድሞ ባለሙያ: %s, አዲስ የተመደበ: %s%s", oldPlumberName, newPlumberName, reasonStr));
+
+        return updated;
+    }
+
+    public CustomMaintenanceRequest rejectOrCancelRequest(Long requestId, RejectCancelDTO dto, String username) {
+        CustomMaintenanceRequest req = requestRepo.findById(requestId)
+            .orElseThrow(() -> new IllegalArgumentException("Maintenance request not found: " + requestId));
+
+        validateBranchAccess(req, username);
+
+        String actionType = dto.getActionType() != null ? dto.getActionType().trim() : "REJECT_SURVEY_UNFEASIBLE";
+        String oldStatus = req.getStatus();
+
+        if ("MAINTENANCE_COMPLETED".equalsIgnoreCase(oldStatus)) {
+            throw new IllegalStateException("የተጠናቀቀ ጥገናን እዚህ ማሰረዝ አይቻልም");
+        }
+
+        String newStatus;
+        String logActionType;
+        String logComments;
+
+        if ("CANCEL_APPLICATION".equalsIgnoreCase(actionType)) {
+            newStatus = "APPLICATION_CANCELLED";
+            logActionType = "APPLICATION_CANCELLED";
+            req.setCancellationReason(dto.getReason());
+            logComments = "የጥገና ማመልከቻው ተሰርዟል። ምክንያት: " + (dto.getReason() != null ? dto.getReason() : "በደንበኛ ጥያቄ");
+        } else {
+            newStatus = "SURVEY_REJECTED_UNFEASIBLE";
+            logActionType = "SURVEY_REJECTED_UNFEASIBLE";
+            req.setRejectionReason(dto.getReason());
+            logComments = "የቴክኒክ ዳሰሳ ጥናት ውድቅ ተደርጓል (ጥገና ማድረግ አይቻልም)። ምክንያት: " + (dto.getReason() != null ? dto.getReason() : "ቴክኒካል መስፈርት አያሟላም");
+        }
+
+        req.setRejectedBy(username);
+        req.setRejectedDate(LocalDateTime.now());
+        req.setStatus(newStatus);
+
+        CustomMaintenanceRequest updated = requestRepo.save(req);
+
+        logAction(updated, logActionType, oldStatus, newStatus, username, "MANAGEMENT", logComments);
+
+        return updated;
+    }
+
+    public CustomMaintenanceRequest returnForRevision(Long requestId, ReturnRevisionDTO dto, String username) {
+        CustomMaintenanceRequest req = requestRepo.findById(requestId)
+            .orElseThrow(() -> new IllegalArgumentException("Maintenance request not found: " + requestId));
+
+        validateBranchAccess(req, username);
+        validateStatusTransition(req, "PENDING_PAYMENT_APPROVAL", "ወደ ቴክኒክ ክፍል ለክለሳ መመለስ");
+
+        String oldStatus = req.getStatus();
+        req.setStatus("RETURNED_FOR_REVISION");
+
+        CustomMaintenanceRequest updated = requestRepo.save(req);
+        String reasonStr = dto.getRemarks() != null && !dto.getRemarks().isBlank() ? dto.getRemarks().trim() : "እቃዎችና የዋጋ ግምት እንዲከለስ በገቢዎች ክፍል ተመልሷል";
+
+        logAction(updated, "SURVEY_RETURNED_FOR_REVISION", oldStatus, "RETURNED_FOR_REVISION", username, "REVENUE",
+                  "ለክለሳ ወደ ቴክኒክ ክፍል ተመልሷል፡ " + reasonStr);
+
+        return updated;
+    }
+
+    @Transactional(readOnly = true)
+    public List<CustomMaintenanceActivityLog> getMaintenanceLogs(Long requestId, String username) {
+        CustomMaintenanceRequest req = requestRepo.findById(requestId)
+            .orElseThrow(() -> new IllegalArgumentException("Maintenance request not found: " + requestId));
+        validateBranchAccess(req, username);
+        return logRepo.findByRequestIdOrderByCreatedAtDesc(requestId);
+    }
+
     // ─── Helper: Activity Logger ────────────────────────────────────────────
     private void logAction(CustomMaintenanceRequest req, String action, String fromStatus,
                            String toStatus, String username, String role, String comments) {
@@ -873,3 +1058,4 @@ public class CustomMaintenanceService {
         logRepo.save(log);
     }
 }
+

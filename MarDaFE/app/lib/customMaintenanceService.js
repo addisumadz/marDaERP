@@ -122,6 +122,46 @@ class CustomMaintenanceService {
     return res.data;
   }
 
+  // 7.1 Activity Logs & Audit Timeline
+  async getMaintenanceLogs(id) {
+    const res = await axios.get(`${commonUrl}custom-maintenance/requests/${id}/logs`, {
+      headers: this.getHeaders(),
+    });
+    return res.data || [];
+  }
+
+  // 7.2 Supervisory Operations
+  async reassignPlumber(id, { plumberId, mode = "survey", reason = "" }) {
+    const res = await axios.put(
+      `${commonUrl}custom-maintenance/requests/${id}/reassign-plumber`,
+      { plumberId, mode, reason },
+      { headers: this.getHeaders() }
+    );
+    return res.data;
+  }
+
+  async rejectOrCancelRequest(id, { actionType = "REJECT_SURVEY_UNFEASIBLE", reason = "" }) {
+    const res = await axios.put(
+      `${commonUrl}custom-maintenance/requests/${id}/reject-cancel`,
+      { actionType, reason },
+      { headers: this.getHeaders() }
+    );
+    return res.data;
+  }
+
+  async rejectOrCancelApplication(id, params) {
+    return this.rejectOrCancelRequest(id, params);
+  }
+
+  async returnForRevision(id, { remarks = "" }) {
+    const res = await axios.put(
+      `${commonUrl}custom-maintenance/requests/${id}/return-revision`,
+      { remarks },
+      { headers: this.getHeaders() }
+    );
+    return res.data;
+  }
+
   // 8. Reference Catalogs & Types
   async getMaintenanceTypes() {
     const res = await axios.get(`${commonUrl}custom-maintenance/maintenance-types`, {

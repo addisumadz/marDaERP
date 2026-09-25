@@ -18,3 +18,24 @@ ALTER TABLE custom_maintenance_request
   ADD COLUMN cancellation_reason TEXT NULL;
 
 
+-- 1. Master Inventory Items Table
+ALTER TABLE inv_item 
+  ADD COLUMN is_water_meter TINYINT(1) NOT NULL DEFAULT 0;
+
+-- 2. New Line Connection Common Materials Catalog
+ALTER TABLE custom_common_material 
+  ADD COLUMN is_water_meter TINYINT(1) NOT NULL DEFAULT 0;
+
+-- 3. Maintenance Common Materials Catalog
+ALTER TABLE custom_maintenance_common_material 
+  ADD COLUMN is_water_meter TINYINT(1) NOT NULL DEFAULT 0;
+
+-- 4. New Line Connection Encoded Items Table
+ALTER TABLE custom_new_line_item 
+  ADD COLUMN is_water_meter TINYINT(1) NOT NULL DEFAULT 0;
+
+-- 5. Maintenance Encoded Items Table
+ALTER TABLE custom_maintenance_item 
+  ADD COLUMN is_water_meter TINYINT(1) NOT NULL DEFAULT 0;
+
+

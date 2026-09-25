@@ -68,10 +68,15 @@ public class InvIssueVoucherService {
             InvItem item = itemRepository.findById(line.getItem().getId())
                     .orElseThrow(() -> new IllegalArgumentException("Item not found"));
             line.setItem(item);
-            // Set unit cost from weighted avg
+            // Set unit cost: SALE uses InvItem.defaultUnitCost for sales value; INTERNAL_USE uses weightedAvgCost
             InvItemStoreStock stock = stockRepository.findByItemIdAndStoreId(item.getId(), storeId).orElse(null);
-            if (stock != null) {
-                line.setUnitCost(stock.getWeightedAvgCost());
+            if (voucher.getIssueType() == InvIssueVoucher.IssueType.SALE) {
+                BigDecimal salePrice = item.getDefaultUnitCost() != null && item.getDefaultUnitCost().compareTo(BigDecimal.ZERO) > 0
+                        ? item.getDefaultUnitCost()
+                        : (stock != null ? stock.getWeightedAvgCost() : BigDecimal.ZERO);
+                line.setUnitCost(salePrice);
+            } else {
+                line.setUnitCost(stock != null ? stock.getWeightedAvgCost() : (item.getDefaultUnitCost() != null ? item.getDefaultUnitCost() : BigDecimal.ZERO));
             }
             line.setLineOrder(order++);
             voucher.addLine(line);
@@ -125,10 +130,15 @@ public class InvIssueVoucherService {
 
             stockService.issueStock(line.getItem(), voucher.getStore(), qty, txnType, "ISSUE", voucher.getId(), issuer);
 
-            // Recalculate cost
+            // Recalculate cost: SALE uses InvItem.defaultUnitCost; INTERNAL_USE uses weightedAvgCost
             InvItemStoreStock stock = stockRepository.findByItemIdAndStoreId(line.getItem().getId(), voucher.getStore().getId()).orElse(null);
-            if (stock != null) {
-                line.setUnitCost(stock.getWeightedAvgCost());
+            if (voucher.getIssueType() == InvIssueVoucher.IssueType.SALE) {
+                BigDecimal salePrice = line.getItem().getDefaultUnitCost() != null && line.getItem().getDefaultUnitCost().compareTo(BigDecimal.ZERO) > 0
+                        ? line.getItem().getDefaultUnitCost()
+                        : (stock != null ? stock.getWeightedAvgCost() : BigDecimal.ZERO);
+                line.setUnitCost(salePrice);
+            } else {
+                line.setUnitCost(stock != null ? stock.getWeightedAvgCost() : (line.getItem().getDefaultUnitCost() != null ? line.getItem().getDefaultUnitCost() : BigDecimal.ZERO));
             }
             line.setTotalCost(qty.multiply(line.getUnitCost()).setScale(2, java.math.RoundingMode.HALF_UP));
             totalAmount = totalAmount.add(line.getTotalCost());

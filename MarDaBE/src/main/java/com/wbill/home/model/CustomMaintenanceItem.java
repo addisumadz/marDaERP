@@ -61,6 +61,9 @@ public class CustomMaintenanceItem implements Serializable {
     @Column(name = "outside_total_price", precision = 15, scale = 2, nullable = false)
     private BigDecimal outsideTotalPrice = BigDecimal.ZERO;
 
+    @Column(name = "is_water_meter", nullable = false)
+    private Boolean isWaterMeter = false;
+
     @Column(name = "remarks", length = 500)
     private String remarks;
 
@@ -110,4 +113,7 @@ public class CustomMaintenanceItem implements Serializable {
 
     public String getRemarks() { return remarks; }
     public void setRemarks(String remarks) { this.remarks = remarks; }
+
+    public Boolean getIsWaterMeter() { return Boolean.TRUE.equals(isWaterMeter); }
+    public void setIsWaterMeter(Boolean isWaterMeter) { this.isWaterMeter = isWaterMeter != null ? isWaterMeter : false; }
 }

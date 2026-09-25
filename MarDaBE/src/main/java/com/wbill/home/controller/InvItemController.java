@@ -90,6 +90,9 @@ public class InvItemController {
                 item.setDefaultUnitCost(new BigDecimal(body.get("defaultUnitCost").toString()));
             }
             item.setIsActive(body.get("isActive") != null ? (Boolean) body.get("isActive") : true);
+            if (body.get("isWaterMeter") != null) {
+                item.setIsWaterMeter(Boolean.parseBoolean(body.get("isWaterMeter").toString()));
+            }
 
             int categoryId = Integer.parseInt(body.get("categoryId").toString());
             Integer groupId = body.get("itemGroupId") != null && !body.get("itemGroupId").toString().isEmpty() ? Integer.parseInt(body.get("itemGroupId").toString()) : null;
@@ -117,6 +120,9 @@ public class InvItemController {
                 item.setDefaultUnitCost(new BigDecimal(body.get("defaultUnitCost").toString()));
             }
             item.setIsActive(body.get("isActive") != null ? (Boolean) body.get("isActive") : true);
+            if (body.get("isWaterMeter") != null) {
+                item.setIsWaterMeter(Boolean.parseBoolean(body.get("isWaterMeter").toString()));
+            }
 
             int categoryId = Integer.parseInt(body.get("categoryId").toString());
             Integer groupId = body.get("itemGroupId") != null && !body.get("itemGroupId").toString().isEmpty() ? Integer.parseInt(body.get("itemGroupId").toString()) : null;

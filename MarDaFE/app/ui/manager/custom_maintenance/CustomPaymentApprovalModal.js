@@ -10,10 +10,26 @@ import {
   Layers,
   Calculator,
   AlertCircle,
+  Printer,
 } from "lucide-react";
 import { toast } from "react-toastify";
 import customMaintenanceService from "../../../lib/customMaintenanceService";
 import { getUserRoles, isAdminRole, hasAnyRole } from "./customMaintenanceUserRoles";
+import { generateCostEstimationPdf } from "./customMaintenancePdf";
+
+export const isWaterMeterItem = (it) => {
+  if (!it) return false;
+  if (it.isWaterMeter === true || it.invItem?.isWaterMeter === true) return true;
+  if (it.commonMaterial?.isWaterMeter === true || it.maintenanceCommonMaterial?.isWaterMeter === true) return true;
+  if (it.invItemId === 2 || it.invItem?.id === 2) return true;
+  const name = `${it.materialCode || ""} ${it.itemCode || ""} ${it.itemName || ""} ${it.itemNameAm || ""}`.toLowerCase();
+  return (
+    name.includes("water meter") ||
+    name.includes("water_meter") ||
+    name.includes("ቆጣሪ") ||
+    (name.includes("meter") && !name.includes("parameter"))
+  );
+};
 
 export default function CustomPaymentApprovalModal({
   isOpen,
@@ -103,20 +119,29 @@ export default function CustomPaymentApprovalModal({
       ]);
 
       setItems(
-        (itms || []).map((it) => ({
-          id: it.id,
-          maintenanceCommonMaterialId: it.maintenanceCommonMaterial?.id || null,
-          invItemId: it.invItem?.id || null,
-          itemName: it.itemName,
-          itemNameAm: it.itemNameAm || it.itemName,
-          unitOfMeasure: it.unitOfMeasure || "በቁጥር",
-          surveyedQuantity: Number(it.surveyedQuantity) || 0,
-          utilityQuantity: Number(it.utilityQuantity) || 0,
-          utilityUnitPrice: Number(it.utilityUnitPrice) || 0,
-          outsideQuantity: Number(it.outsideQuantity) || 0,
-          outsideUnitPrice: Number(it.outsideUnitPrice) || 0,
-          remarks: it.remarks || "",
-        }))
+        (itms || []).map((it) => {
+          const isMeter = Boolean(
+            it.isWaterMeter ||
+              it.invItem?.isWaterMeter ||
+              it.maintenanceCommonMaterial?.isWaterMeter ||
+              isWaterMeterItem(it)
+          );
+          return {
+            id: it.id,
+            maintenanceCommonMaterialId: it.maintenanceCommonMaterial?.id || null,
+            invItemId: it.invItem?.id || null,
+            isWaterMeter: isMeter,
+            itemName: it.itemName,
+            itemNameAm: it.itemNameAm || it.itemName,
+            unitOfMeasure: it.unitOfMeasure || "በቁጥር",
+            surveyedQuantity: Number(it.surveyedQuantity) || 0,
+            utilityQuantity: Number(it.utilityQuantity) || 0,
+            utilityUnitPrice: Number(it.utilityUnitPrice) || 0,
+            outsideQuantity: Number(it.outsideQuantity) || 0,
+            outsideUnitPrice: Number(it.outsideUnitPrice) || 0,
+            remarks: it.remarks || "",
+          };
+        })
       );
 
       setFees(
@@ -157,15 +182,31 @@ export default function CustomPaymentApprovalModal({
   const financials = useMemo(() => {
     let utilityMaterialsTotal = 0;
     let outsideMaterialsTotal = 0;
+    let meterUtilityTotal = 0;
 
     items.forEach((it) => {
-      utilityMaterialsTotal += (Number(it.utilityQuantity) || 0) * (Number(it.utilityUnitPrice) || 0);
-      outsideMaterialsTotal += (Number(it.outsideQuantity) || 0) * (Number(it.outsideUnitPrice) || 0);
+      const uQty = Number(it.utilityQuantity) || 0;
+      const uPrice = Number(it.utilityUnitPrice) || 0;
+      const oQty = Number(it.outsideQuantity) || 0;
+      const oPrice = Number(it.outsideUnitPrice) || 0;
+
+      const uLine = uQty * uPrice;
+      const oLine = oQty * oPrice;
+
+      utilityMaterialsTotal += uLine;
+      outsideMaterialsTotal += oLine;
+
+      if (isWaterMeterItem(it) && uQty > 0) {
+        meterUtilityTotal += uLine;
+      }
     });
 
     const totalMaterials = utilityMaterialsTotal + outsideMaterialsTotal;
-    const transportCharge = totalMaterials * 0.25;
-    const serviceCharge = (totalMaterials + transportCharge) * 0.55;
+    // Special Rule for Maintenance: Water meter from store is EXEMPT from both 25% transport and 55% service charge.
+    // Its material sale value is simply summed into total payable via utilityMaterialsTotal.
+    const materialsSubjectToOverhead = Math.max(0, totalMaterials - meterUtilityTotal);
+    const transportCharge = materialsSubjectToOverhead * 0.25;
+    const serviceCharge = (materialsSubjectToOverhead + transportCharge) * 0.55;
 
     let additionalFeesTotal = 0;
     fees.forEach((f) => {
@@ -175,12 +216,13 @@ export default function CustomPaymentApprovalModal({
     const totalPayable = utilityMaterialsTotal + serviceCharge + transportCharge + additionalFeesTotal;
 
     return {
-      utilityMaterialsTotal,
-      outsideMaterialsTotal,
-      serviceCharge,
-      transportCharge,
-      additionalFeesTotal,
-      totalPayable,
+      utilityMaterialsTotal: Math.round(utilityMaterialsTotal * 100) / 100,
+      outsideMaterialsTotal: Math.round(outsideMaterialsTotal * 100) / 100,
+      meterUtilityTotal: Math.round(meterUtilityTotal * 100) / 100,
+      serviceCharge: Math.round(serviceCharge * 100) / 100,
+      transportCharge: Math.round(transportCharge * 100) / 100,
+      additionalFeesTotal: Math.round(additionalFeesTotal * 100) / 100,
+      totalPayable: Math.round(totalPayable * 100) / 100,
     };
   }, [items, fees]);
 
@@ -200,6 +242,7 @@ export default function CustomPaymentApprovalModal({
         updatedItems: items.map((it) => ({
           maintenanceCommonMaterialId: it.maintenanceCommonMaterialId,
           invItemId: it.invItemId,
+          isWaterMeter: isWaterMeterItem(it),
           itemName: it.itemName,
           itemNameAm: it.itemNameAm,
           unitOfMeasure: it.unitOfMeasure,
@@ -253,8 +296,33 @@ export default function CustomPaymentApprovalModal({
     }
   };
 
-  if (!isOpen || !request) return null;
+  const handlePrintCostEstimation = () => {
+    const rawItems = Array.isArray(items) ? items : Array.isArray(request.items) ? request.items : [];
+    const activeItems = rawItems.filter((it) => {
+      const sQty = Number(it.surveyedQuantity || it.quantity || 0);
+      const uQty = Number(it.utilityQuantity || 0);
+      const oQty = Number(it.outsideQuantity || 0);
+      const uTot = Number(it.utilityTotalPrice || 0);
+      const oTot = Number(it.outsideTotalPrice || 0);
+      return sQty > 0 || uQty > 0 || oQty > 0 || uTot > 0 || oTot > 0;
+    });
 
+    generateCostEstimationPdf({
+      ...request,
+      items: activeItems.length > 0 ? activeItems : rawItems,
+      additionalFees: Array.isArray(fees) ? fees : request.additionalFees,
+      materialsUtilityTotal: financials.utilityMaterialsTotal,
+      materialsOutsideTotal: financials.outsideMaterialsTotal,
+      serviceChargeAmount: financials.serviceCharge,
+      transportChargeAmount: financials.transportCharge,
+      additionalFeesTotal: financials.additionalFeesTotal,
+      totalPayableAmount: financials.totalPayable,
+      receiptNumber: receiptNumber || request.receiptNumber,
+      referenceNumber: referenceNumber || request.referenceNumber,
+    });
+  };
+
+  if (!isOpen || !request) return null;
 
   return (
     <div className="fixed inset-0 z-99999 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 pt-8 sm:pt-14 overflow-y-auto">
@@ -269,9 +337,18 @@ export default function CustomPaymentApprovalModal({
                 : "የጥገና አገልግሎት የዋጋ ግምት እና የክፍያ ማጠቃለያ"}
             </h2>
           </div>
-          <button onClick={onClose} className="p-1 rounded-lg hover:bg-white/20 text-white transition-colors">
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handlePrintCostEstimation}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-white/20 hover:bg-white/30 text-white rounded-lg transition-colors"
+            >
+              <Printer className="w-4 h-4" /> ማጠቃለያውን አትም
+            </button>
+            <button onClick={onClose} className="p-1 rounded-lg hover:bg-white/20 text-white transition-colors">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Content Body */}
@@ -342,8 +419,15 @@ export default function CustomPaymentApprovalModal({
                       return (
                         <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-gray-700/30">
                           <td className="py-2 px-3 text-center text-gray-400 font-mono">{idx + 1}</td>
-                          <td className="py-2 px-3 font-semibold text-gray-800 dark:text-gray-200">
-                            {it.itemNameAm || it.itemName}
+                          <td className="py-2 px-3">
+                            <div className="font-semibold text-gray-800 dark:text-gray-200">
+                              {it.itemNameAm || it.itemName}
+                            </div>
+                            {isWaterMeterItem(it) && (
+                              <span className="inline-block mt-0.5 w-fit text-[10px] font-bold text-blue-800 dark:text-blue-300 bg-blue-100 dark:bg-blue-950/60 px-1.5 py-0.5 rounded border border-blue-200 dark:border-blue-800">
+                                የውሃ ቆጣሪ (25% እና 55% ነፃ)
+                              </span>
+                            )}
                           </td>
                           <td className="py-2 px-3 text-center text-gray-500">{it.unitOfMeasure}</td>
                           <td className="py-2 px-3 text-right font-mono font-bold text-emerald-700 dark:text-emerald-400">
@@ -410,6 +494,11 @@ export default function CustomPaymentApprovalModal({
                 <span className="font-mono font-bold text-base">{financials.totalPayable.toFixed(2)} ብር</span>
               </div>
             </div>
+            {financials.meterUtilityTotal > 0 && (
+              <p className="text-[10.5px] text-purple-800 dark:text-purple-300 font-medium italic pt-1 border-t border-purple-200 dark:border-purple-800/60">
+                *(የውሃ ቆጣሪ ከመጋዘን ስለሆነ ከ 25% ትራንስፖርት እና ከ 55% ሰርቪስ ክፍያ ነፃ ተደርጓል፤ የመሸጫ ዋጋ ብቻ ተደምሯል)*
+              </p>
+            )}
           </div>
 
           {/* Section 3: Receipt & Payment Details Form (Only for Revenue Officers) */}

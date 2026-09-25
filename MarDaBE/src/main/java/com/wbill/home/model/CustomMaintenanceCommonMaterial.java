@@ -44,6 +44,9 @@ public class CustomMaintenanceCommonMaterial implements Serializable {
     @Column(name = "display_order", nullable = false)
     private Integer displayOrder = 0;
 
+    @Column(name = "is_water_meter", nullable = false)
+    private Boolean isWaterMeter = false;
+
     @Column(name = "is_active", nullable = false)
     private Boolean isActive = true;
 
@@ -92,6 +95,13 @@ public class CustomMaintenanceCommonMaterial implements Serializable {
 
     public Integer getDisplayOrder() { return displayOrder; }
     public void setDisplayOrder(Integer displayOrder) { this.displayOrder = displayOrder; }
+
+    public Boolean getIsWaterMeter() {
+        if (Boolean.TRUE.equals(isWaterMeter)) return true;
+        if (invItem != null && invItem.isWaterMeter()) return true;
+        return false;
+    }
+    public void setIsWaterMeter(Boolean isWaterMeter) { this.isWaterMeter = isWaterMeter != null ? isWaterMeter : false; }
 
     public Boolean getIsActive() { return isActive; }
     public void setIsActive(Boolean isActive) { this.isActive = isActive; }

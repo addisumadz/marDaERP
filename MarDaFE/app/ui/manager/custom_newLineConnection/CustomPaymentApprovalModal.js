@@ -21,6 +21,20 @@ import customNewLineConnectionService from "../../../lib/custom_newLineConnectio
 import { generateCostEstimationPdf } from "./customNewLinePdf";
 import { getUserRoles, isAdminRole, hasAnyRole } from "./customNewLineUserRoles";
 
+export const isWaterMeterItem = (it) => {
+  if (!it) return false;
+  if (it.isWaterMeter === true || it.invItem?.isWaterMeter === true) return true;
+  if (it.commonMaterial?.isWaterMeter === true || it.maintenanceCommonMaterial?.isWaterMeter === true) return true;
+  if (it.invItemId === 2 || it.invItem?.id === 2) return true;
+  const name = `${it.materialCode || ""} ${it.itemCode || ""} ${it.itemName || ""} ${it.itemNameAm || ""}`.toLowerCase();
+  return (
+    name.includes("water meter") ||
+    name.includes("water_meter") ||
+    name.includes("ቆጣሪ") ||
+    (name.includes("meter") && !name.includes("parameter"))
+  );
+};
+
 export default function CustomPaymentApprovalModal({
   isOpen,
   onClose,
@@ -176,10 +190,18 @@ export default function CustomPaymentApprovalModal({
           const uPrice = Number(it.utilityUnitPrice) > 0 ? Number(it.utilityUnitPrice) : storePrice;
           const oPrice = Number(it.outsideUnitPrice) > 0 ? Number(it.outsideUnitPrice) : storePrice;
 
+          const isMeter = Boolean(
+            it.isWaterMeter ||
+              it.invItem?.isWaterMeter ||
+              matched?.isWaterMeter ||
+              isWaterMeterItem(it) ||
+              isWaterMeterItem(matched)
+          );
           return {
             id: it.id,
             commonMaterialId: it.commonMaterial?.id || matched?.commonMaterialId || null,
             invItemId: it.invItem?.id || matched?.invItemId || null,
+            isWaterMeter: isMeter,
             itemName: it.itemName,
             itemNameAm: it.itemNameAm || it.itemName,
             unitOfMeasure: it.unitOfMeasure || matched?.unitOfMeasure || "በቁጥር",
@@ -199,9 +221,11 @@ export default function CustomPaymentApprovalModal({
         const allItems = storeCatalog.map((cat) => {
           const storePrice = Number(cat.unitPrice) || 0;
           const avail = Number(cat.availableStock) || 0;
+          const isMeter = Boolean(cat.isWaterMeter || isWaterMeterItem(cat));
           return {
             commonMaterialId: cat.commonMaterialId || cat.id,
             invItemId: cat.invItemId || null,
+            isWaterMeter: isMeter,
             itemName: cat.materialName,
             itemNameAm: cat.materialNameAm || cat.materialName,
             unitOfMeasure: cat.unitOfMeasure || "በቁጥር",
@@ -322,11 +346,13 @@ export default function CustomPaymentApprovalModal({
 
     const storePrice = Number(mat.unitPrice) || 0;
     const avail = Number(mat.availableStock) || 0;
+    const isMeter = Boolean(mat.isWaterMeter || isWaterMeterItem(mat));
     setItems([
       ...items,
       {
         commonMaterialId: mat.commonMaterialId || mat.id,
         invItemId: mat.invItemId || null,
+        isWaterMeter: isMeter,
         itemName: mat.materialName,
         itemNameAm: mat.materialNameAm || mat.materialName,
         unitOfMeasure: mat.unitOfMeasure || "በቁጥር",
@@ -397,15 +423,22 @@ export default function CustomPaymentApprovalModal({
   const totals = useMemo(() => {
     let utilityTotal = 0;
     let outsideTotal = 0;
+    let meterUtilityTotal = 0;
 
     items.forEach((item) => {
       const uQty = Number(item.utilityQuantity) || 0;
       const uPrice = Number(item.utilityUnitPrice) || 0;
-      utilityTotal += uQty * uPrice;
+      const uTotal = uQty * uPrice;
+      utilityTotal += uTotal;
 
       const oQty = Number(item.outsideQuantity) || 0;
       const oPrice = Number(item.outsideUnitPrice) || 0;
-      outsideTotal += oQty * oPrice;
+      const oTotal = oQty * oPrice;
+      outsideTotal += oTotal;
+
+      if (isWaterMeterItem(item) && uQty > 0) {
+        meterUtilityTotal += uTotal;
+      }
     });
 
     let feesTotal = 0;
@@ -416,13 +449,17 @@ export default function CustomPaymentApprovalModal({
     });
 
     const totalMaterials = utilityTotal + outsideTotal;
-    const transportCharge = totalMaterials * 0.25; // 25% of all materials (including market)
-    const serviceCharge = (totalMaterials + transportCharge) * 0.55; // 55% of (totalMaterials + transportCharge)
+    // Special Rule: Water meter provided from corporation/store is exempt from 25% transport charge
+    const materialsSubjectToTransport = Math.max(0, totalMaterials - meterUtilityTotal);
+    const transportCharge = materialsSubjectToTransport * 0.25;
+    // 55% service charge still includes all materials + transport charge
+    const serviceCharge = (totalMaterials + transportCharge) * 0.55;
     const totalPayable = utilityTotal + serviceCharge + transportCharge + feesTotal;
 
     return {
       utilityTotal: Math.round(utilityTotal * 100) / 100,
       outsideTotal: Math.round(outsideTotal * 100) / 100,
+      meterUtilityTotal: Math.round(meterUtilityTotal * 100) / 100,
       totalMaterials: Math.round(totalMaterials * 100) / 100,
       serviceCharge: Math.round(serviceCharge * 100) / 100,
       transportCharge: Math.round(transportCharge * 100) / 100,
@@ -455,6 +492,7 @@ export default function CustomPaymentApprovalModal({
         updatedItems: activeItems.map((it) => ({
           commonMaterialId: it.commonMaterialId || null,
           invItemId: it.invItemId || null,
+          isWaterMeter: isWaterMeterItem(it),
           itemName: it.itemNameAm || it.itemName || "ያልተገለጸ እቃ",
           itemNameAm: it.itemNameAm || it.itemName,
           unitOfMeasure: it.unitOfMeasure || "በቁጥር",
@@ -856,6 +894,11 @@ export default function CustomPaymentApprovalModal({
                               ) : (
                                 <span className="font-semibold text-gray-900 dark:text-white">
                                   {it.itemNameAm || it.itemName}
+                                </span>
+                              )}
+                              {isWaterMeterItem(it) && (
+                                <span className="inline-block mt-0.5 w-fit text-[10px] font-bold text-blue-800 dark:text-blue-300 bg-blue-100 dark:bg-blue-950/60 px-1.5 py-0.5 rounded border border-blue-200 dark:border-blue-800">
+                                  የውሃ ቆጣሪ (25% ነፃ)
                                 </span>
                               )}
                               <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
@@ -1289,6 +1332,11 @@ export default function CustomPaymentApprovalModal({
                     <span>ተጨማሪ ክፍያዎች:</span>
                     <span className="font-mono font-bold">ETB {totals.feesTotal.toFixed(2)}</span>
                   </div>
+                  {totals.meterUtilityTotal > 0 && (
+                    <p className="text-[10px] text-emerald-800 dark:text-emerald-300 font-medium italic pt-1 border-t border-emerald-200 dark:border-emerald-800/60">
+                      *(የውሃ ቆጣሪ ከመጋዘን ስለሆነ ከ 25% ትራንስፖርት ክፍያ ነፃ ተደርጓል)*
+                    </p>
+                  )}
                 </div>
 
                 <div className="border-t-2 border-emerald-300 dark:border-emerald-700 pt-2 flex justify-between items-center text-emerald-950 dark:text-emerald-100">

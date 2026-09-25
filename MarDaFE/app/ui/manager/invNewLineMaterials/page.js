@@ -116,7 +116,7 @@ export default function InvNewLineMaterialsPage() {
         materialName: prev.materialName ? prev.materialName : matched.itemName,
         materialNameAm: prev.materialNameAm ? prev.materialNameAm : (matched.itemNameAm || matched.itemName),
         unitOfMeasure: prev.unitOfMeasure && prev.unitOfMeasure !== "በቁጥር" ? prev.unitOfMeasure : (matched.unitOfMeasure?.unitName || matched.unitOfMeasure?.unitNameAm || prev.unitOfMeasure),
-        defaultUnitPrice: prev.defaultUnitPrice && Number(prev.defaultUnitPrice) > 0 ? prev.defaultUnitPrice : (matched.defaultUnitCost || 0),
+        defaultUnitPrice: matched.defaultUnitCost || prev.defaultUnitPrice || 0,
       }));
     } else {
       setForm((prev) => ({ ...prev, invItemId: "" }));
@@ -376,7 +376,14 @@ export default function InvNewLineMaterialsPage() {
                         {m.unitOfMeasure}
                       </td>
                       <td className="py-2.5 px-4 text-right font-mono font-bold text-gray-900 dark:text-white">
-                        {(Number(m.defaultUnitPrice) || 0).toFixed(2)}
+                        {linkedItem && Number(linkedItem.defaultUnitCost) > 0 ? (
+                          <div title="ከኢንቬንቶሪ ማስተር በቀጥታ የተወሰደ የሽያጭ ዋጋ">
+                            <span>{(Number(linkedItem.defaultUnitCost) || 0).toFixed(2)}</span>
+                            <span className="block text-[9px] font-normal text-emerald-600 dark:text-emerald-400">ማስተር ዋጋ</span>
+                          </div>
+                        ) : (
+                          <span>{(Number(m.defaultUnitPrice) || 0).toFixed(2)}</span>
+                        )}
                       </td>
                       <td className="py-2.5 px-3 text-center">
                         <span
@@ -522,7 +529,7 @@ export default function InvNewLineMaterialsPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block font-semibold mb-1 text-gray-700 dark:text-gray-300">
-                    መደበኛ መነሻ ዋጋ (ETB)
+                    መደበኛ መነሻ ዋጋ (ETB) {form.invItemId && <span className="text-[10px] text-emerald-600 font-normal">(ከኢንቬንቶሪ ማስተር ጋር የተሳሰረ)</span>}
                   </label>
                   <input
                     type="number"
@@ -533,6 +540,11 @@ export default function InvNewLineMaterialsPage() {
                     placeholder="0.00"
                     className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white font-mono outline-none"
                   />
+                  {form.invItemId && (
+                    <p className="text-[10px] text-gray-500 mt-1">
+                      * ለዚህ ዕቃ የሽያጭ ዋጋ በዋናነት የሚወሰደው ከኢንቬንቶሪ ማስተር (InvItem.defaultUnitCost) ነው።
+                    </p>
+                  )}
                 </div>
 
                 <div>

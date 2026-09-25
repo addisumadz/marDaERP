@@ -106,6 +106,7 @@ public class InvItemService {
         existing.setItemUsage(dto.getItemUsage());
         existing.setDefaultUnitCost(dto.getDefaultUnitCost());
         existing.setIsActive(dto.getIsActive());
+        existing.setIsWaterMeter(dto.isWaterMeter());
         return repository.save(existing);
     }
 

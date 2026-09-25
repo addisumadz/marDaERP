@@ -93,6 +93,7 @@ public class CustomMaintenanceDTOs {
         private BigDecimal outsideQuantity;
         private BigDecimal outsideUnitPrice;
         private String remarks;
+        private Boolean isWaterMeter;
 
         public Long getMaintenanceCommonMaterialId() { return maintenanceCommonMaterialId; }
         public void setMaintenanceCommonMaterialId(Long maintenanceCommonMaterialId) { this.maintenanceCommonMaterialId = maintenanceCommonMaterialId; }
@@ -116,6 +117,8 @@ public class CustomMaintenanceDTOs {
         public void setOutsideUnitPrice(BigDecimal outsideUnitPrice) { this.outsideUnitPrice = outsideUnitPrice; }
         public String getRemarks() { return remarks; }
         public void setRemarks(String remarks) { this.remarks = remarks; }
+        public Boolean getIsWaterMeter() { return isWaterMeter; }
+        public void setIsWaterMeter(Boolean isWaterMeter) { this.isWaterMeter = isWaterMeter; }
     }
 
     // 4. Survey Fee DTO

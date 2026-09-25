@@ -172,6 +172,19 @@ public class InvGoodsReceivedNoteService {
 
             // 3. Create serial/batch tracking if applicable
             createTrackingRecord(line, grn);
+
+            // 4. Update InvItem defaultUnitCost with High-Water Mark (Ratchet) rule for sales pricing
+            if (line.getAcceptedQuantity() != null && line.getAcceptedQuantity().compareTo(BigDecimal.ZERO) > 0) {
+                BigDecimal newBuyingPrice = line.getUnitCost();
+                if (newBuyingPrice != null && newBuyingPrice.compareTo(BigDecimal.ZERO) > 0) {
+                    InvItem item = line.getItem();
+                    BigDecimal currentDefaultCost = item.getDefaultUnitCost() != null ? item.getDefaultUnitCost() : BigDecimal.ZERO;
+                    if (newBuyingPrice.compareTo(currentDefaultCost) > 0) {
+                        item.setDefaultUnitCost(newBuyingPrice);
+                        itemRepository.save(item);
+                    }
+                }
+            }
         }
 
         // Check if PO is fully received

@@ -55,6 +55,31 @@ public class CustomNewLineConnectionService {
         return t.isEmpty() ? null : t;
     }
 
+    public boolean isWaterMeterItem(CustomNewLineItem item, SurveyItemDTO itemDto) {
+        if (itemDto != null && Boolean.TRUE.equals(itemDto.getIsWaterMeter())) {
+            return true;
+        }
+        if (item != null && Boolean.TRUE.equals(item.getIsWaterMeter())) {
+            return true;
+        }
+        if (item != null && item.getInvItem() != null && item.getInvItem().isWaterMeter()) {
+            return true;
+        }
+        if (item != null && item.getCommonMaterial() != null && Boolean.TRUE.equals(item.getCommonMaterial().getIsWaterMeter())) {
+            return true;
+        }
+        if (item != null && item.getInvItem() != null && item.getInvItem().getId() == 2) {
+            return true;
+        }
+        if (itemDto != null && itemDto.getInvItemId() != null && itemDto.getInvItemId() == 2) {
+            return true;
+        }
+        String text = ((item != null ? (item.getItemName() != null ? item.getItemName() : "") + " " + (item.getItemNameAm() != null ? item.getItemNameAm() : "") : "") + " " +
+                       (itemDto != null ? (itemDto.getItemName() != null ? itemDto.getItemName() : "") + " " + (itemDto.getItemNameAm() != null ? itemDto.getItemNameAm() : "") : "")).toLowerCase();
+        return text.contains("water meter") || text.contains("water_meter") || text.contains("ቆጣሪ") ||
+               (text.contains("meter") && !text.contains("parameter") && !text.contains("centimeter") && !text.contains("millimeter"));
+    }
+
     // ─── Security & Branch Validation Helpers ──────────────────────────────
     public boolean isUserAdmin(UserAccount user, String username) {
         if (user == null && username != null) {
@@ -292,6 +317,7 @@ public class CustomNewLineConnectionService {
 
         BigDecimal utilityMaterialsTotal = BigDecimal.ZERO;
         BigDecimal outsideMaterialsTotal = BigDecimal.ZERO;
+        BigDecimal meterUtilityTotal = BigDecimal.ZERO;
 
         // Process line items
         if (dto.getItems() != null) {
@@ -335,6 +361,12 @@ public class CustomNewLineConnectionService {
                     invItemRepo.findById(itemDto.getInvItemId()).ifPresent(item::setInvItem);
                 }
 
+                boolean isMeter = isWaterMeterItem(item, itemDto);
+                item.setIsWaterMeter(isMeter);
+                if (isMeter) {
+                    meterUtilityTotal = meterUtilityTotal.add(uTotal);
+                }
+
                 itemRepo.save(item);
             }
         }
@@ -365,10 +397,15 @@ public class CustomNewLineConnectionService {
             }
         }
 
-        // Apply Static Rates: 25% Transportation Charge on all materials, 55% Service Charge on (totalMaterials + transportCharge)
+        // Apply Rates: 25% Transportation Charge on materials EXCLUDING store water meter, 55% Service Charge on (totalMaterials + transportCharge)
         BigDecimal totalMaterials = utilityMaterialsTotal.add(outsideMaterialsTotal);
+        BigDecimal materialsSubjectToTransport = totalMaterials.subtract(meterUtilityTotal);
+        if (materialsSubjectToTransport.compareTo(BigDecimal.ZERO) < 0) {
+            materialsSubjectToTransport = BigDecimal.ZERO;
+        }
+
         BigDecimal transportChargePercent = new BigDecimal("25.00");
-        BigDecimal transportCharge = totalMaterials.multiply(new BigDecimal("0.25")).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal transportCharge = materialsSubjectToTransport.multiply(new BigDecimal("0.25")).setScale(2, RoundingMode.HALF_UP);
 
         BigDecimal serviceChargePercent = new BigDecimal("55.00");
         BigDecimal serviceChargeBase = totalMaterials.add(transportCharge);
@@ -396,8 +433,8 @@ public class CustomNewLineConnectionService {
         CustomNewLineConnectionRequest updated = requestRepo.save(req);
 
         logAction(updated, "SURVEY_SUBMITTED", oldStatus, "PENDING_PAYMENT_APPROVAL", username, "TECHNICAL",
-                  String.format("Materials & fees encoded. Utility: ETB %.2f, Outside: ETB %.2f, 55%% Service: ETB %.2f, 25%% Transport: ETB %.2f, Fees: ETB %.2f, Total Payable: ETB %.2f",
-                                utilityMaterialsTotal, outsideMaterialsTotal, serviceCharge, transportCharge, additionalFeesTotal, totalPayable));
+                  String.format("Materials & fees encoded. Utility: ETB %.2f (Meter: ETB %.2f), Outside: ETB %.2f, 55%% Service: ETB %.2f, 25%% Transport (excl. meter): ETB %.2f, Fees: ETB %.2f, Total Payable: ETB %.2f",
+                                utilityMaterialsTotal, meterUtilityTotal, outsideMaterialsTotal, serviceCharge, transportCharge, additionalFeesTotal, totalPayable));
 
         return updated;
     }
@@ -416,6 +453,7 @@ public class CustomNewLineConnectionService {
             itemRepo.deleteByRequestId(req.getId());
             BigDecimal utilityMaterialsTotal = BigDecimal.ZERO;
             BigDecimal outsideMaterialsTotal = BigDecimal.ZERO;
+            BigDecimal meterUtilityTotal = BigDecimal.ZERO;
 
             for (SurveyItemDTO itemDto : dto.getUpdatedItems()) {
                 CustomNewLineItem item = new CustomNewLineItem();
@@ -454,13 +492,24 @@ public class CustomNewLineConnectionService {
                     invItemRepo.findById(itemDto.getInvItemId()).ifPresent(item::setInvItem);
                 }
 
+                boolean isMeter = isWaterMeterItem(item, itemDto);
+                item.setIsWaterMeter(isMeter);
+                if (isMeter) {
+                    meterUtilityTotal = meterUtilityTotal.add(utilTotal);
+                }
+
                 itemRepo.save(item);
                 utilityMaterialsTotal = utilityMaterialsTotal.add(utilTotal);
                 outsideMaterialsTotal = outsideMaterialsTotal.add(outTotal);
             }
 
             BigDecimal totalMaterials = utilityMaterialsTotal.add(outsideMaterialsTotal);
-            BigDecimal transportCharge = totalMaterials.multiply(new BigDecimal("0.25")).setScale(2, RoundingMode.HALF_UP);
+            BigDecimal materialsSubjectToTransport = totalMaterials.subtract(meterUtilityTotal);
+            if (materialsSubjectToTransport.compareTo(BigDecimal.ZERO) < 0) {
+                materialsSubjectToTransport = BigDecimal.ZERO;
+            }
+
+            BigDecimal transportCharge = materialsSubjectToTransport.multiply(new BigDecimal("0.25")).setScale(2, RoundingMode.HALF_UP);
             BigDecimal serviceChargeBase = totalMaterials.add(transportCharge);
             BigDecimal serviceCharge = serviceChargeBase.multiply(new BigDecimal("0.55")).setScale(2, RoundingMode.HALF_UP);
 
@@ -1014,19 +1063,19 @@ public class CustomNewLineConnectionService {
             itemMap.put("invItemId", matchedInvItem != null ? matchedInvItem.getId() : null);
 
             BigDecimal availableStock = BigDecimal.ZERO;
-            BigDecimal unitPrice = mat.getDefaultUnitPrice() != null ? mat.getDefaultUnitPrice() : BigDecimal.ZERO;
+            // Primary Single Source of Truth: InvItem.defaultUnitCost (fallback only if unmapped/zero)
+            BigDecimal unitPrice = BigDecimal.ZERO;
+            if (matchedInvItem != null && matchedInvItem.getDefaultUnitCost() != null && matchedInvItem.getDefaultUnitCost().compareTo(BigDecimal.ZERO) > 0) {
+                unitPrice = matchedInvItem.getDefaultUnitCost();
+            } else if (mat.getDefaultUnitPrice() != null && mat.getDefaultUnitPrice().compareTo(BigDecimal.ZERO) > 0) {
+                unitPrice = mat.getDefaultUnitPrice();
+            }
 
             if (matchedInvItem != null && stockByItemId.containsKey(matchedInvItem.getId())) {
                 InvItemStoreStock s = stockByItemId.get(matchedInvItem.getId());
                 BigDecimal qoh = s.getQuantityOnHand() != null ? s.getQuantityOnHand() : BigDecimal.ZERO;
                 BigDecimal qr = s.getQuantityReserved() != null ? s.getQuantityReserved() : BigDecimal.ZERO;
                 availableStock = qoh.subtract(qr).max(BigDecimal.ZERO);
-
-                if (s.getWeightedAvgCost() != null && s.getWeightedAvgCost().compareTo(BigDecimal.ZERO) > 0) {
-                    unitPrice = s.getWeightedAvgCost();
-                } else if (matchedInvItem.getDefaultUnitCost() != null && matchedInvItem.getDefaultUnitCost().compareTo(BigDecimal.ZERO) > 0) {
-                    unitPrice = matchedInvItem.getDefaultUnitCost();
-                }
             }
 
             itemMap.put("availableStock", availableStock.setScale(2, RoundingMode.HALF_UP));

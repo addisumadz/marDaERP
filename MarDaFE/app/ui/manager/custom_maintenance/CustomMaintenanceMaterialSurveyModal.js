@@ -5,6 +5,20 @@ import { toast } from "react-toastify";
 import customMaintenanceService from "../../../lib/customMaintenanceService";
 import { generateCostEstimationPdf } from "./customMaintenancePdf";
 
+export const isWaterMeterItem = (it) => {
+  if (!it) return false;
+  if (it.isWaterMeter === true || it.invItem?.isWaterMeter === true) return true;
+  if (it.commonMaterial?.isWaterMeter === true || it.maintenanceCommonMaterial?.isWaterMeter === true) return true;
+  if (it.invItemId === 2 || it.invItem?.id === 2) return true;
+  const name = `${it.materialCode || ""} ${it.itemCode || ""} ${it.itemName || ""} ${it.itemNameAm || ""}`.toLowerCase();
+  return (
+    name.includes("water meter") ||
+    name.includes("water_meter") ||
+    name.includes("ቆጣሪ") ||
+    (name.includes("meter") && !name.includes("parameter"))
+  );
+};
+
 export default function CustomMaintenanceMaterialSurveyModal({
   isOpen,
   onClose,
@@ -164,9 +178,17 @@ export default function CustomMaintenanceMaterialSurveyModal({
           const uPrice = it.utilityUnitPrice != null ? Number(it.utilityUnitPrice) : storePrice;
           const oPrice = it.outsideUnitPrice != null ? Number(it.outsideUnitPrice) : storePrice;
 
+          const isMeter = Boolean(
+            it.isWaterMeter ||
+              it.invItem?.isWaterMeter ||
+              matched?.isWaterMeter ||
+              isWaterMeterItem(it) ||
+              isWaterMeterItem(matched)
+          );
           return {
             maintenanceCommonMaterialId: it.maintenanceCommonMaterial?.id || matched?.commonMaterialId || null,
             invItemId: it.invItem?.id || matched?.invItemId || null,
+            isWaterMeter: isMeter,
             itemName: it.itemName,
             itemNameAm: it.itemNameAm || it.itemName,
             unitOfMeasure: it.unitOfMeasure || matched?.unitOfMeasure || "በቁጥር",
@@ -186,9 +208,11 @@ export default function CustomMaintenanceMaterialSurveyModal({
         const allItems = storeCatalog.map((cat) => {
           const storePrice = Number(cat.unitPrice) || 0;
           const avail = Number(cat.availableStock) || 0;
+          const isMeter = Boolean(cat.isWaterMeter || isWaterMeterItem(cat));
           return {
             maintenanceCommonMaterialId: cat.commonMaterialId || cat.id,
             invItemId: cat.invItemId || null,
+            isWaterMeter: isMeter,
             itemName: cat.materialName,
             itemNameAm: cat.materialNameAm || cat.materialName,
             unitOfMeasure: cat.unitOfMeasure || "በቁጥር",
@@ -258,9 +282,11 @@ export default function CustomMaintenanceMaterialSurveyModal({
 
     const avail = Number(cat.availableStock) || 0;
     const price = Number(cat.unitPrice) || 0;
+    const isMeter = Boolean(cat.isWaterMeter || isWaterMeterItem(cat));
     const newItem = {
       maintenanceCommonMaterialId: cat.commonMaterialId || cat.id,
       invItemId: cat.invItemId || null,
+      isWaterMeter: isMeter,
       itemName: cat.materialName,
       itemNameAm: cat.materialNameAm || cat.materialName,
       unitOfMeasure: cat.unitOfMeasure || "በቁጥር",
@@ -333,6 +359,7 @@ export default function CustomMaintenanceMaterialSurveyModal({
   const financials = useMemo(() => {
     let utilityMaterialsTotal = 0;
     let outsideMaterialsTotal = 0;
+    let meterUtilityTotal = 0;
 
     items.forEach((it) => {
       const uQty = Number(it.utilityQuantity) || 0;
@@ -340,13 +367,23 @@ export default function CustomMaintenanceMaterialSurveyModal({
       const oQty = Number(it.outsideQuantity) || 0;
       const oPrice = Number(it.outsideUnitPrice) || 0;
 
-      utilityMaterialsTotal += uQty * uPrice;
-      outsideMaterialsTotal += oQty * oPrice;
+      const uLine = uQty * uPrice;
+      const oLine = oQty * oPrice;
+
+      utilityMaterialsTotal += uLine;
+      outsideMaterialsTotal += oLine;
+
+      if (isWaterMeterItem(it) && uQty > 0) {
+        meterUtilityTotal += uLine;
+      }
     });
 
     const totalMaterials = utilityMaterialsTotal + outsideMaterialsTotal;
-    const transportCharge = totalMaterials * 0.25;
-    const serviceCharge = (totalMaterials + transportCharge) * 0.55;
+    // Special Rule for Maintenance: Water meter from store is EXEMPT from both 25% transport and 55% service charge.
+    // Its material sale value is simply summed into total payable via utilityMaterialsTotal.
+    const materialsSubjectToOverhead = Math.max(0, totalMaterials - meterUtilityTotal);
+    const transportCharge = materialsSubjectToOverhead * 0.25;
+    const serviceCharge = (materialsSubjectToOverhead + transportCharge) * 0.55;
 
     let additionalFeesTotal = 0;
     fees.forEach((f) => {
@@ -358,12 +395,13 @@ export default function CustomMaintenanceMaterialSurveyModal({
     const totalPayable = utilityMaterialsTotal + serviceCharge + transportCharge + additionalFeesTotal;
 
     return {
-      utilityMaterialsTotal,
-      outsideMaterialsTotal,
-      serviceCharge,
-      transportCharge,
-      additionalFeesTotal,
-      totalPayable,
+      utilityMaterialsTotal: Math.round(utilityMaterialsTotal * 100) / 100,
+      outsideMaterialsTotal: Math.round(outsideMaterialsTotal * 100) / 100,
+      meterUtilityTotal: Math.round(meterUtilityTotal * 100) / 100,
+      serviceCharge: Math.round(serviceCharge * 100) / 100,
+      transportCharge: Math.round(transportCharge * 100) / 100,
+      additionalFeesTotal: Math.round(additionalFeesTotal * 100) / 100,
+      totalPayable: Math.round(totalPayable * 100) / 100,
     };
   }, [items, fees]);
 
@@ -385,6 +423,7 @@ export default function CustomMaintenanceMaterialSurveyModal({
         items: items.map((it) => ({
           maintenanceCommonMaterialId: it.maintenanceCommonMaterialId,
           invItemId: it.invItemId,
+          isWaterMeter: isWaterMeterItem(it),
           itemName: it.itemName,
           itemNameAm: it.itemNameAm,
           unitOfMeasure: it.unitOfMeasure,
@@ -608,6 +647,11 @@ export default function CustomMaintenanceMaterialSurveyModal({
                             <div className="font-semibold text-gray-800 dark:text-gray-200">
                               {it.itemNameAm || it.itemName}
                             </div>
+                            {isWaterMeterItem(it) && (
+                              <span className="inline-block mt-0.5 w-fit text-[10px] font-bold text-blue-800 dark:text-blue-300 bg-blue-100 dark:bg-blue-950/60 px-1.5 py-0.5 rounded border border-blue-200 dark:border-blue-800">
+                                የውሃ ቆጣሪ (25% እና 55% ነፃ)
+                              </span>
+                            )}
                             {it.itemNameAm && it.itemName && it.itemNameAm !== it.itemName && (
                               <div className="text-[10px] text-gray-400">{it.itemName}</div>
                             )}
@@ -810,6 +854,11 @@ export default function CustomMaintenanceMaterialSurveyModal({
                 </span>
               </div>
             </div>
+            {financials.meterUtilityTotal > 0 && (
+              <p className="text-[10.5px] text-blue-800 dark:text-blue-300 font-medium italic pt-1 border-t border-blue-200 dark:border-blue-800/60">
+                *(የውሃ ቆጣሪ ከመጋዘን ስለሆነ ከ 25% ትራንስፖርት እና ከ 55% ሰርቪስ ክፍያ ነፃ ተደርጓል፤ የመሸጫ ዋጋ ብቻ ተደምሯል)*
+              </p>
+            )}
           </div>
 
           {/* Footer Actions */}
@@ -817,10 +866,18 @@ export default function CustomMaintenanceMaterialSurveyModal({
             <button
               type="button"
               onClick={() => {
+                const activeItems = items.filter((it) => {
+                  const sQty = Number(it.surveyedQuantity || it.quantity || 0);
+                  const uQty = Number(it.utilityQuantity || 0);
+                  const oQty = Number(it.outsideQuantity || 0);
+                  const uTot = Number(it.utilityTotalPrice || 0);
+                  const oTot = Number(it.outsideTotalPrice || 0);
+                  return sQty > 0 || uQty > 0 || oQty > 0 || uTot > 0 || oTot > 0;
+                });
                 const enriched = {
                   ...request,
                   maintenanceType: maintenanceTypes.find((t) => String(t.id) === String(selectedTypeId)) || request.maintenanceType,
-                  items,
+                  items: activeItems.length > 0 ? activeItems : items,
                   materialsUtilityTotal: financials.utilityMaterialsTotal,
                   materialsOutsideTotal: financials.outsideMaterialsTotal,
                   serviceChargeAmount: financials.serviceCharge,

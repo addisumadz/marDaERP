@@ -67,6 +67,7 @@ public class CustomNewLineDTOs {
         private BigDecimal outsideQuantity;
         private BigDecimal outsideUnitPrice;
         private String remarks;
+        private Boolean isWaterMeter;
 
         public Long getCommonMaterialId() { return commonMaterialId; }
         public void setCommonMaterialId(Long commonMaterialId) { this.commonMaterialId = commonMaterialId; }
@@ -90,6 +91,8 @@ public class CustomNewLineDTOs {
         public void setOutsideUnitPrice(BigDecimal outsideUnitPrice) { this.outsideUnitPrice = outsideUnitPrice; }
         public String getRemarks() { return remarks; }
         public void setRemarks(String remarks) { this.remarks = remarks; }
+        public Boolean getIsWaterMeter() { return isWaterMeter; }
+        public void setIsWaterMeter(Boolean isWaterMeter) { this.isWaterMeter = isWaterMeter; }
     }
 
     // 4. Survey Fee DTO

@@ -31,6 +31,7 @@ import {
   History,
   XCircle,
   Ban,
+  Download,
 } from "lucide-react";
 
 import customNewLineConnectionService from "../../../lib/custom_newLineConnectionService";
@@ -46,6 +47,7 @@ import CustomCommonMaterialsModal from "./CustomCommonMaterialsModal";
 import CustomRejectCancelModal from "./CustomRejectCancelModal";
 import CustomActivityTimeline from "./CustomActivityTimeline";
 import { generateSurveyChecklistPdf, generateCostEstimationPdf } from "./customNewLinePdf";
+import { exportNewLineApplicationsCsv } from "./customNewLineExport";
 import { UserAccountService } from "../../../lib/userAccountService";
 import { DropdownService } from "../../../lib/dropdownService";
 import {
@@ -152,6 +154,7 @@ export default function CustomNewLineConnectionPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [expandedRequestId, setExpandedRequestId] = useState(null);
   const [onlyMyActions, setOnlyMyActions] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   // Compute total pending actions for the logged-in user's role
   const myPendingActionCount = useMemo(() => {
@@ -189,6 +192,19 @@ export default function CustomNewLineConnectionPage() {
   // Selected item for modals
   const [selectedRequest, setSelectedRequest] = useState(null);
 
+  // Derive the current status filter from active tab (shared by loadData and export)
+  const currentStatusFilter = useMemo(() => {
+    let statusFilter = "ALL";
+    if (activeTab === "CS_INTAKE") statusFilter = "PENDING_SURVEY_ASSIGNMENT";
+    else if (activeTab === "TECH_SURVEY") statusFilter = "SURVEY_IN_PROGRESS";
+    else if (activeTab === "REVENUE") statusFilter = "PENDING_PAYMENT_APPROVAL";
+    else if (activeTab === "STORE") statusFilter = "PENDING_STORE_COLLECTION";
+    else if (activeTab === "INSTALLATION") statusFilter = "INSTALLATION_IN_PROGRESS";
+    else if (activeTab === "COMPLETED") statusFilter = "FINAL_ACTIVATION_COMPLETED";
+    else if (activeTab === "REJECTED_CANCELLED") statusFilter = "REJECTED_OR_CANCELLED";
+    return statusFilter;
+  }, [activeTab]);
+
   // Load Data
   const loadData = useCallback(async () => {
     // For non-admin users, hold off until branch is resolved so all branch data never flashes
@@ -197,20 +213,12 @@ export default function CustomNewLineConnectionPage() {
     }
     setLoading(true);
     try {
-      let statusFilter = "ALL";
-      if (activeTab === "CS_INTAKE") statusFilter = "PENDING_SURVEY_ASSIGNMENT";
-      else if (activeTab === "TECH_SURVEY") statusFilter = "SURVEY_IN_PROGRESS";
-      else if (activeTab === "REVENUE") statusFilter = "PENDING_PAYMENT_APPROVAL";
-      else if (activeTab === "STORE") statusFilter = "PENDING_STORE_COLLECTION";
-      else if (activeTab === "INSTALLATION") statusFilter = "INSTALLATION_IN_PROGRESS";
-      else if (activeTab === "COMPLETED") statusFilter = "FINAL_ACTIVATION_COMPLETED";
-      else if (activeTab === "REJECTED_CANCELLED") statusFilter = "REJECTED_OR_CANCELLED";
 
       const [res, statsData] = await Promise.all([
         customNewLineConnectionService.getApplications({
           page,
           size: pageSize,
-          status: statusFilter,
+          status: currentStatusFilter,
           branchId: effectiveBranchId,
           search: searchTerm,
         }),
@@ -232,11 +240,28 @@ export default function CustomNewLineConnectionPage() {
     } finally {
       setLoading(false);
     }
-  }, [activeTab, page, pageSize, searchTerm, effectiveBranchId, isAdmin, isProfileLoaded]);
+  }, [activeTab, page, pageSize, searchTerm, effectiveBranchId, isAdmin, isProfileLoaded, currentStatusFilter]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // CSV Export handler
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      await exportNewLineApplicationsCsv({
+        status: currentStatusFilter,
+        branchId: effectiveBranchId,
+        search: searchTerm,
+      });
+      toast.success("CSV ፋይል በተሳካ ሁኔታ ወርዷል ✓");
+    } catch (err) {
+      toast.error(err.message || "CSV ማውረድ አልተቻለም");
+    } finally {
+      setExporting(false);
+    }
+  };
 
   // Filter requests when "የእርሶን እርምጃ የሚጠብቁትን ብቻ አሳይ" is active
   const displayedRequests = useMemo(() => {
@@ -740,6 +765,15 @@ export default function CustomNewLineConnectionPage() {
               title="አድስ"
             >
               <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+            </button>
+            <button
+              type="button"
+              onClick={handleExport}
+              disabled={exporting}
+              className="p-1.5 text-gray-600 dark:text-gray-300 hover:bg-emerald-50 hover:text-emerald-700 dark:hover:bg-emerald-950/30 dark:hover:text-emerald-400 rounded-xl transition-colors disabled:opacity-40"
+              title="ወደ CSV ላክ (Export to CSV)"
+            >
+              <Download className={`w-4 h-4 ${exporting ? "animate-bounce" : ""}`} />
             </button>
           </div>
         </div>

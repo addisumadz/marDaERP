@@ -30,7 +30,9 @@ export class BankMardaArifService {
 
   async getProgress(jobId) {
     if (!jobId) throw new Error("jobId is required");
+    const token = getAccesToken();
     const res = await axios.get(`${commonUrl}progress/${jobId}`, {
+      headers: authHeader(token),
       timeout: 15000,
     });
     return res.data; // { success, total, processed, percent, done, status, message }
@@ -38,7 +40,9 @@ export class BankMardaArifService {
 
   async getProgressLogs(jobId) {
     if (!jobId) throw new Error("jobId is required");
+    const token = getAccesToken();
     const res = await axios.get(`${commonUrl}progress/${jobId}/logs`, {
+      headers: authHeader(token),
       timeout: 15000,
     });
     return res.data; // { success, logs: [] }

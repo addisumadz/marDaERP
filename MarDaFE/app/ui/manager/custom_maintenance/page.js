@@ -63,6 +63,10 @@ import {
   canCompleteMaintenance,
   getUserRoleBadge,
   isAdminRole,
+  isTechnicalRole,
+  isRevenueOfficerRole,
+  isStoreRole,
+  isCustomerServiceRole,
 } from "./customMaintenanceUserRoles";
 
 const userService = new UserAccountService();
@@ -249,8 +253,44 @@ export default function CustomMaintenancePage() {
 
   // Contextual View / 360° Dossier Action Handler
   const handleViewAction = (req) => {
+    // If the logged-in user is a Revenue Officer and the request has passed payment (or is at payment stage),
+    // open Step 4 (CustomPaymentApprovalModal) which displays the approved payment summary in read-only mode
+    const isPureRevenue = isRevenueOfficerRole(userRoles) && !isStoreRole(userRoles) && !isTechnicalRole(userRoles);
+    if (
+      isPureRevenue &&
+      (req.status === "PENDING_PAYMENT_APPROVAL" ||
+        req.isPaid ||
+        [
+          "PENDING_STORE_COLLECTION",
+          "MATERIALS_COLLECTED",
+          "MAINTENANCE_IN_PROGRESS",
+          "MAINTENANCE_COMPLETED",
+        ].includes(req.status))
+    ) {
+      handleOpenPayment(req);
+      return;
+    }
+
     setSelectedRequest(req);
     setIsViewModalOpen(true);
+  };
+
+  const getViewActionTitle = (req) => {
+    const isPureRevenue = isRevenueOfficerRole(userRoles) && !isStoreRole(userRoles) && !isTechnicalRole(userRoles);
+    if (
+      isPureRevenue &&
+      (req.status === "PENDING_PAYMENT_APPROVAL" ||
+        req.isPaid ||
+        [
+          "PENDING_STORE_COLLECTION",
+          "MATERIALS_COLLECTED",
+          "MAINTENANCE_IN_PROGRESS",
+          "MAINTENANCE_COMPLETED",
+        ].includes(req.status))
+    ) {
+      return "የክፍያ ማጠቃለያ እና እቃዎች ዝርዝር ይመልከቱ";
+    }
+    return "ሙሉ መረጃ ተመልከት (360° View Dossier)";
   };
 
   const handleActionFromView = (req, actionType) => {
@@ -860,127 +900,242 @@ export default function CustomMaintenancePage() {
 
                         {/* Contextual Action Button & 360 View Action */}
                         <td className="py-3 px-3 text-center">
-                          <div className="flex items-center justify-center gap-1.5">
-                            {/* Eye button ALWAYS opens comprehensive 360 Dossier view */}
+                          <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                            {/* 1. Stage 1 -> Assign Plumber for Survey */}
+                            {req.status === "PENDING_SURVEY_ASSIGNMENT" && (
+                              <>
+                                {canAssignSurveyPlumber(userRoles) ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenAssignPlumber(req, "survey")}
+                                    className="px-2.5 py-1 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-lg shadow-sm transition-all animate-pulse ring-2 ring-offset-1 ring-amber-400"
+                                  >
+                                    ባለሙያ መድብ
+                                  </button>
+                                ) : (
+                                  <span className="text-[11px] text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded font-medium">
+                                    ባለሙያ በመጠባበቅ (ቴክኒክ)
+                                  </span>
+                                )}
+                                {(canRegisterMaintenance(userRoles) || isAdmin) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenRejectCancel(req, "CANCEL_APPLICATION")}
+                                    className="p-1 text-gray-400 hover:text-red-600 rounded hover:bg-gray-100 dark:hover:bg-gray-700"
+                                    title="ጥያቄውን ሰርዝ (Cancel Maintenance)"
+                                  >
+                                    <Ban className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                              </>
+                            )}
+
+                            {/* 2. Stage 2 -> Encode Survey Items */}
+                            {req.status === "SURVEY_IN_PROGRESS" && (
+                              <>
+                                {canEncodeSurveyItems(userRoles) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenSurvey(req)}
+                                    className="px-2.5 py-1 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm transition-all animate-pulse ring-2 ring-offset-1 ring-blue-400"
+                                  >
+                                    ዕቃና ክፍያ ሙላ
+                                  </button>
+                                )}
+                                {(canAssignSurveyPlumber(userRoles) || isAdmin) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenAssignPlumber(req, "survey", true)}
+                                    className="p-1 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/30 rounded"
+                                    title="የዳሰሳ ባለሙያ ቀይር (Reassign Plumber)"
+                                  >
+                                    <UserCheck className="w-4 h-4" />
+                                  </button>
+                                )}
+                                {(canEncodeSurveyItems(userRoles) || canAssignSurveyPlumber(userRoles) || isAdmin) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenRejectCancel(req, "REJECT_SURVEY_UNFEASIBLE")}
+                                    className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30 rounded"
+                                    title="የዳሰሳ ጥናት ውድቅ አድርግ (Feasibility Failed)"
+                                  >
+                                    <XCircle className="w-4 h-4" />
+                                  </button>
+                                )}
+                                {!canEncodeSurveyItems(userRoles) && !canAssignSurveyPlumber(userRoles) && !isAdmin && (
+                                  <span className="text-[11px] text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 px-2 py-0.5 rounded font-medium">
+                                    ዳሰሳ ላይ (ቴክኒክ)
+                                  </span>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => generateSurveyChecklistPdf([], req)}
+                                  className="p-1 text-gray-500 hover:text-blue-600 rounded hover:bg-gray-100 dark:hover:bg-gray-700"
+                                  title="የዳሰሳ ፎርም አትም"
+                                >
+                                  <Printer className="w-4 h-4" />
+                                </button>
+                              </>
+                            )}
+
+                            {/* 2b. Returned for Revision */}
+                            {req.status === "RETURNED_FOR_REVISION" && (
+                              <>
+                                {canEncodeSurveyItems(userRoles) ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenSurvey(req)}
+                                    className="px-2.5 py-1 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-lg shadow-sm transition-all animate-pulse ring-2 ring-offset-1 ring-amber-400"
+                                    title="የክለሳ አስተያየቶችን ተመልክተው ዕቃዎችን ያስተካክሉ"
+                                  >
+                                    ዕቃዎች አስተካክል
+                                  </button>
+                                ) : (
+                                  <span className="text-[11px] text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded font-medium">
+                                    ክለሳ በመጠባበቅ (ቴክኒክ)
+                                  </span>
+                                )}
+                                {(canAssignSurveyPlumber(userRoles) || isAdmin) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenAssignPlumber(req, "survey", true)}
+                                    className="p-1 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/30 rounded"
+                                    title="ዳሰሳ ባለሙያ ቀይር (Reassign)"
+                                  >
+                                    <UserCheck className="w-4 h-4" />
+                                  </button>
+                                )}
+                              </>
+                            )}
+
+                            {/* 3. Stage 3 -> Revenue Payment Approval */}
+                            {req.status === "PENDING_PAYMENT_APPROVAL" && (
+                              <>
+                                {canApprovePayment(userRoles) && !req.isPaid ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenPayment(req)}
+                                    className="px-2.5 py-1 text-xs font-bold text-white bg-purple-600 hover:bg-purple-700 rounded-lg shadow-sm transition-all animate-pulse ring-2 ring-offset-1 ring-purple-400"
+                                  >
+                                    ክፍያ አጽድቅ
+                                  </button>
+                                ) : (
+                                  <span className="text-[11px] text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/40 px-2 py-0.5 rounded font-medium">
+                                    {req.isPaid ? "ክፍያ ጸድቋል ✓" : "ክፍያ በመጠባበቅ (ገቢዎች)"}
+                                  </span>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => generateCostEstimationPdf(req)}
+                                  className="p-1 text-gray-500 hover:text-purple-600 rounded hover:bg-gray-100 dark:hover:bg-gray-700"
+                                  title="የዋጋ ማጠቃለያ አትም"
+                                >
+                                  <Printer className="w-4 h-4" />
+                                </button>
+                                {(canRegisterMaintenance(userRoles) || isAdmin) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenRejectCancel(req, "CANCEL_APPLICATION")}
+                                    className="p-1 text-gray-400 hover:text-red-600 rounded hover:bg-gray-100 dark:hover:bg-gray-700"
+                                    title="ጥያቄውን ሰርዝ (Cancel Maintenance)"
+                                  >
+                                    <Ban className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                              </>
+                            )}
+
+                            {/* 4. Stage 4 -> Store Dispatch */}
+                            {req.status === "PENDING_STORE_COLLECTION" && (
+                              canDispatchStoreItems(userRoles) ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenDispatch(req)}
+                                  className="px-2.5 py-1 text-xs font-bold text-white bg-teal-600 hover:bg-teal-700 rounded-lg shadow-sm transition-all animate-pulse ring-2 ring-offset-1 ring-teal-400"
+                                >
+                                  ዕቃ አስረክብ
+                                </button>
+                              ) : (
+                                <span className="text-[11px] text-teal-600 dark:text-teal-400 bg-teal-50 dark:bg-teal-950/40 px-2 py-0.5 rounded font-medium">
+                                  ዕቃ ማውጣት (መደብር)
+                                </span>
+                              )
+                            )}
+
+                            {/* 5. Stage 5 -> Assign Maintenance Plumber */}
+                            {req.status === "MATERIALS_COLLECTED" && (
+                              canAssignMaintenancePlumber(userRoles) ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenAssignPlumber(req, "maintenance")}
+                                  className="px-2.5 py-1 text-xs font-bold text-white bg-cyan-600 hover:bg-cyan-700 rounded-lg shadow-sm transition-all animate-pulse ring-2 ring-offset-1 ring-cyan-400"
+                                >
+                                  የጥገና ባለሙያ መድብ
+                                </button>
+                              ) : (
+                                <span className="text-[11px] text-cyan-600 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-950/40 px-2 py-0.5 rounded font-medium">
+                                  የጥገና ባለሙያ በመጠባበቅ (ቴክኒክ)
+                                </span>
+                              )
+                            )}
+
+                            {/* 6. Stage 6 -> Complete Maintenance */}
+                            {req.status === "MAINTENANCE_IN_PROGRESS" && (
+                              <>
+                                {canCompleteMaintenance(userRoles) ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenCompletion(req)}
+                                    className="px-2.5 py-1 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-sm transition-all animate-pulse ring-2 ring-offset-1 ring-emerald-400"
+                                  >
+                                    ጥገናውን አጠናቅቅ
+                                  </button>
+                                ) : (
+                                  <span className="text-[11px] text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded font-medium">
+                                    ጥገና ላይ (ቴክኒክ)
+                                  </span>
+                                )}
+                                {(canAssignMaintenancePlumber(userRoles) || isAdmin) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenAssignPlumber(req, "maintenance", true)}
+                                    className="p-1 text-cyan-600 hover:bg-cyan-50 dark:hover:bg-cyan-950/30 rounded"
+                                    title="የጥገና ባለሙያ ቀይር (Reassign Plumber)"
+                                  >
+                                    <UserCheck className="w-4 h-4" />
+                                  </button>
+                                )}
+                              </>
+                            )}
+
+                            {/* 7. Stage 7 -> Completed */}
+                            {req.status === "MAINTENANCE_COMPLETED" && (
+                              <span className="text-xs text-green-600 dark:text-green-400 font-bold flex items-center gap-1">
+                                <CheckCircle2 className="w-4 h-4" /> ጥገናው ተጠናቋል
+                              </span>
+                            )}
+
+                            {/* Rejected / Cancelled Status displays */}
+                            {req.status === "SURVEY_REJECTED_UNFEASIBLE" && (
+                              <span className="text-[11px] text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 px-2 py-0.5 rounded font-bold">
+                                ውድቅ የተደረገ
+                              </span>
+                            )}
+
+                            {req.status === "APPLICATION_CANCELLED" && (
+                              <span className="text-[11px] text-gray-500 bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded font-medium">
+                                የተሰረዘ
+                              </span>
+                            )}
+
+                            {/* View summary / contextual action button */}
                             <button
                               type="button"
                               onClick={() => handleViewAction(req)}
-                              className="p-1.5 text-blue-600 hover:text-blue-800 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg transition-colors"
-                              title="ሙሉ መረጃ ተመልከት (360° View Dossier)"
+                              className="p-1.5 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-950/40 transition-colors"
+                              title={getViewActionTitle(req)}
                             >
                               <Eye className="w-4 h-4" />
-                            </button>
-
-                            {/* Relative Step Action Button */}
-                            {req.status === "RETURNED_FOR_REVISION" && canEncodeSurveyItems(userRoles) && (
-                              <button
-                                onClick={() => handleOpenSurvey(req)}
-                                className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-semibold text-xs flex items-center gap-1 shadow-sm animate-pulse ring-2 ring-offset-1 ring-amber-400"
-                                title="የክለሳ አስተያየቶችን ተመልክተው ዕቃዎችን ያስተካክሉ"
-                              >
-                                <Calculator className="w-3 h-3" />
-                                ዕቃዎች አስተካክል
-                              </button>
-                            )}
-
-                            {req.status === "RETURNED_FOR_REVISION" && (canAssignSurveyPlumber(userRoles) || isAdmin) && (
-                              <button
-                                onClick={() => handleOpenAssignPlumber(req, "survey", true)}
-                                className="p-1.5 text-amber-700 hover:bg-amber-100 dark:text-amber-300 dark:hover:bg-amber-900/40 rounded-lg transition-colors"
-                                title="ዳሰሳ ባለሙያ ቀይር (Reassign)"
-                              >
-                                <UserCheck className="w-4 h-4" />
-                              </button>
-                            )}
-
-                            {req.status === "PENDING_SURVEY_ASSIGNMENT" && canAssignSurveyPlumber(userRoles) && (
-                              <button
-                                onClick={() => handleOpenAssignPlumber(req, "survey")}
-                                className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-semibold text-xs flex items-center gap-1 shadow-sm animate-pulse ring-2 ring-offset-1 ring-amber-400"
-                              >
-                                <Wrench className="w-3 h-3" />
-                                ባለሙያ መድብ
-                              </button>
-                            )}
-
-                            {req.status === "SURVEY_IN_PROGRESS" && canEncodeSurveyItems(userRoles) && (
-                              <button
-                                onClick={() => handleOpenSurvey(req)}
-                                className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold text-xs flex items-center gap-1 shadow-sm animate-pulse ring-2 ring-offset-1 ring-amber-400"
-                              >
-                                <Calculator className="w-3 h-3" />
-                                ዕቃና ክፍያ ሙላ
-                              </button>
-                            )}
-
-                            {req.status === "SURVEY_IN_PROGRESS" && (canAssignSurveyPlumber(userRoles) || isAdmin) && (
-                              <button
-                                onClick={() => handleOpenAssignPlumber(req, "survey", true)}
-                                className="p-1.5 text-blue-700 hover:bg-blue-100 dark:text-blue-300 dark:hover:bg-blue-900/40 rounded-lg transition-colors"
-                                title="የዳሰሳ ባለሙያ ቀይር (Reassign)"
-                              >
-                                <UserCheck className="w-4 h-4" />
-                              </button>
-                            )}
-
-                            {req.status === "PENDING_PAYMENT_APPROVAL" && canApprovePayment(userRoles) && (
-                              <button
-                                onClick={() => handleOpenPayment(req)}
-                                className="px-2.5 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-semibold text-xs flex items-center gap-1 shadow-sm animate-pulse ring-2 ring-offset-1 ring-amber-400"
-                              >
-                                <Banknote className="w-3 h-3" />
-                                ክፍያ አጽድቅ
-                              </button>
-                            )}
-
-                            {req.status === "PENDING_STORE_COLLECTION" && canDispatchStoreItems(userRoles) && (
-                              <button
-                                onClick={() => handleOpenDispatch(req)}
-                                className="px-2.5 py-1 bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-semibold text-xs flex items-center gap-1 shadow-sm animate-pulse ring-2 ring-offset-1 ring-amber-400"
-                              >
-                                <PackageCheck className="w-3 h-3" />
-                                ዕቃ አስረክብ
-                              </button>
-                            )}
-
-                            {req.status === "MATERIALS_COLLECTED" && canAssignMaintenancePlumber(userRoles) && (
-                              <button
-                                onClick={() => handleOpenAssignPlumber(req, "maintenance")}
-                                className="px-2.5 py-1 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg font-semibold text-xs flex items-center gap-1 shadow-sm animate-pulse ring-2 ring-offset-1 ring-amber-400"
-                              >
-                                <Wrench className="w-3 h-3" />
-                                የጥገና ባለሙያ መድብ
-                              </button>
-                            )}
-
-                            {req.status === "MAINTENANCE_IN_PROGRESS" && canCompleteMaintenance(userRoles) && (
-                              <button
-                                onClick={() => handleOpenCompletion(req)}
-                                className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-semibold text-xs flex items-center gap-1 shadow-sm animate-pulse ring-2 ring-offset-1 ring-amber-400"
-                              >
-                                <CheckCircle2 className="w-3 h-3" />
-                                ጥገናውን አጠናቅቅ
-                              </button>
-                            )}
-
-                            {req.status === "MAINTENANCE_IN_PROGRESS" && (canAssignMaintenancePlumber(userRoles) || isAdmin) && (
-                              <button
-                                onClick={() => handleOpenAssignPlumber(req, "maintenance", true)}
-                                className="p-1.5 text-cyan-700 hover:bg-cyan-100 dark:text-cyan-300 dark:hover:bg-cyan-900/40 rounded-lg transition-colors"
-                                title="የጥገና ባለሙያ ቀይር (Reassign)"
-                              >
-                                <UserCheck className="w-4 h-4" />
-                              </button>
-                            )}
-
-                            {/* Print PDF trigger */}
-                            <button
-                              type="button"
-                              onClick={() => generateCostEstimationPdf(req)}
-                              className="p-1.5 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-                              title="ቅጽ አትም (Print PDF)"
-                            >
-                              <Printer className="w-4 h-4" />
                             </button>
 
                             {/* Expand Details Trigger */}

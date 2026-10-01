@@ -218,6 +218,26 @@ public class LegacyMobileBillingController {
         return resp;
     }
 
+    // 1b. Modern Secure Authentication endpoint (receives credentials in JSON body)
+    @PostMapping("/auth/login")
+    public ResponseEntity<?> authenticateWithBody(
+            @RequestBody Map<String, String> payload,
+            HttpServletRequest request) {
+
+        if (payload == null || !payload.containsKey("username") || !payload.containsKey("password")) {
+            Map<String, Object> err = new LinkedHashMap<>();
+            err.put("status", "error");
+            err.put("message", "Username and password are required");
+            return ResponseEntity.badRequest().body(err);
+        }
+
+        String username = payload.get("username");
+        String password = payload.get("password");
+        String mobileId = payload.getOrDefault("mobileId", "UNKNOWN_DEVICE");
+
+        return authenticate(username, password, mobileId, request);
+    }
+
     // 2. Get current collection period and flags (legacy-compatible)
     // Old API returned List<HActiveReading> with a single object: { id: 1, kfyawor:
     // "..." }
@@ -886,6 +906,139 @@ public class LegacyMobileBillingController {
             logger.error("LegacyMobileBilling Update API call: {} requested, response failed", getFullUrl(request), ex);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body("Update failed: " + ex.getMessage());
+        }
+    }
+
+    // 16. Unified Reader Sync (Direct JSON sync without requiring CSV generation)
+    @RequestMapping(value = { "/customers/unified/{username}", "/customers/unified/{username}/" }, method = {
+            RequestMethod.GET, RequestMethod.POST })
+    public ResponseEntity<?> getUnifiedCustomerData(
+            @PathVariable("username") String username,
+            HttpServletRequest request) {
+        try {
+            logger.info("LegacyMobileBilling: /customers/unified/{} requested", username);
+
+            Optional<UserAccount> userOpt = userAccountRepository
+                    .findByUserNameAndStatusAndDeleted(username, "active", "active");
+
+            if (userOpt.isEmpty()) {
+                Map<String, Object> err = new LinkedHashMap<>();
+                err.put("status", "error");
+                err.put("message", "User not found or inactive");
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(err);
+            }
+
+            UserAccount reader = userOpt.get();
+
+            // 1. Get current billing period (kfyawor)
+            CompanyProfile profile = companyProfileService.getLatestProfile();
+            String kifyaWerStr = "";
+            if (profile != null && profile.getActiveReadingDate() != null) {
+                try {
+                    EthiopianCalendarConverter.EthiopianDate ethDate = EthiopianCalendarConverter
+                            .gregorianToEthiopian(profile.getActiveReadingDate());
+                    String monthName = EthiopianCalendarConverter.getEthiopianMonthNameAmharic(ethDate.getMonth());
+                    kifyaWerStr = monthName + ", " + ethDate.getYear();
+                } catch (Exception ignore) {
+                }
+            }
+
+            Map<String, Object> kfyaworData = new LinkedHashMap<>();
+            kfyaworData.put("kfyawor", kifyaWerStr);
+            kfyaworData.put("allownegative", profile != null ? profile.isAllowNegative() : false);
+            kfyaworData.put("allowprevious", reader.getIsAllowPreviousReading());
+            kfyaworData.put("companyname", profile != null ? profile.getCompanyName() : "");
+
+            // 2. Fetch Active Customers for Reader
+            List<BillingCustomerInfo> customers = billingCustomerInfoRepository.findByUserAccountAndStatus(reader,
+                    "active");
+
+            // 3. Fetch Wuzif (Arrears) for Reader and Billing Month
+            Map<Integer, BillingReading> wuzifMap = new LinkedHashMap<>();
+            if (kifyaWerStr != null && !kifyaWerStr.isBlank()) {
+                List<BillingReading> wuzifReadings = billingReadingRepository
+                        .findWuzifByReaderAndKifyaWer(reader, kifyaWerStr, "active", 0.0d);
+                for (BillingReading r : wuzifReadings) {
+                    if (r.getBillingCustomerInfo() != null) {
+                        wuzifMap.put(r.getBillingCustomerInfo().getId(), r);
+                    }
+                }
+            }
+
+            // 4. Merge Customers with Previous Readings, Reference Limits, and Wuzif
+            List<Map<String, Object>> customerList = new ArrayList<>();
+            for (BillingCustomerInfo c : customers) {
+                Map<String, Object> row = new LinkedHashMap<>();
+
+                // Basic Info
+                row.put("id", c.getId());
+                row.put("full_name", c.getFullName());
+                row.put("phone_number", c.getPhoneNumber());
+                row.put("house_number", c.getHouseNumber());
+                row.put("meter_number", c.getMeterNumber());
+                row.put("account_number", c.getAccountNumber());
+                row.put("count_number", c.getCountNumber());
+                row.put("location_coordination", c.getLocationCoordination());
+                row.put("qr_code", c.getQrCode());
+                row.put("status", c.getStatus());
+
+                // Enriched Relationships (Names instead of raw IDs)
+                row.put("address_1_id", c.getAddressStreet() != null ? c.getAddressStreet().getStreetsName() : null);
+                row.put("address_2_id", c.getAddressKetena() != null ? c.getAddressKetena().getKetenaName() : null);
+                row.put("meter_size_id", c.getBillingMeterSize() != null ? c.getBillingMeterSize().getMeterSize() : null);
+                row.put("customer_type_id", c.getBillingCustomerType() != null ? c.getBillingCustomerType().getCustomerType() : null);
+
+                // Merged Billing Data (replaces separate CSV download)
+                int prevReading = 0;
+                if (c.getAccountNumber() != null && kifyaWerStr != null && !kifyaWerStr.isBlank()) {
+                    try {
+                        prevReading = billingReadingImportService.getPreviousReadingForCustomerOnly(c.getAccountNumber(), kifyaWerStr);
+                    } catch (Exception ex) {
+                        if (c.getBillingCustomerInfoMeter() != null) {
+                            prevReading = c.getBillingCustomerInfoMeter().getInitialReading();
+                        }
+                    }
+                }
+                row.put("previous_reading", prevReading);
+
+                int maxReading = 0;
+                if (c.getBillingCustomerInfoMeter() != null) {
+                    maxReading = c.getBillingCustomerInfoMeter().getMaxReference();
+                }
+                row.put("max_reading", maxReading);
+                row.put("reading_month", kifyaWerStr);
+                row.put("last_reading", 0);
+                row.put("additional_text", "");
+
+                // Wuzif Data
+                BillingReading wuzifReading = wuzifMap.get(c.getId());
+                if (wuzifReading != null) {
+                    row.put("wuzif_hisab", wuzifReading.getWuzifHisab());
+                    row.put("wuzif_remark", wuzifReading.getWuzifKezihEske() != null ? wuzifReading.getWuzifKezihEske() : "");
+                } else {
+                    row.put("wuzif_hisab", 0.0);
+                    row.put("wuzif_remark", "");
+                }
+
+                customerList.add(row);
+            }
+
+            Map<String, Object> response = new LinkedHashMap<>();
+            response.put("status", "success");
+            response.put("kfyawor", kfyaworData);
+            response.put("customers", customerList);
+            response.put("count", customerList.size());
+
+            ResponseEntity<?> resp = ResponseEntity.ok(response);
+            logLegacyCall(request, resp.getStatusCode().value());
+            return resp;
+
+        } catch (Exception ex) {
+            logger.error("LegacyMobileBilling Unified Sync failed for user: {}", username, ex);
+            Map<String, Object> err = new LinkedHashMap<>();
+            err.put("status", "error");
+            err.put("message", "Unified sync failed: " + ex.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(err);
         }
     }
 }

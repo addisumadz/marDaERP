@@ -1,5 +1,6 @@
 // Derash service for submitting individual bills to Derash payment gateway
 import { baseURL } from "./httpCommon/http-common";
+import getToken from "./getToken";
 
 const baseUrl = new baseURL();
 const commonUrl = baseUrl.getUrl();
@@ -21,11 +22,12 @@ const derashService = {
    */
   async submitBillToDerash(billData) {
     try {
+      const token = getToken();
       const response = await fetch(`${commonUrl}submit-bill-to-derash`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Authorization': `Bearer ${token}`,
         },
         body: JSON.stringify(billData),
       });

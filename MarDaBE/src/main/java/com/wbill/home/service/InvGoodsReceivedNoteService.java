@@ -66,6 +66,8 @@ public class InvGoodsReceivedNoteService {
                     }
                     if (line.getPoLine() != null) {
                         line.getPoLine().getId();
+                        // Eagerly load VAT rate for detail display
+                        line.getPoLine().getVatRate();
                     }
                 }
             }
@@ -154,10 +156,43 @@ public class InvGoodsReceivedNoteService {
 
         InvPurchaseOrder po = grn.getPurchaseOrder();
 
+        // Accumulate VAT-inclusive total for the journal entry
+        BigDecimal journalTotalInclVat = BigDecimal.ZERO;
+
         for (InvGoodsReceivedNoteLine line : grn.getLines()) {
-            // 1. Increase stock
+            // Calculate VAT-inclusive unit cost from the PO line's VAT rate
+            BigDecimal vatInclusiveCost = line.getUnitCost();
+            try {
+                BigDecimal lineVatRate = null;
+                if (line.getPoLine() != null) {
+                    lineVatRate = line.getPoLine().getVatRate();
+                }
+                // Fallback to item's VAT rate if PO line VAT rate is unavailable
+                if (lineVatRate == null && line.getItem() != null) {
+                    lineVatRate = line.getItem().getVatRate();
+                }
+                if (lineVatRate != null && lineVatRate.compareTo(BigDecimal.ZERO) > 0) {
+                    BigDecimal vatMultiplier = BigDecimal.ONE.add(
+                        lineVatRate.divide(new BigDecimal("100"), 4, java.math.RoundingMode.HALF_UP));
+                    vatInclusiveCost = line.getUnitCost().multiply(vatMultiplier)
+                        .setScale(4, java.math.RoundingMode.HALF_UP);
+                }
+            } catch (Exception e) {
+                // Fallback: use excl. VAT cost if VAT calculation fails
+                System.err.println("Warning: Could not compute VAT-inclusive cost for GRN line " + line.getId() + ": " + e.getMessage());
+                vatInclusiveCost = line.getUnitCost();
+            }
+
+            // Accumulate for journal: accepted qty × VAT-inclusive unit cost
+            if (line.getAcceptedQuantity() != null) {
+                journalTotalInclVat = journalTotalInclVat.add(
+                    line.getAcceptedQuantity().multiply(vatInclusiveCost)
+                        .setScale(2, java.math.RoundingMode.HALF_UP));
+            }
+
+            // 1. Increase stock — with VAT-inclusive cost
             stockService.receiveStock(line.getItem(), grn.getStore(), line.getAcceptedQuantity(),
-                    line.getUnitCost(), "GRN", grn.getId(), username);
+                    vatInclusiveCost, "GRN", grn.getId(), username);
 
             // 2. Update PO line received quantity safely on attached entity
             if (line.getPoLine() != null && po.getLines() != null) {
@@ -173,9 +208,9 @@ public class InvGoodsReceivedNoteService {
             // 3. Create serial/batch tracking if applicable
             createTrackingRecord(line, grn);
 
-            // 4. Update InvItem defaultUnitCost with High-Water Mark (Ratchet) rule for sales pricing
+            // 4. Update InvItem defaultUnitCost with VAT-inclusive High-Water Mark (Ratchet) rule
             if (line.getAcceptedQuantity() != null && line.getAcceptedQuantity().compareTo(BigDecimal.ZERO) > 0) {
-                BigDecimal newBuyingPrice = line.getUnitCost();
+                BigDecimal newBuyingPrice = vatInclusiveCost;
                 if (newBuyingPrice != null && newBuyingPrice.compareTo(BigDecimal.ZERO) > 0) {
                     InvItem item = line.getItem();
                     BigDecimal currentDefaultCost = item.getDefaultUnitCost() != null ? item.getDefaultUnitCost() : BigDecimal.ZERO;
@@ -192,8 +227,8 @@ public class InvGoodsReceivedNoteService {
         po.setStatus(allReceived ? POStatus.FULLY_RECEIVED : POStatus.PARTIALLY_RECEIVED);
         poRepository.save(po);
 
-        // 4. Create finance journal entry
-        FncJournalEntry journalEntry = financeService.createGRNJournalEntry(grn, username);
+        // 5. Create finance journal entry with VAT-inclusive total
+        FncJournalEntry journalEntry = financeService.createGRNJournalEntry(grn, journalTotalInclVat, username);
         grn.setJournalEntry(journalEntry);
 
         grn.setStatus(GRNStatus.CONFIRMED);
@@ -214,7 +249,7 @@ public class InvGoodsReceivedNoteService {
             tracking.setBatchNumber(line.getBatchNumber());
             tracking.setExpiryDate(line.getExpiryDate());
             tracking.setStatus(InvSerialTracking.SerialStatus.IN_STOCK);
-            tracking.setReferenceType("GRN");
+            tracking.setReferenceType("GRV");
             tracking.setReferenceId(grn.getId());
             tracking.setCreatedBy(grn.getReceivedBy());
             serialTrackingRepository.save(tracking);
@@ -222,7 +257,7 @@ public class InvGoodsReceivedNoteService {
     }
 
     private String generateNumber() {
-        String prefix = "GRN-" + Year.now().getValue() + "-";
+        String prefix = "GRV-";
         Long maxSeq = repository.findMaxSequence(prefix);
         long next = (maxSeq != null ? maxSeq : 0) + 1;
         return prefix + String.format("%05d", next);

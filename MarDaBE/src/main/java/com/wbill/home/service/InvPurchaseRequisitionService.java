@@ -320,8 +320,86 @@ public class InvPurchaseRequisitionService {
         return repository.findById(id).orElse(pr);
     }
 
+    @Transactional
+    public InvPurchaseRequisition update(long id, int storeId, String remarks, List<InvPurchaseRequisitionLine> newLines, String username) {
+        InvPurchaseRequisition pr = repository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("PR not found"));
+
+        // Only DRAFT or REJECTED can be edited
+        if (pr.getStatus() != PRStatus.DRAFT && pr.getStatus() != PRStatus.REJECTED) {
+            throw new IllegalStateException("Only DRAFT or REJECTED requisitions can be edited");
+        }
+
+        // If REJECTED → reset to DRAFT for resubmission
+        if (pr.getStatus() == PRStatus.REJECTED) {
+            pr.setStatus(PRStatus.DRAFT);
+            pr.setRejectedBy(null);
+            pr.setRejectedDate(null);
+            pr.setRejectionReason(null);
+            pr.setApprovedByL1(null);
+            pr.setApprovedDateL1(null);
+            pr.setApprovedByL2(null);
+            pr.setApprovedDateL2(null);
+        }
+
+        // Update store
+        InvStore store = storeRepository.findById(storeId)
+                .orElseThrow(() -> new IllegalArgumentException("Store not found"));
+        pr.setStore(store);
+        pr.setRemarks(remarks);
+
+        // Replace lines
+        pr.getLines().clear();
+        BigDecimal total = BigDecimal.ZERO;
+        int order = 1;
+        for (InvPurchaseRequisitionLine line : newLines) {
+            InvItem item = itemRepository.findById(line.getItem().getId())
+                    .orElseThrow(() -> new IllegalArgumentException("Item not found: " + line.getItem().getId()));
+            line.setItem(item);
+            line.setEstimatedTotal(line.getRequestedQuantity().multiply(line.getEstimatedUnitCost()).setScale(2, java.math.RoundingMode.HALF_UP));
+            line.setLineOrder(order++);
+            pr.addLine(line);
+            total = total.add(line.getEstimatedTotal());
+        }
+        pr.setTotalEstimatedAmount(total);
+
+        return repository.save(pr);
+    }
+
+    @Transactional
+    public InvPurchaseRequisition cancel(long id, String username, String reason) {
+        InvPurchaseRequisition pr = repository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("PR not found"));
+
+        // Cannot cancel already converted or already cancelled
+        if (pr.getStatus() == PRStatus.CONVERTED_TO_PO) {
+            throw new IllegalStateException("Cannot cancel a requisition that has been converted to a Purchase Order");
+        }
+        if (pr.getStatus() == PRStatus.CANCELLED) {
+            throw new IllegalStateException("Requisition is already cancelled");
+        }
+
+        pr.setStatus(PRStatus.CANCELLED);
+        pr.setRejectedBy(username);
+        pr.setRejectedDate(LocalDateTime.now());
+        pr.setRejectionReason("CANCELLED: " + reason);
+        pr = repository.save(pr);
+
+        // Cancel workflow instance if present
+        if (workflowService != null) {
+            try {
+                workflowService.getInstanceByDocument("PURCHASE_REQUISITION", id).ifPresent(wf -> {
+                    if ("IN_PROGRESS".equals(wf.getStatus())) {
+                        workflowService.reject(wf.getId(), username, "Cancelled: " + reason);
+                    }
+                });
+            } catch (Exception ignored) {}
+        }
+        return repository.findById(id).orElse(pr);
+    }
+
     private String generateNumber() {
-        String prefix = "PR-" + Year.now().getValue() + "-";
+        String prefix = "PR-";
         Long maxSeq = repository.findMaxSequence(prefix);
         long next = (maxSeq != null ? maxSeq : 0) + 1;
         return prefix + String.format("%05d", next);

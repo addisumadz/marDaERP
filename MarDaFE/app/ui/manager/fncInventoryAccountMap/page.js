@@ -24,7 +24,7 @@ const INV_MAPPINGS = [
     eventKey: "GRN_RECEIPT",
     label: "የዕቃ መቀበያ ሰነድ (GRN Stock Intake)",
     labelAm: "የዕቃ መቀበያ ሰነድ",
-    description: "Posted when Goods Received Note (GRN) is confirmed after vendor delivery",
+    description: "Posted when Goods Received Voucher (GRV) is confirmed after vendor delivery",
     drKey: "INV_DR_GRN_ASSET",
     crKey: "INV_CR_GRN_PAYABLE",
     drDesc: "1300 — Inventory Asset (የዕቃ ንብረት ሂሳብ)",
@@ -363,7 +363,7 @@ export default function FncInventoryAccountMapPage() {
           <span>How Inventory & General Ledger Integration Works:</span>
         </div>
         <p className="text-xs text-teal-800 dark:text-teal-300 leading-relaxed">
-          Whenever a store transaction occurs (e.g., confirming a <strong>Goods Received Note</strong>, issuing stock to internal departments, or posting physical inventory adjustments), the system creates a balanced double-entry journal voucher using these mapped accounts.
+          Whenever a store transaction occurs (e.g., confirming a <strong>Goods Received Voucher</strong>, issuing stock to internal departments, or posting physical inventory adjustments), the system creates a balanced double-entry journal voucher using these mapped accounts.
           If an account mapping is left unselected, the backend automatically uses standard chart defaults (<code className="bg-teal-100 dark:bg-teal-800/40 px-1 py-0.5 rounded">1300</code>, <code className="bg-teal-100 dark:bg-teal-800/40 px-1 py-0.5 rounded">2100</code>, etc.).
         </p>
       </div>

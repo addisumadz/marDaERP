@@ -65,15 +65,21 @@ public class InvFinanceIntegrationService {
 
     /**
      * GRN Confirmed: Dr. Inventory Asset, Cr. Accounts Payable
+     * @param grn The goods received note
+     * @param journalAmount The total amount for the journal (should be VAT-inclusive)
+     * @param username The user performing the action
      */
     @Transactional
-    public FncJournalEntry createGRNJournalEntry(InvGoodsReceivedNote grn, String username) {
+    public FncJournalEntry createGRNJournalEntry(InvGoodsReceivedNote grn, BigDecimal journalAmount, String username) {
         FncAccount inventoryAccount = resolveAccount(KEY_DR_GRN_ASSET, INVENTORY_ASSET_CODE);
         FncAccount apAccount = resolveAccount(KEY_CR_GRN_PAYABLE, ACCOUNTS_PAYABLE_CODE);
 
         if (inventoryAccount == null || apAccount == null) {
             return null; // Accounts not configured yet, skip finance integration
         }
+
+        // Use provided journalAmount, fallback to grn.getTotalAmount() if null
+        BigDecimal amount = journalAmount != null ? journalAmount : grn.getTotalAmount();
 
         FncJournalEntry entry = new FncJournalEntry();
         entry.setEntryNumber(generateEntryNumber());
@@ -84,8 +90,8 @@ public class InvFinanceIntegrationService {
         entry.setSourceId(String.valueOf(grn.getId()));
         entry.setDescription("Goods Received - " + grn.getGrnNumber() + " from " + grn.getSupplier().getSupplierName());
         entry.setStatus(EntryStatus.POSTED);
-        entry.setTotalDebit(grn.getTotalAmount());
-        entry.setTotalCredit(grn.getTotalAmount());
+        entry.setTotalDebit(amount);
+        entry.setTotalCredit(amount);
         entry.setPostedBy(username);
         entry.setCreatedBy(username);
 
@@ -93,7 +99,7 @@ public class InvFinanceIntegrationService {
         FncJournalEntryLine debitLine = new FncJournalEntryLine();
         debitLine.setAccount(inventoryAccount);
         debitLine.setDescription("Inventory received - " + grn.getGrnNumber());
-        debitLine.setDebitAmount(grn.getTotalAmount());
+        debitLine.setDebitAmount(amount);
         debitLine.setCreditAmount(BigDecimal.ZERO);
         debitLine.setLineOrder(1);
         entry.addLine(debitLine);
@@ -103,7 +109,7 @@ public class InvFinanceIntegrationService {
         creditLine.setAccount(apAccount);
         creditLine.setDescription("Payable to " + grn.getSupplier().getSupplierName());
         creditLine.setDebitAmount(BigDecimal.ZERO);
-        creditLine.setCreditAmount(grn.getTotalAmount());
+        creditLine.setCreditAmount(amount);
         creditLine.setLineOrder(2);
         entry.addLine(creditLine);
 
@@ -311,6 +317,130 @@ public class InvFinanceIntegrationService {
         return journalEntryRepository.save(entry);
     }
 
+    /**
+     * Return Voucher:
+     * - RETURN_FROM_DEPARTMENT: Dr. Inventory Asset, Cr. Expense (reverse of issue)
+     * - RETURN_TO_SUPPLIER: Dr. Accounts Payable, Cr. Inventory Asset (reverse of GRN)
+     */
+    @Transactional
+    public FncJournalEntry createReturnJournalEntry(InvReturnVoucher voucher, String username) {
+        BigDecimal totalAmount = voucher.getTotalAmount();
+        if (totalAmount == null || totalAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            return null;
+        }
+
+        FncAccount inventoryAccount = resolveAccount(KEY_DR_GRN_ASSET, INVENTORY_ASSET_CODE);
+        FncAccount counterAccount;
+        String sourceType;
+        String description;
+
+        if (voucher.getReturnType() == InvReturnVoucher.ReturnType.RETURN_FROM_DEPARTMENT) {
+            counterAccount = resolveAccount(KEY_DR_ISSUE_EXPENSE, INVENTORY_EXPENSE_CODE);
+            sourceType = "INVENTORY_RETURN_DEPT";
+            description = "Return from Department - " + voucher.getVoucherNumber();
+        } else {
+            counterAccount = resolveAccount(KEY_CR_GRN_PAYABLE, ACCOUNTS_PAYABLE_CODE);
+            sourceType = "INVENTORY_RETURN_SUPPLIER";
+            description = "Return to Supplier - " + voucher.getVoucherNumber();
+        }
+
+        if (inventoryAccount == null || counterAccount == null) return null;
+
+        FncJournalEntry entry = new FncJournalEntry();
+        entry.setEntryNumber(generateEntryNumber());
+        entry.setEntryDate(LocalDate.now());
+        entry.setFiscalYear(getCurrentFiscalYear());
+        entry.setReferenceNumber(voucher.getVoucherNumber());
+        entry.setSourceType(sourceType);
+        entry.setSourceId(String.valueOf(voucher.getId()));
+        entry.setDescription(description);
+        entry.setStatus(EntryStatus.POSTED);
+        entry.setTotalDebit(totalAmount);
+        entry.setTotalCredit(totalAmount);
+        entry.setPostedBy(username);
+        entry.setCreatedBy(username);
+
+        FncJournalEntryLine debitLine = new FncJournalEntryLine();
+        FncJournalEntryLine creditLine = new FncJournalEntryLine();
+
+        if (voucher.getReturnType() == InvReturnVoucher.ReturnType.RETURN_FROM_DEPARTMENT) {
+            // Dr. Inventory Asset (stock coming back), Cr. Expense (reverse issue)
+            debitLine.setAccount(inventoryAccount);
+            debitLine.setDescription("Inventory returned - " + voucher.getVoucherNumber());
+            creditLine.setAccount(counterAccount);
+            creditLine.setDescription("Expense reversed - return from department");
+        } else {
+            // Dr. Accounts Payable (reduce payable), Cr. Inventory Asset (stock going out)
+            debitLine.setAccount(counterAccount);
+            debitLine.setDescription("Payable reduced - supplier return");
+            creditLine.setAccount(inventoryAccount);
+            creditLine.setDescription("Inventory returned to supplier - " + voucher.getVoucherNumber());
+        }
+
+        debitLine.setDebitAmount(totalAmount);
+        debitLine.setCreditAmount(BigDecimal.ZERO);
+        debitLine.setLineOrder(1);
+        entry.addLine(debitLine);
+
+        creditLine.setDebitAmount(BigDecimal.ZERO);
+        creditLine.setCreditAmount(totalAmount);
+        creditLine.setLineOrder(2);
+        entry.addLine(creditLine);
+
+        return journalEntryRepository.save(entry);
+    }
+
+    /**
+     * Disposal / Write-Off: Dr. Loss/Write-Off Expense, Cr. Inventory Asset
+     */
+    @Transactional
+    public FncJournalEntry createDisposalJournalEntry(InvDisposal disposal, String username) {
+        BigDecimal totalAmount = disposal.getTotalAmount();
+        if (totalAmount == null || totalAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            return null;
+        }
+
+        FncAccount expenseAccount = resolveAccount(KEY_DR_ADJUST_LOSS_EXP, INVENTORY_ADJUSTMENT_CODE);
+        FncAccount inventoryAccount = resolveAccount(KEY_CR_ADJUST_LOSS_ASSET, INVENTORY_ASSET_CODE);
+
+        if (expenseAccount == null || inventoryAccount == null) return null;
+
+        FncJournalEntry entry = new FncJournalEntry();
+        entry.setEntryNumber(generateEntryNumber());
+        entry.setEntryDate(LocalDate.now());
+        entry.setFiscalYear(getCurrentFiscalYear());
+        entry.setReferenceNumber(disposal.getDisposalNumber());
+        entry.setSourceType("INVENTORY_DISPOSAL");
+        entry.setSourceId(String.valueOf(disposal.getId()));
+        entry.setDescription("Disposal / Write-Off - " + disposal.getDisposalNumber() +
+                " (" + disposal.getDisposalType() + ")");
+        entry.setStatus(EntryStatus.POSTED);
+        entry.setTotalDebit(totalAmount);
+        entry.setTotalCredit(totalAmount);
+        entry.setPostedBy(username);
+        entry.setCreatedBy(username);
+
+        // Debit: Write-Off Expense
+        FncJournalEntryLine debitLine = new FncJournalEntryLine();
+        debitLine.setAccount(expenseAccount);
+        debitLine.setDescription("Inventory write-off - " + disposal.getDisposalType());
+        debitLine.setDebitAmount(totalAmount);
+        debitLine.setCreditAmount(BigDecimal.ZERO);
+        debitLine.setLineOrder(1);
+        entry.addLine(debitLine);
+
+        // Credit: Inventory Asset
+        FncJournalEntryLine creditLine = new FncJournalEntryLine();
+        creditLine.setAccount(inventoryAccount);
+        creditLine.setDescription("Inventory disposed - " + disposal.getDisposalNumber());
+        creditLine.setDebitAmount(BigDecimal.ZERO);
+        creditLine.setCreditAmount(totalAmount);
+        creditLine.setLineOrder(2);
+        entry.addLine(creditLine);
+
+        return journalEntryRepository.save(entry);
+    }
+
     // ─── HELPERS ──────────────────────────────────────────
 
     private FncAccount resolveAccount(String mappingKey, String fallbackCode) {
@@ -352,7 +482,18 @@ public class InvFinanceIntegrationService {
     }
 
     private String generateEntryNumber() {
-        // Follows existing pattern from FncJournalEntryService
-        return "JE-INV-" + Year.now().getValue() + "-" + System.currentTimeMillis();
+        String prefix = "JE-INV-";
+        Optional<String> maxOpt = journalEntryRepository.findMaxEntryNumber(prefix + "%");
+        int next = 1;
+        if (maxOpt.isPresent()) {
+            try {
+                String max = maxOpt.get();
+                String numPart = max.substring(prefix.length());
+                next = Integer.parseInt(numPart) + 1;
+            } catch (Exception ignored) {
+                // fallback to 1 if parsing fails
+            }
+        }
+        return prefix + String.format("%04d", next);
     }
 }

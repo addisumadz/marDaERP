@@ -27,4 +27,20 @@ public interface InvStockTransactionRepository extends JpaRepository<InvStockTra
     Long findMaxTransactionSequence(String prefix);
 
     boolean existsByTransactionNumber(String transactionNumber);
+
+    // Bin Card: transactions before a date for opening balance
+    List<InvStockTransaction> findByItemIdAndStoreIdAndTransactionDateBeforeOrderByTransactionDateAscCreatedAtAsc(
+            long itemId, int storeId, LocalDate date);
+
+    // Bin Card: transactions within a date range
+    List<InvStockTransaction> findByItemIdAndStoreIdAndTransactionDateBetweenOrderByTransactionDateAscCreatedAtAsc(
+            long itemId, int storeId, LocalDate from, LocalDate to);
+
+    // Reports: all transactions in a store within a date range
+    List<InvStockTransaction> findByStoreIdAndTransactionDateBetweenOrderByItemIdAscTransactionDateAsc(
+            int storeId, LocalDate from, LocalDate to);
+
+    // Reports: all transactions in a store before a date (for opening balances)
+    List<InvStockTransaction> findByStoreIdAndTransactionDateBeforeOrderByItemIdAscTransactionDateAsc(
+            int storeId, LocalDate date);
 }

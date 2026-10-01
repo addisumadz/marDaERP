@@ -21,31 +21,13 @@ public class CustomMaintenanceCommonMaterial implements Serializable {
     @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
     private CustomMaintenanceType maintenanceType;
 
-    @Column(name = "material_code", nullable = false, length = 50)
-    private String materialCode;
-
-    @Column(name = "material_name", nullable = false, length = 200)
-    private String materialName;
-
-    @Column(name = "material_name_am", nullable = false, length = 200)
-    private String materialNameAm;
-
-    @Column(name = "unit_of_measure", nullable = false, length = 50)
-    private String unitOfMeasure = "በቁጥር";
-
-    @ManyToOne(fetch = FetchType.LAZY)
+    @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "inv_item_id")
     @JsonIgnoreProperties({"hibernateLazyInitializer", "handler", "category", "itemGroup", "unitOfMeasure"})
     private InvItem invItem;
 
-    @Column(name = "default_unit_price", precision = 15, scale = 2, nullable = false)
-    private BigDecimal defaultUnitPrice = BigDecimal.ZERO;
-
     @Column(name = "display_order", nullable = false)
     private Integer displayOrder = 0;
-
-    @Column(name = "is_water_meter", nullable = false)
-    private Boolean isWaterMeter = false;
 
     @Column(name = "is_active", nullable = false)
     private Boolean isActive = true;
@@ -55,6 +37,25 @@ public class CustomMaintenanceCommonMaterial implements Serializable {
 
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
+
+    // Transient fields - dropped from physical table, dynamically derived from invItem
+    @Transient
+    private String materialCode;
+
+    @Transient
+    private String materialName;
+
+    @Transient
+    private String materialNameAm;
+
+    @Transient
+    private String unitOfMeasure;
+
+    @Transient
+    private BigDecimal defaultUnitPrice;
+
+    @Transient
+    private Boolean isWaterMeter;
 
     @PrePersist
     protected void onCreate() {
@@ -75,31 +76,63 @@ public class CustomMaintenanceCommonMaterial implements Serializable {
     public CustomMaintenanceType getMaintenanceType() { return maintenanceType; }
     public void setMaintenanceType(CustomMaintenanceType maintenanceType) { this.maintenanceType = maintenanceType; }
 
-    public String getMaterialCode() { return materialCode; }
+    public String getMaterialCode() {
+        if (invItem != null && invItem.getItemCode() != null && !invItem.getItemCode().isBlank()) {
+            return invItem.getItemCode();
+        }
+        return materialCode;
+    }
     public void setMaterialCode(String materialCode) { this.materialCode = materialCode; }
 
-    public String getMaterialName() { return materialName; }
+    public String getMaterialName() {
+        if (invItem != null && invItem.getItemName() != null && !invItem.getItemName().isBlank()) {
+            return invItem.getItemName();
+        }
+        return materialName;
+    }
     public void setMaterialName(String materialName) { this.materialName = materialName; }
 
-    public String getMaterialNameAm() { return materialNameAm; }
+    public String getMaterialNameAm() {
+        if (invItem != null) {
+            if (invItem.getItemNameAm() != null && !invItem.getItemNameAm().isBlank()) {
+                return invItem.getItemNameAm();
+            }
+            if (invItem.getItemName() != null && !invItem.getItemName().isBlank()) {
+                return invItem.getItemName();
+            }
+        }
+        return materialNameAm;
+    }
     public void setMaterialNameAm(String materialNameAm) { this.materialNameAm = materialNameAm; }
 
-    public String getUnitOfMeasure() { return unitOfMeasure; }
+    public String getUnitOfMeasure() {
+        if (invItem != null && invItem.getUnitOfMeasure() != null) {
+            String uomName = invItem.getUnitOfMeasure().getUnitName();
+            if (uomName != null && !uomName.isBlank()) return uomName;
+        }
+        return unitOfMeasure != null ? unitOfMeasure : "በቁጥር";
+    }
     public void setUnitOfMeasure(String unitOfMeasure) { this.unitOfMeasure = unitOfMeasure; }
 
     public InvItem getInvItem() { return invItem; }
     public void setInvItem(InvItem invItem) { this.invItem = invItem; }
 
-    public BigDecimal getDefaultUnitPrice() { return defaultUnitPrice; }
+    public BigDecimal getDefaultUnitPrice() {
+        if (invItem != null && invItem.getDefaultUnitCost() != null && invItem.getDefaultUnitCost().compareTo(BigDecimal.ZERO) > 0) {
+            return invItem.getDefaultUnitCost();
+        }
+        return defaultUnitPrice != null ? defaultUnitPrice : BigDecimal.ZERO;
+    }
     public void setDefaultUnitPrice(BigDecimal defaultUnitPrice) { this.defaultUnitPrice = defaultUnitPrice; }
 
     public Integer getDisplayOrder() { return displayOrder; }
     public void setDisplayOrder(Integer displayOrder) { this.displayOrder = displayOrder; }
 
     public Boolean getIsWaterMeter() {
-        if (Boolean.TRUE.equals(isWaterMeter)) return true;
-        if (invItem != null && invItem.isWaterMeter()) return true;
-        return false;
+        if (invItem != null) {
+            return invItem.isWaterMeter();
+        }
+        return Boolean.TRUE.equals(isWaterMeter);
     }
     public void setIsWaterMeter(Boolean isWaterMeter) { this.isWaterMeter = isWaterMeter != null ? isWaterMeter : false; }
 

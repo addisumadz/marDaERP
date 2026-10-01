@@ -128,21 +128,29 @@ export default function CustomMaintenanceCommonMaterialsModal({ isOpen, onClose 
                       </td>
                     </tr>
                   ) : (
-                    filteredMaterials.map((m, idx) => (
-                      <tr key={m.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
-                        <td className="py-2 px-3 text-center text-gray-400 font-mono">{idx + 1}</td>
-                        <td className="py-2 px-3 font-semibold text-blue-700 dark:text-blue-400">
-                          {m.maintenanceType?.typeNameAm || "አጠቃላይ"}
-                        </td>
-                        <td className="py-2 px-3 font-mono text-gray-600 dark:text-gray-400">{m.materialCode}</td>
-                        <td className="py-2 px-3 font-semibold text-gray-900 dark:text-white">{m.materialNameAm}</td>
-                        <td className="py-2 px-3 text-gray-600 dark:text-gray-300">{m.materialName || "—"}</td>
-                        <td className="py-2 px-3 text-center text-gray-500">{m.unitOfMeasure}</td>
-                        <td className="py-2 px-3 text-right font-mono font-bold text-gray-900 dark:text-white">
-                          {(Number(m.defaultUnitPrice) || 0).toFixed(2)}
-                        </td>
-                      </tr>
-                    ))
+                    filteredMaterials.map((m, idx) => {
+                      const code = m.invItem?.itemCode || m.materialCode;
+                      const nameAm = m.invItem?.itemNameAm || m.materialNameAm || m.invItem?.itemName;
+                      const nameEn = m.invItem?.itemName || m.materialName || "—";
+                      const uom = (typeof m.unitOfMeasure === "object" ? m.unitOfMeasure?.unitName : m.unitOfMeasure) || m.invItem?.unitOfMeasure?.unitName || "በቁጥር";
+                      const price = m.invItem?.defaultUnitCost != null && Number(m.invItem.defaultUnitCost) > 0 ? Number(m.invItem.defaultUnitCost) : (Number(m.defaultUnitPrice) || 0);
+
+                      return (
+                        <tr key={m.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                          <td className="py-2 px-3 text-center text-gray-400 font-mono">{idx + 1}</td>
+                          <td className="py-2 px-3 font-semibold text-blue-700 dark:text-blue-400">
+                            {m.maintenanceType?.typeNameAm || "አጠቃላይ"}
+                          </td>
+                          <td className="py-2 px-3 font-mono text-gray-600 dark:text-gray-400">{code}</td>
+                          <td className="py-2 px-3 font-semibold text-gray-900 dark:text-white">{nameAm}</td>
+                          <td className="py-2 px-3 text-gray-600 dark:text-gray-300">{nameEn}</td>
+                          <td className="py-2 px-3 text-center text-gray-500">{uom}</td>
+                          <td className="py-2 px-3 text-right font-mono font-bold text-gray-900 dark:text-white">
+                            {price.toFixed(2)}
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>

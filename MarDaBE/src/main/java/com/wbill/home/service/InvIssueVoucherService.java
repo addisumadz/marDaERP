@@ -156,7 +156,7 @@ public class InvIssueVoucherService {
     }
 
     private String generateNumber() {
-        String prefix = "ISS-" + Year.now().getValue() + "-";
+        String prefix = "ISS-";
         Long maxSeq = repository.findMaxSequence(prefix);
         long next = (maxSeq != null ? maxSeq : 0) + 1;
         return prefix + String.format("%05d", next);

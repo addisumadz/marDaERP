@@ -55,6 +55,9 @@ public class InvItem implements Serializable {
     @Column(name = "default_unit_cost", precision = 15, scale = 2)
     private BigDecimal defaultUnitCost = BigDecimal.ZERO;
 
+    @Column(name = "vat_rate", precision = 5, scale = 2)
+    private BigDecimal vatRate = new BigDecimal("15.00");
+
     @Column(name = "is_water_meter", nullable = false)
     private boolean isWaterMeter = false;
 
@@ -129,6 +132,9 @@ public class InvItem implements Serializable {
 
     public BigDecimal getDefaultUnitCost() { return defaultUnitCost; }
     public void setDefaultUnitCost(BigDecimal defaultUnitCost) { this.defaultUnitCost = defaultUnitCost; }
+
+    public BigDecimal getVatRate() { return vatRate; }
+    public void setVatRate(BigDecimal vatRate) { this.vatRate = vatRate; }
 
     public boolean isWaterMeter() { return isWaterMeter; }
     public void setIsWaterMeter(boolean isWaterMeter) { this.isWaterMeter = isWaterMeter; }

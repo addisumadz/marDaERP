@@ -13,6 +13,6 @@ public interface InvStockTransferRepository extends JpaRepository<InvStockTransf
     Page<InvStockTransfer> findByToStoreIdOrderByCreatedAtDesc(int toStoreId, Pageable pageable);
     Page<InvStockTransfer> findAllByOrderByCreatedAtDesc(Pageable pageable);
 
-    @Query("SELECT MAX(CAST(SUBSTRING(t.transferNumber, 10) AS long)) FROM InvStockTransfer t WHERE t.transferNumber LIKE CONCAT(:prefix, '%')")
+    @Query("SELECT MAX(CAST(SUBSTRING(t.transferNumber, 5) AS long)) FROM InvStockTransfer t WHERE t.transferNumber LIKE CONCAT(:prefix, '%')")
     Long findMaxSequence(String prefix);
 }

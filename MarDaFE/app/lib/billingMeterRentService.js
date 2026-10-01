@@ -12,7 +12,7 @@ export class BillingMeterRentService {
   // Get all meter rents
   async getAllMeterRents() {
     try {
-      const token = localStorage.getItem("token");
+      const token = getAccesToken();
       const res = await axios.get(`${commonUrl}billing-meter-rents/all`, {
         headers: authHeader(token),
       });
@@ -26,7 +26,7 @@ export class BillingMeterRentService {
   // Get meter rents by status with pagination
   async getMeterRentsByStatus(status, page = 0, size = 10) {
     try {
-      const token = localStorage.getItem("token");
+      const token = getAccesToken();
       const res = await axios.get(
         `${commonUrl}billing-meter-rents/status/${status}?page=${page}&size=${size}`,
         {
@@ -43,7 +43,7 @@ export class BillingMeterRentService {
   // Get meter rent by ID
   async getMeterRentById(id) {
     try {
-      const token = localStorage.getItem("token");
+      const token = getAccesToken();
       const res = await axios.get(`${commonUrl}billing-meter-rents/${id}`, {
         headers: authHeader(token),
       });
@@ -57,7 +57,7 @@ export class BillingMeterRentService {
   // Create new meter rent
   async createMeterRent(meterRentData) {
     try {
-      const token = localStorage.getItem("token");
+      const token = getAccesToken();
       const res = await axios.post(
         `${commonUrl}billing-meter-rents`,
         meterRentData,
@@ -75,7 +75,7 @@ export class BillingMeterRentService {
   // Update existing meter rent
   async updateMeterRent(id, meterRentData) {
     try {
-      const token = localStorage.getItem("token");
+      const token = getAccesToken();
       const res = await axios.put(
         `${commonUrl}billing-meter-rents/${id}`,
         meterRentData,
@@ -93,7 +93,7 @@ export class BillingMeterRentService {
   // Deactivate meter rent
   async deactivateMeterRent(payload) {
     try {
-      const token = localStorage.getItem("token");
+      const token = getAccesToken();
       const res = await axios.post(
         `${commonUrl}billing-meter-rents/${payload.id}/deactivate`,
         { remark: payload.remark || "" },
@@ -111,7 +111,7 @@ export class BillingMeterRentService {
   // Activate meter rent
   async activateMeterRent(id) {
     try {
-      const token = localStorage.getItem("token");
+      const token = getAccesToken();
       const res = await axios.post(
         `${commonUrl}billing-meter-rents/${id}/activate`,
         {},
@@ -129,7 +129,7 @@ export class BillingMeterRentService {
   // Get meter rent statistics
   async getMeterRentStatistics() {
     try {
-      const token = localStorage.getItem("token");
+      const token = getAccesToken();
       const res = await axios.get(
         `${commonUrl}billing-meter-rents/statistics`,
         {
@@ -146,7 +146,7 @@ export class BillingMeterRentService {
   // Get active customer types for dropdown
   async getActiveCustomerTypes() {
     try {
-      const token = localStorage.getItem("token");
+      const token = getAccesToken();
       const res = await axios.get(
         `${commonUrl}billing-meter-rents/customer-types`,
         {
@@ -163,7 +163,7 @@ export class BillingMeterRentService {
   // Get active meter sizes for dropdown
   async getActiveMeterSizes() {
     try {
-      const token = localStorage.getItem("token");
+      const token = getAccesToken();
       const res = await axios.get(
         `${commonUrl}billing-meter-rents/meter-sizes`,
         {

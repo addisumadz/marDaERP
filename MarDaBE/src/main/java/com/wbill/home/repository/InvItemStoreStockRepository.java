@@ -14,6 +14,9 @@ public interface InvItemStoreStockRepository extends JpaRepository<InvItemStoreS
     List<InvItemStoreStock> findByItemId(long itemId);
     Page<InvItemStoreStock> findByStoreId(int storeId, Pageable pageable);
 
+    @Query("SELECT s FROM InvItemStoreStock s WHERE s.store.id = :storeId AND s.item.category.id = :categoryId AND s.item.deleted = 'No'")
+    List<InvItemStoreStock> findByStoreIdAndItemCategoryId(int storeId, int categoryId);
+
     @Query("SELECT s FROM InvItemStoreStock s WHERE s.store.id = :storeId AND s.quantityOnHand <= s.item.reorderLevel AND s.item.deleted = 'No'")
     List<InvItemStoreStock> findLowStockByStore(int storeId);
 

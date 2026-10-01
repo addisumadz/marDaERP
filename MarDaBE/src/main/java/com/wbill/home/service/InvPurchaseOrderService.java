@@ -82,6 +82,12 @@ public class InvPurchaseOrderService {
                     .orElseThrow(() -> new IllegalArgumentException("Item not found"));
             line.setItem(item);
             line.setTotalPrice(line.getOrderedQuantity().multiply(line.getUnitPrice()).setScale(2, java.math.RoundingMode.HALF_UP));
+            // Per-line VAT: use line vatRate if set, otherwise fall back to item default
+            if (line.getVatRate() == null) {
+                line.setVatRate(item.getVatRate() != null ? item.getVatRate() : new BigDecimal("15.00"));
+            }
+            line.setVatAmount(line.getTotalPrice().multiply(line.getVatRate())
+                    .divide(new BigDecimal("100"), 2, java.math.RoundingMode.HALF_UP));
             line.setLineOrder(order++);
             po.addLine(line);
         }
@@ -153,11 +159,122 @@ public class InvPurchaseOrderService {
         if (po.getStatus() != POStatus.SUBMITTED && po.getStatus() != POStatus.APPROVED_L1) {
             throw new IllegalStateException("Only pending POs can be rejected");
         }
-        po.setStatus(POStatus.CANCELLED);
-        if (reason != null && !reason.trim().isEmpty()) {
-            po.setRemarks((po.getRemarks() != null ? po.getRemarks() + " | " : "") + "Rejected by " + rejector + ": " + reason);
+        po.setStatus(POStatus.REJECTED);
+        po.setRejectedBy(rejector);
+        po.setRejectedDate(LocalDateTime.now());
+        po.setRejectionReason(reason);
+
+        // Reject workflow instance if present
+        if (workflowService != null) {
+            try {
+                workflowService.getInstanceByDocument("PURCHASE_ORDER", id).ifPresent(wf -> {
+                    if ("IN_PROGRESS".equals(wf.getStatus())) {
+                        workflowService.reject(wf.getId(), rejector, reason);
+                    }
+                });
+            } catch (Exception ignored) {}
         }
         return repository.save(po);
+    }
+
+    @Transactional
+    public InvPurchaseOrder update(long id, int supplierId, int storeId, Long requisitionId,
+                                   String remarks, String paymentTerms, String deliveryTerms,
+                                   java.time.LocalDate expectedDeliveryDate, BigDecimal vatRate,
+                                   List<InvPurchaseOrderLine> newLines, String username) {
+        InvPurchaseOrder po = repository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("PO not found"));
+
+        // Only DRAFT or REJECTED can be edited
+        if (po.getStatus() != POStatus.DRAFT && po.getStatus() != POStatus.REJECTED) {
+            throw new IllegalStateException("Only DRAFT or REJECTED purchase orders can be edited");
+        }
+
+        // If REJECTED → reset to DRAFT for resubmission
+        if (po.getStatus() == POStatus.REJECTED) {
+            po.setStatus(POStatus.DRAFT);
+            po.setRejectedBy(null);
+            po.setRejectedDate(null);
+            po.setRejectionReason(null);
+            po.setApprovedByL1(null);
+            po.setApprovedDateL1(null);
+            po.setApprovedByL2(null);
+            po.setApprovedDateL2(null);
+        }
+
+        // Update references
+        InvSupplier supplier = supplierRepository.findById(supplierId)
+                .orElseThrow(() -> new IllegalArgumentException("Supplier not found"));
+        InvStore store = storeRepository.findById(storeId)
+                .orElseThrow(() -> new IllegalArgumentException("Store not found"));
+
+        po.setSupplier(supplier);
+        po.setStore(store);
+        po.setRemarks(remarks);
+        po.setPaymentTerms(paymentTerms);
+        po.setDeliveryTerms(deliveryTerms);
+        po.setExpectedDeliveryDate(expectedDeliveryDate);
+        if (vatRate != null) {
+            po.setVatRate(vatRate);
+        }
+
+        if (requisitionId != null && po.getRequisition() == null) {
+            InvPurchaseRequisition pr = prRepository.findById(requisitionId)
+                    .orElseThrow(() -> new IllegalArgumentException("PR not found"));
+            po.setRequisition(pr);
+        }
+
+        // Replace lines
+        po.getLines().clear();
+        int order = 1;
+        for (InvPurchaseOrderLine line : newLines) {
+            InvItem item = itemRepository.findById(line.getItem().getId())
+                    .orElseThrow(() -> new IllegalArgumentException("Item not found"));
+            line.setItem(item);
+            line.setTotalPrice(line.getOrderedQuantity().multiply(line.getUnitPrice()).setScale(2, java.math.RoundingMode.HALF_UP));
+            // Per-line VAT: use line vatRate if set, otherwise fall back to item default
+            if (line.getVatRate() == null) {
+                line.setVatRate(item.getVatRate() != null ? item.getVatRate() : new BigDecimal("15.00"));
+            }
+            line.setVatAmount(line.getTotalPrice().multiply(line.getVatRate())
+                    .divide(new BigDecimal("100"), 2, java.math.RoundingMode.HALF_UP));
+            line.setLineOrder(order++);
+            po.addLine(line);
+        }
+        po.recalculateTotals();
+
+        return repository.save(po);
+    }
+
+    @Transactional
+    public InvPurchaseOrder cancel(long id, String username, String reason) {
+        InvPurchaseOrder po = repository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("PO not found"));
+
+        if (po.getStatus() == POStatus.FULLY_RECEIVED) {
+            throw new IllegalStateException("Cannot cancel a fully received Purchase Order");
+        }
+        if (po.getStatus() == POStatus.CANCELLED) {
+            throw new IllegalStateException("Purchase Order is already cancelled");
+        }
+
+        po.setStatus(POStatus.CANCELLED);
+        po.setRejectedBy(username);
+        po.setRejectedDate(LocalDateTime.now());
+        po.setRejectionReason("CANCELLED: " + reason);
+        po = repository.save(po);
+
+        // Cancel workflow instance if present
+        if (workflowService != null) {
+            try {
+                workflowService.getInstanceByDocument("PURCHASE_ORDER", id).ifPresent(wf -> {
+                    if ("IN_PROGRESS".equals(wf.getStatus())) {
+                        workflowService.reject(wf.getId(), username, "Cancelled: " + reason);
+                    }
+                });
+            } catch (Exception ignored) {}
+        }
+        return repository.findById(id).orElse(po);
     }
 
     public List<InvPurchaseRequisition> getApprovedRequisitions() {
@@ -167,9 +284,10 @@ public class InvPurchaseOrderService {
     }
 
     private String generateNumber() {
-        String prefix = "PO-" + Year.now().getValue() + "-";
+        String prefix = "PO-";
         Long maxSeq = repository.findMaxSequence(prefix);
         long next = (maxSeq != null ? maxSeq : 0) + 1;
         return prefix + String.format("%05d", next);
     }
 }
+

@@ -59,6 +59,10 @@ export default function SignInPage() {
       // Store in localStorage for legacy service compatibility
       if (typeof window !== "undefined") {
         localStorage.setItem("user_token", JSON.stringify(session));
+        const directToken = session?.accessToken || session?.token || session?.access_token;
+        if (directToken) {
+          localStorage.setItem("token", String(directToken));
+        }
       }
 
       const raw = session?.user?.roles || session?.roles || [];

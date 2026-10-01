@@ -13,6 +13,6 @@ public interface InvStockAdjustmentRepository extends JpaRepository<InvStockAdju
     Page<InvStockAdjustment> findByStoreIdAndStatusOrderByCreatedAtDesc(int storeId, AdjustmentStatus status, Pageable pageable);
     Page<InvStockAdjustment> findAllByOrderByCreatedAtDesc(Pageable pageable);
 
-    @Query("SELECT MAX(CAST(SUBSTRING(a.adjustmentNumber, 10) AS long)) FROM InvStockAdjustment a WHERE a.adjustmentNumber LIKE CONCAT(:prefix, '%')")
+    @Query("SELECT MAX(CAST(SUBSTRING(a.adjustmentNumber, 5) AS long)) FROM InvStockAdjustment a WHERE a.adjustmentNumber LIKE CONCAT(:prefix, '%')")
     Long findMaxSequence(String prefix);
 }

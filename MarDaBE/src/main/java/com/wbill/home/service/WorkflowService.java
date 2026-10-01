@@ -3,6 +3,7 @@ package com.wbill.home.service;
 import com.wbill.home.model.*;
 import com.wbill.home.repository.*;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,6 +23,10 @@ public class WorkflowService {
     @Autowired(required = false) private InvPurchaseRequisitionRepository prRepository;
     @Autowired(required = false) private InvPurchaseOrderRepository poRepository;
     @Autowired(required = false) private InvStockTransferRepository transferRepository;
+    @Autowired(required = false) private InvMaterialRequestRepository mrRepository;
+    @Autowired(required = false) private InvDisposalRepository disposalRepository;
+    @Lazy @Autowired(required = false) private InvMaterialRequestService mrService;
+    @Lazy @Autowired(required = false) private InvDisposalService disposalService;
 
     // ─── Template Management ──────────────────────────────
 
@@ -200,6 +205,83 @@ public class WorkflowService {
                 step2.setSlaHours(24);
                 step2.setCanReject(true);
                 stepRepo.save(step2);
+
+                templates = List.of(defaultTemplate);
+            } else if ("MATERIAL_REQUEST".equalsIgnoreCase(documentType)) {
+                WfWorkflowTemplate defaultTemplate = new WfWorkflowTemplate();
+                defaultTemplate.setTemplateCode("MR_STANDARD");
+                defaultTemplate.setTemplateName("Standard Material Request Approval");
+                defaultTemplate.setDocumentType("MATERIAL_REQUEST");
+                defaultTemplate.setDescription("Standard 2-tier approval: Store Manager -> Technical Manager");
+                defaultTemplate.setIsActive(true);
+                defaultTemplate.setCreatedBy("system");
+                defaultTemplate = templateRepo.save(defaultTemplate);
+
+                WfWorkflowStep step1 = new WfWorkflowStep();
+                step1.setTemplate(defaultTemplate);
+                step1.setStepOrder(1);
+                step1.setStepName("Store Manager Approval");
+                step1.setStepNameAm("የመጋዘን ኃላፊ ማረጋገጫ");
+                step1.setApproverRoleCode("M_BRANCH_STORE");
+                step1.setIsRequired(true);
+                step1.setSlaHours(24);
+                step1.setCanReject(true);
+                stepRepo.save(step1);
+
+                WfWorkflowStep step2 = new WfWorkflowStep();
+                step2.setTemplate(defaultTemplate);
+                step2.setStepOrder(2);
+                step2.setStepName("Technical Manager Approval");
+                step2.setStepNameAm("የቴክኒካል ኃላፊ ማረጋገጫ");
+                step2.setApproverRoleCode("M_TECHNICAL_MANAGER");
+                step2.setIsRequired(true);
+                step2.setSlaHours(48);
+                step2.setCanReject(true);
+                stepRepo.save(step2);
+
+                templates = List.of(defaultTemplate);
+            } else if ("DISPOSAL".equalsIgnoreCase(documentType)) {
+                WfWorkflowTemplate defaultTemplate = new WfWorkflowTemplate();
+                defaultTemplate.setTemplateCode("DSP_STANDARD");
+                defaultTemplate.setTemplateName("Standard Disposal Approval");
+                defaultTemplate.setDocumentType("DISPOSAL");
+                defaultTemplate.setDescription("Standard 3-tier disposal approval: Store Manager -> Finance -> General Manager");
+                defaultTemplate.setIsActive(true);
+                defaultTemplate.setCreatedBy("system");
+                defaultTemplate = templateRepo.save(defaultTemplate);
+
+                WfWorkflowStep step1 = new WfWorkflowStep();
+                step1.setTemplate(defaultTemplate);
+                step1.setStepOrder(1);
+                step1.setStepName("Store Manager Review");
+                step1.setStepNameAm("የመጋዘን ኃላፊ ግምገማ");
+                step1.setApproverRoleCode("M_BRANCH_STORE");
+                step1.setIsRequired(true);
+                step1.setSlaHours(24);
+                step1.setCanReject(true);
+                stepRepo.save(step1);
+
+                WfWorkflowStep step2 = new WfWorkflowStep();
+                step2.setTemplate(defaultTemplate);
+                step2.setStepOrder(2);
+                step2.setStepName("Finance Head Approval");
+                step2.setStepNameAm("የፋይናንስ ኃላፊ ማረጋገጫ");
+                step2.setApproverRoleCode("M_FINANCE_HEAD");
+                step2.setIsRequired(true);
+                step2.setSlaHours(48);
+                step2.setCanReject(true);
+                stepRepo.save(step2);
+
+                WfWorkflowStep step3 = new WfWorkflowStep();
+                step3.setTemplate(defaultTemplate);
+                step3.setStepOrder(3);
+                step3.setStepName("General Manager Approval");
+                step3.setStepNameAm("የዋና ሥራ አስኪያጅ ማጽደቂያ");
+                step3.setApproverRoleCode("BILLZGJ_ADMIN");
+                step3.setIsRequired(true);
+                step3.setSlaHours(72);
+                step3.setCanReject(true);
+                stepRepo.save(step3);
 
                 templates = List.of(defaultTemplate);
             } else {
@@ -517,6 +599,20 @@ public class WorkflowService {
                 }
                 transferRepository.save(t);
             });
+        }
+        if (mrRepository != null && mrService != null && "MATERIAL_REQUEST".equalsIgnoreCase(instance.getDocumentType())) {
+            if ("COMPLETED".equals(status)) {
+                mrService.onWorkflowApproved(instance.getDocumentId(), username);
+            } else if ("REJECTED".equals(status)) {
+                mrService.onWorkflowRejected(instance.getDocumentId());
+            }
+        }
+        if (disposalRepository != null && disposalService != null && "DISPOSAL".equalsIgnoreCase(instance.getDocumentType())) {
+            if ("COMPLETED".equals(status)) {
+                disposalService.onWorkflowApproved(instance.getDocumentId());
+            } else if ("REJECTED".equals(status)) {
+                disposalService.onWorkflowRejected(instance.getDocumentId());
+            }
         }
     }
 }

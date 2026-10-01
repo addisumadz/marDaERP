@@ -258,6 +258,9 @@ export async function generatePurchaseOrderPdf(
     const ordQty = Number(l.orderedQuantity || 0).toLocaleString();
     const unitPrice = Number(l.unitPrice || 0).toLocaleString(undefined, { minimumFractionDigits: 2 });
     const totalPrice = Number(l.totalPrice || 0).toLocaleString(undefined, { minimumFractionDigits: 2 });
+    const vatR = Number(l.vatRate ?? 15);
+    const exclTotal = Number(l.totalPrice || 0);
+    const inclTotal = (exclTotal * (1 + vatR / 100)).toLocaleString(undefined, { minimumFractionDigits: 2 });
 
     return [
       idx + 1,
@@ -265,12 +268,13 @@ export async function generatePurchaseOrderPdf(
       uom,
       ordQty,
       unitPrice,
-      totalPrice
+      `${vatR}%`,
+      totalPrice,
+      inclTotal
     ];
   });
 
   const subtotalFmt = Number(po.subtotal || 0).toLocaleString(undefined, { minimumFractionDigits: 2 });
-  const vatRateVal = Number(po.vatRate || 15);
   const vatAmountFmt = Number(po.vatAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 });
   const grandTotalFmt = Number(po.grandTotal || 0).toLocaleString(undefined, { minimumFractionDigits: 2 });
 
@@ -280,22 +284,24 @@ export async function generatePurchaseOrderPdf(
       "የዕቃው ዓይነትና መግለጫ / Item Description & Code",
       "መለኪያ\nUOM",
       "የትዕዛዝ ብዛት\nOrdered Qty",
-      "የአንዱ ዋጋ\nUnit Price (ETB)",
-      "ጠቅላላ ዋጋ\nTotal Price (ETB)"
+      "የአንዱ ዋጋ\nUnit Price",
+      "ተ.እ.ታ\nVAT%",
+      "ድምር (ያለ ታክስ)\nTotal (Excl.)",
+      "ድምር (ከታክስ ጋር)\nTotal (Incl.)"
     ]],
     body: tableRows,
     foot: [
-      ["", "ድምር / Subtotal:", "", "", "", `ETB ${subtotalFmt}`],
-      ["", `ተጨማሪ እሴት ታክስ / VAT (${vatRateVal}%):`, "", "", "", `ETB ${vatAmountFmt}`],
-      ["", "ጠቅላላ ድምር ዋጋ / Grand Total (ETB):", "", "", "", `ETB ${grandTotalFmt}`]
+      ["", "ድምር / Subtotal:", "", "", "", "", "", `ETB ${subtotalFmt}`],
+      ["", "ተጨማሪ እሴት ታክስ / Total VAT:", "", "", "", "", "", `ETB ${vatAmountFmt}`],
+      ["", "ጠቅላላ ድምር ዋጋ / Grand Total (Incl. VAT):", "", "", "", "", "", `ETB ${grandTotalFmt}`]
     ],
     startY: termsY + 26,
     margin: { left: MARGIN, right: MARGIN, bottom: 45 },
     theme: "grid",
     styles: {
       font: "nyala",
-      fontSize: 8.5,
-      cellPadding: 4,
+      fontSize: 8,
+      cellPadding: 3.5,
       valign: "middle",
       lineColor: [226, 232, 240],
       lineWidth: 0.5,
@@ -305,7 +311,7 @@ export async function generatePurchaseOrderPdf(
       fillColor: [30, 41, 59], // Slate-800
       textColor: [255, 255, 255],
       fontStyle: "bold",
-      fontSize: 8.5,
+      fontSize: 7.5,
       halign: "center"
     },
     alternateRowStyles: {
@@ -315,17 +321,19 @@ export async function generatePurchaseOrderPdf(
       fillColor: [241, 245, 249], // Slate-100
       textColor: [15, 23, 42],
       fontStyle: "bold",
-      fontSize: 9,
+      fontSize: 8.5,
       lineColor: [203, 213, 225],
       lineWidth: 0.8
     },
     columnStyles: {
-      0: { halign: "center", cellWidth: 24 },
+      0: { halign: "center", cellWidth: 22 },
       1: { halign: "left" },
-      2: { halign: "center", cellWidth: 50 },
-      3: { halign: "right", cellWidth: 70 },
-      4: { halign: "right", cellWidth: 85 },
-      5: { halign: "right", cellWidth: 95 }
+      2: { halign: "center", cellWidth: 38 },
+      3: { halign: "right", cellWidth: 52 },
+      4: { halign: "right", cellWidth: 62 },
+      5: { halign: "center", cellWidth: 35 },
+      6: { halign: "right", cellWidth: 70 },
+      7: { halign: "right", cellWidth: 75 }
     }
   });
 

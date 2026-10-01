@@ -28,10 +28,10 @@ import ReadingEntryModal from '../components/ReadingEntryModal';
 import { locationService } from '../services/locationService';
 import { validation } from '../utils/validation';
 
-export default function CustomerListScreen({ onSettingsPress, onCustomerSelect, initialTab = 'pending' }) {
-    // ... activeTab state ...
-
-    const [activeTab, setActiveTab] = useState(['pending', 'encoded'].includes(initialTab) ? initialTab : 'pending');
+export default function CustomerListScreen({ onSettingsPress, onCustomerSelect, initialTab = 'pending', onBack, navigation, route }) {
+    const handleBack = onBack || (() => navigation?.goBack());
+    const effectiveInitialTab = route?.params?.initialTab || initialTab;
+    const [activeTab, setActiveTab] = useState(['pending', 'encoded'].includes(effectiveInitialTab) ? effectiveInitialTab : 'pending');
 
     const [searchQuery, setSearchQuery] = useState('');
     const [showNoLocationOnly, setShowNoLocationOnly] = useState(false);
@@ -168,6 +168,7 @@ export default function CustomerListScreen({ onSettingsPress, onCustomerSelect, 
         }
 
         setLoadingCustomerId(customer.id);
+        let currentLoc = null;
 
         try {
             const granted = await locationService.requestPermission();
@@ -181,7 +182,7 @@ export default function CustomerListScreen({ onSettingsPress, onCustomerSelect, 
             const gpsLevel = await locationService.getSavedAccuracyLevel();
 
             // Optimize GPS: Use Smart Location Service
-            const currentLoc = await locationService.getSmartLocation();
+            currentLoc = await locationService.getSmartLocation();
 
             // GPS Accuracy Check using configured level
             const gpsAccuracy = currentLoc?.coords?.accuracy || 0;
@@ -403,11 +404,13 @@ export default function CustomerListScreen({ onSettingsPress, onCustomerSelect, 
             <StatusBar backgroundColor="#2196F3" barStyle="light-content" />
 
             <View style={styles.header}>
+                <TouchableOpacity onPress={handleBack} style={styles.settingsButton}>
+                    <Ionicons name="arrow-back" size={24} color="#fff" />
+                </TouchableOpacity>
+                <Text style={styles.headerTitle}>Customer Reading</Text>
                 <TouchableOpacity onPress={onSettingsPress} style={styles.settingsButton}>
                     <Ionicons name="settings-outline" size={24} color="#fff" />
                 </TouchableOpacity>
-                <Text style={styles.headerTitle}>Customer Reading</Text>
-                <Ionicons name="person-circle-outline" size={30} color="#fff" />
             </View>
 
             <View style={styles.searchContainer}>
@@ -415,7 +418,7 @@ export default function CustomerListScreen({ onSettingsPress, onCustomerSelect, 
                     <Ionicons name="search" size={20} color="#666" style={styles.searchIcon} />
                     <TextInput
                         style={styles.searchInput}
-                        placeholder="Search by name, account no, meter no"
+                        placeholder="Search by name, acc, meter, phone, house"
                         value={searchQuery}
                         onChangeText={setSearchQuery}
                     />

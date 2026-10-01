@@ -187,8 +187,9 @@ export default function CustomPaymentApprovalModal({
             0;
           const uQty = Math.min(sQty, avail);
           const oQty = Math.max(0, sQty - avail);
-          const uPrice = Number(it.utilityUnitPrice) > 0 ? Number(it.utilityUnitPrice) : storePrice;
-          const oPrice = Number(it.outsideUnitPrice) > 0 ? Number(it.outsideUnitPrice) : storePrice;
+          const uPrice = storePrice > 0 ? storePrice : (Number(it.utilityUnitPrice) || 0);
+          const rawOPrice = Number(it.outsideUnitPrice) || 0;
+          const oPrice = (rawOPrice >= storePrice && rawOPrice > 0) ? rawOPrice : (storePrice > 0 ? storePrice : rawOPrice);
 
           const isMeter = Boolean(
             it.isWaterMeter ||
@@ -303,10 +304,10 @@ export default function CustomPaymentApprovalModal({
 
       item.utilityQuantity = Math.round(uQty * 100) / 100;
       item.outsideQuantity = Math.round(oQty * 100) / 100;
-      if (item.utilityUnitPrice == null || item.utilityUnitPrice === 0) {
+      if (storePrice > 0) {
         item.utilityUnitPrice = storePrice;
       }
-      if (item.outsideUnitPrice == null || item.outsideUnitPrice === 0) {
+      if (item.outsideUnitPrice == null || item.outsideUnitPrice === 0 || (storePrice > 0 && item.outsideUnitPrice < storePrice)) {
         item.outsideUnitPrice = storePrice;
       }
 
@@ -449,8 +450,8 @@ export default function CustomPaymentApprovalModal({
     });
 
     const totalMaterials = utilityTotal + outsideTotal;
-    // Special Rule: Water meter provided from corporation/store is exempt from 25% transport charge
-    const materialsSubjectToTransport = Math.max(0, totalMaterials - meterUtilityTotal);
+    // 25% Transport Charge is strictly calculated from items supplied by the water utility (excluding store water meter)
+    const materialsSubjectToTransport = Math.max(0, utilityTotal - meterUtilityTotal);
     const transportCharge = materialsSubjectToTransport * 0.25;
     // 55% service charge still includes all materials + transport charge
     const serviceCharge = (totalMaterials + transportCharge) * 0.55;
@@ -481,6 +482,20 @@ export default function CustomPaymentApprovalModal({
     if (activeItems.length === 0) {
       toast.error("እባክዎ ቢያንስ ለአንድ እቃ የተገመተ ብዛት (> 0) ያስገቡ");
       return;
+    }
+
+    // Validation: for all items with outsideQuantity > 0, outsideUnitPrice must be >= inventory store price
+    for (const it of activeItems) {
+      if ((Number(it.outsideQuantity) || 0) > 0) {
+        const invPrice = Number(it.unitPrice || it.utilityUnitPrice || 0);
+        const outPrice = Number(it.outsideUnitPrice) || 0;
+        if (invPrice > 0 && outPrice < invPrice) {
+          toast.error(
+            `"${it.itemNameAm || it.itemName}" የገበያ ዋጋ (${outPrice.toFixed(2)}) ከመጋዘን መደበኛ ዋጋ (${invPrice.toFixed(2)}) ማነስ አይችልም`
+          );
+          return;
+        }
+      }
     }
 
     setSubmitting(true);
@@ -785,7 +800,7 @@ export default function CustomPaymentApprovalModal({
                   </>
                 ) : (
                   <>
-                    💡 <strong>ለክፍያ ማረጋገጫ:</strong> <strong>"የተገመተ ብዛት"</strong> ወይም <strong>የአንዱ ዋጋ</strong> ማስተካከል ይችላሉ። በመጋዘን ክምችት መሰረት <strong>ከድርጅቱ</strong> እና <strong>ከውጭ (Market) (የጎደለው)</strong> እቃዎች በራስ-ሰር ይከፋፈላሉ።
+                    💡 <strong>ለክፍያ ማረጋገጫ:</strong> ከመጋዘን የቀረቡ እቃዎች ብዛትና ዋጋ ከመጋዘን ክምችት የተወሰደ በመሆኑ አይቀየርም። ለጎደሉ (ከውጭ ገበያ) እቃዎች ብቻ የገበያ ዋጋ ማስተካከል ይችላሉ (ዋጋው ከመጋዘን መደበኛ ዋጋ ማነስ የለበትም)።
                   </>
                 )}
               </span>
@@ -869,6 +884,10 @@ export default function CustomPaymentApprovalModal({
                         (Number(it.outsideQuantity) || 0) * (Number(it.outsideUnitPrice) || 0)
                       ).toFixed(2);
                       const isSelected = (Number(it.surveyedQuantity) || 0) > 0;
+                      const isStoreItem = (Number(it.utilityQuantity) || 0) > 0;
+                      const hasOutside = (Number(it.outsideQuantity) || 0) > 0;
+                      const inventoryPrice = Number(it.unitPrice || it.utilityUnitPrice || 0);
+                      const isBelowInventory = hasOutside && inventoryPrice > 0 && Number(it.outsideUnitPrice || 0) < inventoryPrice;
 
                       return (
                         <tr
@@ -923,21 +942,36 @@ export default function CustomPaymentApprovalModal({
                             {it.unitOfMeasure}
                           </td>
 
-                          {/* REVENUE/SUPERVISOR UPDATES TOTAL SURVEYED QUANTITY (AUTO-SPLITS) */}
+                          {/* REVENUE/SUPERVISOR SURVEYED QUANTITY (LOCKED IF STORE ITEM) */}
                           <td className="px-2 py-2 text-center bg-purple-50/40 dark:bg-purple-900/10">
-                            <input
-                              type="number"
-                              disabled={!canConfirmPayment}
-                              min="0"
-                              step="0.1"
-                              value={it.surveyedQuantity === 0 ? "" : it.surveyedQuantity}
-                              onChange={(e) => handleSurveyedQtyChange(idx, e.target.value)}
-                              placeholder="0"
-                              className="w-20 text-center font-bold px-2 py-1.5 border-2 border-purple-500 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm focus:ring-2 focus:ring-purple-500 outline-none text-xs disabled:opacity-75 disabled:cursor-not-allowed"
-                            />
+                            {isStoreItem ? (
+                              <div className="flex flex-col items-center">
+                                <input
+                                  type="number"
+                                  readOnly
+                                  disabled
+                                  value={it.surveyedQuantity === 0 ? "" : it.surveyedQuantity}
+                                  className="w-20 text-center font-bold px-2 py-1.5 border border-purple-300 dark:border-purple-800 rounded-lg bg-gray-100 dark:bg-gray-700/60 text-gray-800 dark:text-gray-200 shadow-none outline-none text-xs cursor-not-allowed"
+                                />
+                                <span className="text-[9px] text-gray-500 dark:text-gray-400 font-medium mt-0.5" title="በቴክኒክ ክፍል የተገመተ (መቀየር አይቻልም)">
+                                  🔒 በቴክኒክ የተገመተ
+                                </span>
+                              </div>
+                            ) : (
+                              <input
+                                type="number"
+                                disabled={!canConfirmPayment}
+                                min="0"
+                                step="0.1"
+                                value={it.surveyedQuantity === 0 ? "" : it.surveyedQuantity}
+                                onChange={(e) => handleSurveyedQtyChange(idx, e.target.value)}
+                                placeholder="0"
+                                className="w-20 text-center font-bold px-2 py-1.5 border-2 border-purple-500 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm focus:ring-2 focus:ring-purple-500 outline-none text-xs disabled:opacity-75 disabled:cursor-not-allowed"
+                              />
+                            )}
                           </td>
 
-                          {/* UTILITY COLUMNS - Qty Auto-computed, Price Verifiable */}
+                          {/* UTILITY COLUMNS - Qty and Price both Read-only / Locked to Inventory */}
                           <td className="px-2 py-2 bg-blue-50/20 dark:bg-blue-950/10 border-l border-blue-100 dark:border-blue-900/30">
                             <input
                               type="number"
@@ -950,21 +984,17 @@ export default function CustomPaymentApprovalModal({
                           <td className="px-2 py-2 bg-blue-50/20 dark:bg-blue-950/10">
                             <input
                               type="number"
-                              disabled={!canConfirmPayment}
-                              min="0"
-                              step="0.5"
+                              readOnly
+                              disabled
                               value={it.utilityUnitPrice}
-                              onChange={(e) =>
-                                handleUpdateItem(idx, "utilityUnitPrice", parseFloat(e.target.value) || 0)
-                              }
-                              className="w-full text-right font-mono px-1.5 py-1 border border-blue-300 dark:border-blue-700 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-medium text-xs focus:ring-1 focus:ring-blue-500 outline-none disabled:opacity-75 disabled:bg-gray-100"
+                              className="w-full text-right font-mono px-1.5 py-1 border border-blue-200/50 dark:border-blue-800/40 rounded bg-gray-100 dark:bg-gray-700/60 text-blue-700 dark:text-blue-300 cursor-not-allowed font-semibold text-xs"
                             />
                           </td>
                           <td className="px-2 py-2 text-right font-mono font-bold bg-blue-50/40 dark:bg-blue-950/20 border-r border-blue-100 dark:border-blue-900/30 text-blue-700 dark:text-blue-300 text-xs">
                             {uTotal}
                           </td>
 
-                          {/* OUTSIDE (MARKET) COLUMNS - Qty Auto-computed, Price Verifiable */}
+                          {/* OUTSIDE (MARKET) COLUMNS - Qty Auto-computed, Price Verifiable (>= inventory price) */}
                           <td className="px-2 py-2 bg-amber-50/20 dark:bg-amber-950/10">
                             <input
                               type="number"
@@ -975,17 +1005,38 @@ export default function CustomPaymentApprovalModal({
                             />
                           </td>
                           <td className="px-2 py-2 bg-amber-50/20 dark:bg-amber-950/10">
-                            <input
-                              type="number"
-                              disabled={!canConfirmPayment}
-                              min="0"
-                              step="0.5"
-                              value={it.outsideUnitPrice}
-                              onChange={(e) =>
-                                handleUpdateItem(idx, "outsideUnitPrice", parseFloat(e.target.value) || 0)
-                              }
-                              className="w-full text-right font-mono px-1.5 py-1 border border-amber-300 dark:border-amber-700 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-medium text-xs focus:ring-1 focus:ring-amber-500 outline-none disabled:opacity-75 disabled:bg-gray-100"
-                            />
+                            <div className="flex flex-col">
+                              <input
+                                type="number"
+                                disabled={!canConfirmPayment || !hasOutside}
+                                min={inventoryPrice > 0 ? inventoryPrice : 0}
+                                step="0.5"
+                                value={it.outsideUnitPrice}
+                                onChange={(e) => {
+                                  const val = parseFloat(e.target.value) || 0;
+                                  handleUpdateItem(idx, "outsideUnitPrice", val);
+                                }}
+                                onBlur={(e) => {
+                                  const val = parseFloat(e.target.value) || 0;
+                                  if (hasOutside && inventoryPrice > 0 && val < inventoryPrice) {
+                                    handleUpdateItem(idx, "outsideUnitPrice", inventoryPrice);
+                                    toast.warn(
+                                      `${it.itemNameAm || it.itemName}: የገበያ ዋጋ ከመጋዘን ዋጋ (ETB ${inventoryPrice.toFixed(2)}) ማነስ ስለማይችል ወደ መጋዘን ዋጋ ተስተካክሏል`
+                                    );
+                                  }
+                                }}
+                                className={`w-full text-right font-mono px-1.5 py-1 border rounded text-gray-900 dark:text-white font-medium text-xs outline-none disabled:opacity-75 disabled:bg-gray-100 dark:disabled:bg-gray-700/60 ${
+                                  isBelowInventory
+                                    ? "border-red-500 bg-red-50/60 dark:bg-red-950/30 text-red-600 focus:ring-1 focus:ring-red-500"
+                                    : "border-amber-300 dark:border-amber-700 bg-white dark:bg-gray-700 focus:ring-1 focus:ring-amber-500"
+                                }`}
+                              />
+                              {isBelowInventory && (
+                                <span className="text-[9px] text-red-600 dark:text-red-400 font-semibold mt-0.5 text-right">
+                                  ⚠️ ≥ ETB {inventoryPrice.toFixed(2)}
+                                </span>
+                              )}
+                            </div>
                           </td>
                           <td className="px-2 py-2 text-right font-mono font-bold bg-amber-50/40 dark:bg-amber-950/20 border-r border-amber-100 dark:border-amber-900/30 text-amber-700 dark:text-amber-300 text-xs">
                             {oTotal}
@@ -1005,7 +1056,7 @@ export default function CustomPaymentApprovalModal({
 
                           {/* ACTION / RESET */}
                           <td className="px-1 py-2 text-center">
-                            {isSelected && canConfirmPayment ? (
+                            {isSelected && canConfirmPayment && !isStoreItem ? (
                               <button
                                 type="button"
                                 onClick={() => handleResetItemQty(idx)}

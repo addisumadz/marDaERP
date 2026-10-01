@@ -152,117 +152,136 @@ export const syncService = {
         try {
             console.log('[Sync] Starting data download...');
 
-            // 1. Get current billing period
-            const kfyaworData = await syncAPI.getKfyawor(username);
-            const currentReadingMonth = kfyaworData.kfyawor;
-            await AsyncStorage.setItem(
-                STORAGE_KEYS.KIFYAWER,
-                JSON.stringify(kfyaworData)
-            );
+            let kfyaworData;
+            let mergedCustomers;
 
-            // 2. Get assigned customers (New Endpoint)
-            const customers = await syncAPI.getCustomers(username);
-
-            // 3. Get CSV data (previous readings, wuzif, etc.) — REQUIRED
-            let mergedCustomers = customers;
-            let csvLink;
+            // Try Direct Unified JSON Sync first (fast, reliable, no server-side CSV required)
+            let unifiedSuccess = false;
             try {
-                csvLink = await syncAPI.getCsvFileLink(username);
-            } catch (csvLinkError) {
-                // CSV file not found or not prepared for this user — STOP sync
-                console.error('[Sync] CSV file not found for user:', csvLinkError.message);
-                return {
-                    success: false,
-                    errorType: 'CSV_NOT_FOUND',
-                    error: `የCSV ፋይል አልተዘጋጀም ለዚህ ተጠቃሚ!\n\nCSV file has not been prepared for this reader.\nPlease ask the manager to prepare data for the current month (${currentReadingMonth}).`,
-                    kfyawor: kfyaworData,
-                };
-            }
-
-            // Download the CSV file
-            const csvController = new AbortController();
-            const csvTimeout = setTimeout(() => csvController.abort(), 90000);
-
-            let csvText;
-            try {
-                const csvResponse = await fetch(csvLink, { signal: csvController.signal });
-                clearTimeout(csvTimeout);
-
-                if (!csvResponse.ok) {
-                    throw new Error(`CSV download returned status ${csvResponse.status}`);
+                console.log('[Sync] Attempting unified direct JSON sync...');
+                const unifiedResponse = await syncAPI.getUnifiedCustomerData(username);
+                if (unifiedResponse && unifiedResponse.status === 'success' && Array.isArray(unifiedResponse.customers)) {
+                    kfyaworData = unifiedResponse.kfyawor;
+                    mergedCustomers = unifiedResponse.customers;
+                    await AsyncStorage.setItem(
+                        STORAGE_KEYS.KIFYAWER,
+                        JSON.stringify(kfyaworData)
+                    );
+                    unifiedSuccess = true;
+                    console.log(`[Sync] Unified JSON sync successful: ${mergedCustomers.length} customers received directly`);
                 }
-                csvText = await csvResponse.text();
-            } catch (fetchError) {
-                clearTimeout(csvTimeout);
-                console.error('[Sync] CSV file download failed:', fetchError.message);
-                return {
-                    success: false,
-                    errorType: 'CSV_NOT_FOUND',
-                    error: `የCSV ፋይል ማውረድ አልተሳካም!\n\nFailed to download CSV file. The file may have been deleted from the server.\nPlease ask the manager to prepare a new CSV for the current month (${currentReadingMonth}).`,
-                    kfyawor: kfyaworData,
-                };
+            } catch (unifiedErr) {
+                console.warn('[Sync] Unified sync unavailable or failed, falling back to legacy CSV sync:', unifiedErr.message);
             }
 
-            // Parse CSV
-            const csvData = parseCsvData(csvText);
+            // Fallback to legacy CSV sync if unified sync was not available
+            if (!unifiedSuccess) {
+                // 1. Get current billing period
+                kfyaworData = await syncAPI.getKfyawor(username);
+                const currentReadingMonth = kfyaworData.kfyawor;
+                await AsyncStorage.setItem(
+                    STORAGE_KEYS.KIFYAWER,
+                    JSON.stringify(kfyaworData)
+                );
 
-            if (csvData.length === 0) {
-                // CSV file is empty — STOP sync
-                console.error('[Sync] CSV parsed but contained no data rows');
-                return {
-                    success: false,
-                    errorType: 'CSV_EMPTY',
-                    error: `የCSV ፋይል ባዶ ነው!\n\nThe CSV file exists but contains no data.\nPlease ask the manager to prepare data for the current month (${currentReadingMonth}).`,
-                    kfyawor: kfyaworData,
-                };
-            }
+                // 2. Get assigned customers (New Endpoint)
+                const customers = await syncAPI.getCustomers(username);
 
-            // Validate CSV month matches current reading month
-            // Note: kifya_wer in CSV contains a comma (e.g. "የካቲት, 2018") which
-            // the CSV parser splits: kifya_wer gets "የካቲት", additional_text gets " 2018"
-            // So we reconstruct the full month by combining both fields
-            const rawKifyaWer = csvData[0]?.kifya_wer?.trim() || '';
-            const rawAdditionalText = csvData[0]?.additional_text?.trim() || '';
-            let csvKifyaWer = rawKifyaWer;
-            // If additional_text looks like a year (numeric), it's the split year part
-            if (rawAdditionalText && /^\d{4}$/.test(rawAdditionalText)) {
-                csvKifyaWer = rawKifyaWer + ', ' + rawAdditionalText;
-            }
-
-            if (csvKifyaWer && currentReadingMonth && csvKifyaWer !== currentReadingMonth) {
-                console.error(`[Sync] CSV month mismatch! CSV has "${csvKifyaWer}", system expects "${currentReadingMonth}"`);
-                // Extract month from filename for extra context
-                let fileMonth = '';
+                // 3. Get CSV data (previous readings, wuzif, etc.) — REQUIRED
+                mergedCustomers = customers;
+                let csvLink;
                 try {
-                    const urlParts = csvLink.split('/');
-                    const fileName = urlParts[urlParts.length - 1];
-                    const nameParts = fileName.replace('.csv', '').split('_');
-                    if (nameParts.length >= 3) {
-                        fileMonth = `${nameParts[nameParts.length - 3]}_${nameParts[nameParts.length - 2]}`;
+                    csvLink = await syncAPI.getCsvFileLink(username);
+                } catch (csvLinkError) {
+                    // CSV file not found or not prepared for this user — STOP sync
+                    console.error('[Sync] CSV file not found for user:', csvLinkError.message);
+                    return {
+                        success: false,
+                        errorType: 'CSV_NOT_FOUND',
+                        error: `የCSV ፋይል አልተዘጋጀም ለዚህ ተጠቃሚ!\n\nCSV file has not been prepared for this reader.\nPlease ask the manager to prepare data for the current month (${currentReadingMonth}).`,
+                        kfyawor: kfyaworData,
+                    };
+                }
+
+                // Download the CSV file
+                const csvController = new AbortController();
+                const csvTimeout = setTimeout(() => csvController.abort(), 90000);
+
+                let csvText;
+                try {
+                    const csvResponse = await fetch(csvLink, { signal: csvController.signal });
+                    clearTimeout(csvTimeout);
+
+                    if (!csvResponse.ok) {
+                        throw new Error(`CSV download returned status ${csvResponse.status}`);
                     }
-                } catch (e) { /* ignore parse errors */ }
+                    csvText = await csvResponse.text();
+                } catch (fetchError) {
+                    clearTimeout(csvTimeout);
+                    console.error('[Sync] CSV file download failed:', fetchError.message);
+                    return {
+                        success: false,
+                        errorType: 'CSV_NOT_FOUND',
+                        error: `የCSV ፋይል ማውረድ አልተሳካም!\n\nFailed to download CSV file. The file may have been deleted from the server.\nPlease ask the manager to prepare a new CSV for the current month (${currentReadingMonth}).`,
+                        kfyawor: kfyaworData,
+                    };
+                }
 
-                // Month mismatch — STOP sync
-                return {
-                    success: false,
-                    errorType: 'CSV_MONTH_MISMATCH',
-                    error: `የCSV ፋይል ለተሳሳተ ወር ተዘጋጅቷል!\n\n` +
-                        `CSV file month: "${csvKifyaWer}"\n` +
-                        `Current month: "${currentReadingMonth}"\n` +
-                        (fileMonth ? `File: ${fileMonth}\n\n` : '\n') +
-                        `The CSV file was prepared for a different month.\nPlease ask the manager to prepare a new CSV for "${currentReadingMonth}".`,
-                    kfyawor: kfyaworData,
-                    csvMonthMismatch: {
-                        expected: currentReadingMonth,
-                        found: csvKifyaWer,
-                        fileMonth: fileMonth,
-                    },
-                };
+                // Parse CSV
+                const csvData = parseCsvData(csvText);
+
+                if (csvData.length === 0) {
+                    // CSV file is empty — STOP sync
+                    console.error('[Sync] CSV parsed but contained no data rows');
+                    return {
+                        success: false,
+                        errorType: 'CSV_EMPTY',
+                        error: `የCSV ፋይል ባዶ ነው!\n\nThe CSV file exists but contains no data.\nPlease ask the manager to prepare data for the current month (${currentReadingMonth}).`,
+                        kfyawor: kfyaworData,
+                    };
+                }
+
+                // Validate CSV month matches current reading month
+                const rawKifyaWer = csvData[0]?.kifya_wer?.trim() || '';
+                const rawAdditionalText = csvData[0]?.additional_text?.trim() || '';
+                let csvKifyaWer = rawKifyaWer;
+                if (rawAdditionalText && /^\d{4}$/.test(rawAdditionalText)) {
+                    csvKifyaWer = rawKifyaWer + ', ' + rawAdditionalText;
+                }
+
+                if (csvKifyaWer && currentReadingMonth && csvKifyaWer !== currentReadingMonth) {
+                    console.error(`[Sync] CSV month mismatch! CSV has "${csvKifyaWer}", system expects "${currentReadingMonth}"`);
+                    let fileMonth = '';
+                    try {
+                        const urlParts = csvLink.split('/');
+                        const fileName = urlParts[urlParts.length - 1];
+                        const nameParts = fileName.replace('.csv', '').split('_');
+                        if (nameParts.length >= 3) {
+                            fileMonth = `${nameParts[nameParts.length - 3]}_${nameParts[nameParts.length - 2]}`;
+                        }
+                    } catch (e) { /* ignore parse errors */ }
+
+                    return {
+                        success: false,
+                        errorType: 'CSV_MONTH_MISMATCH',
+                        error: `የCSV ፋይል ለተሳሳተ ወር ተዘጋጅቷል!\n\n` +
+                            `CSV file month: "${csvKifyaWer}"\n` +
+                            `Current month: "${currentReadingMonth}"\n` +
+                            (fileMonth ? `File: ${fileMonth}\n\n` : '\n') +
+                            `The CSV file was prepared for a different month.\nPlease ask the manager to prepare a new CSV for "${currentReadingMonth}".`,
+                        kfyawor: kfyaworData,
+                        csvMonthMismatch: {
+                            expected: currentReadingMonth,
+                            found: csvKifyaWer,
+                            fileMonth: fileMonth,
+                        },
+                    };
+                }
+
+                // CSV is valid — merge with customers
+                mergedCustomers = mergeCustomersWithCsv(csvData, customers, currentReadingMonth);
+                console.log(`[Sync] Merged ${csvData.length} CSV records with customers`);
             }
-
-            // CSV is valid — merge with customers
-            mergedCustomers = mergeCustomersWithCsv(csvData, customers, currentReadingMonth);
-            console.log(`[Sync] Merged ${csvData.length} CSV records with customers`);
 
             // 4. Get reference data (keep in AsyncStorage - small data)
             const referenceData = await downloadAllReferenceData();

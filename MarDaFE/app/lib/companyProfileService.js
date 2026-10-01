@@ -1,5 +1,6 @@
 "use client";
 import authHeader from "./authHeader/authhheader";
+import getAccesToken from "./getToken";
 import axios from "axios";
 import { baseURL } from "./httpCommon/http-common";
 
@@ -9,24 +10,23 @@ const commonUrl = baseUrl.getUrl();
 export class CompanyProfileService {
   async getById(id) {
     try {
-      const token = localStorage.getItem("token");
+      const token = getAccesToken();
       const res = await axios.get(`${commonUrl}company-profile/${id}`, {
         headers: authHeader(token),
       });
-      console.log("profile",res.data);
       return res.data;
     } catch (error) {
       console.error("Error fetching company profile by ID:", error);
       throw error;
     }
   }
+
   async getLatest() {
     try {
-      const token = localStorage.getItem("token");
+      const token = getAccesToken();
       const res = await axios.get(`${commonUrl}company-profile/latest`, {
         headers: authHeader(token),
       });
-      console.log("profile(latest)", res.data);
       return res.data;
     } catch (error) {
       console.error("Error fetching latest company profile:", error);
@@ -36,7 +36,7 @@ export class CompanyProfileService {
 
   async update(id, payload) {
     try {
-      const token = localStorage.getItem("token");
+      const token = getAccesToken();
       const res = await axios.put(`${commonUrl}company-profile/${id}`, payload, {
         headers: authHeader(token),
       });
@@ -49,7 +49,7 @@ export class CompanyProfileService {
 
   async initialize() {
     try {
-      const token = localStorage.getItem("token");
+      const token = getAccesToken();
       const res = await axios.post(`${commonUrl}company-profile/initialize`, {}, {
         headers: authHeader(token),
       });
@@ -60,3 +60,4 @@ export class CompanyProfileService {
     }
   }
 }
+

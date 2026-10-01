@@ -80,7 +80,7 @@ function getUomString(item) {
 }
 
 /**
- * Generates an official, publication-quality Goods Received Note (GRN) PDF
+ * Generates an official, publication-quality Goods Received Voucher (GRV) PDF
  * with complete supplier info, receiving warehouse, inspection quantities,
  * GL journal voucher reference, and tripartite signature blocks.
  */
@@ -200,7 +200,7 @@ export async function generateGrnPdf(
   doc.setFont("nyala", "bold");
   doc.setFontSize(13);
   doc.setTextColor(13, 148, 136);
-  doc.text("የዕቃ መረከቢያ ሰነድ (GOODS RECEIVED NOTE)", MARGIN, titleY);
+  doc.text("የዕቃ መረከቢያ ሰነድ (GOODS RECEIVED VOUCHER)", MARGIN, titleY);
 
   // Document status badge (right-aligned)
   const statusStr = grn.status || "DRAFT";
@@ -317,8 +317,10 @@ export async function generateGrnPdf(
       { content: "የቀረበ\nDelivered", styles: { halign: "right" } },
       { content: "የተረከበው\nAccepted", styles: { halign: "right", fontStyle: "bold" } },
       { content: "ያልተረከበው\nRejected", styles: { halign: "right" } },
-      { content: "የአንዱ ዋጋ\nUnit Cost", styles: { halign: "right" } },
-      { content: "ጠቅላላ ዋጋ\nTotal (ETB)", styles: { halign: "right", fontStyle: "bold" } },
+      { content: "የአንዱ ዋጋ\nUnit Price", styles: { halign: "right" } },
+      { content: "ተ.እ.ታ\nVAT%", styles: { halign: "center" } },
+      { content: "ድምር\nTotal (Excl.)", styles: { halign: "right" } },
+      { content: "ድምር (ከታክስ)\nTotal (Incl.)", styles: { halign: "right", fontStyle: "bold" } },
     ],
   ];
 
@@ -326,6 +328,7 @@ export async function generateGrnPdf(
   let totalAcceptedQty = 0;
   let totalRejectedQty = 0;
   let calculatedGrandTotal = 0;
+  let calculatedGrandTotalInclVat = 0;
 
   const tableRows = (grn.lines || []).map((line, idx) => {
     const itemCode = line.item?.itemCode || "—";
@@ -338,12 +341,15 @@ export async function generateGrnPdf(
     const acceptedQty = Number(line.acceptedQuantity || 0);
     const rejectedQty = Number(line.rejectedQuantity || 0);
     const unitCost = Number(line.unitCost || 0);
+    const vatRate = Number(line.poLine?.vatRate ?? 15);
     const lineTotal = Number(line.totalCost || (acceptedQty * unitCost));
+    const lineTotalInclVat = lineTotal * (1 + vatRate / 100);
 
     totalDeliveredQty += deliveredQty;
     totalAcceptedQty += acceptedQty;
     totalRejectedQty += rejectedQty;
     calculatedGrandTotal += lineTotal;
+    calculatedGrandTotalInclVat += lineTotalInclVat;
 
     return [
       { content: String(idx + 1), styles: { halign: "center" } },
@@ -354,7 +360,9 @@ export async function generateGrnPdf(
       { content: acceptedQty.toLocaleString(), styles: { halign: "right", fontStyle: "bold", textColor: [15, 23, 42] } },
       { content: rejectedQty > 0 ? rejectedQty.toLocaleString() : "0", styles: { halign: "right", textColor: rejectedQty > 0 ? [220, 38, 38] : [100, 116, 139] } },
       { content: formatCurrency(unitCost), styles: { halign: "right" } },
-      { content: formatCurrency(lineTotal), styles: { halign: "right", fontStyle: "bold" } },
+      { content: `${vatRate}%`, styles: { halign: "center" } },
+      { content: formatCurrency(lineTotal), styles: { halign: "right" } },
+      { content: formatCurrency(lineTotalInclVat), styles: { halign: "right", fontStyle: "bold" } },
     ];
   });
 
@@ -366,8 +374,8 @@ export async function generateGrnPdf(
     theme: "striped",
     styles: {
       font: "nyala",
-      fontSize: 7.5,
-      cellPadding: 4,
+      fontSize: 7,
+      cellPadding: 3,
       overflow: "linebreak",
       lineColor: [226, 232, 240],
       lineWidth: 0.5,
@@ -378,48 +386,72 @@ export async function generateGrnPdf(
       fontStyle: "bold",
       halign: "center",
       minCellHeight: 20,
+      fontSize: 6.5,
     },
     columnStyles: {
-      0: { cellWidth: 20 },
+      0: { cellWidth: 18 },
       1: { cellWidth: "auto" },
-      2: { cellWidth: 38 },
-      3: { cellWidth: 46 },
-      4: { cellWidth: 46 },
-      5: { cellWidth: 50 },
-      6: { cellWidth: 46 },
-      7: { cellWidth: 54 },
-      8: { cellWidth: 64 },
+      2: { cellWidth: 30 },
+      3: { cellWidth: 36 },
+      4: { cellWidth: 36 },
+      5: { cellWidth: 40 },
+      6: { cellWidth: 36 },
+      7: { cellWidth: 48 },
+      8: { cellWidth: 28 },
+      9: { cellWidth: 52 },
+      10: { cellWidth: 56 },
     },
   });
 
   // ── 5. Total Received Summary Section ────────────────────────
   const finalY = doc.lastAutoTable.finalY + 8;
-  const summaryBoxW = 220;
+  const summaryBoxW = 240;
   const summaryBoxX = pageWidth - MARGIN - summaryBoxW;
 
   const grandTotal = Number(grn.totalAmount) || calculatedGrandTotal;
+  const totalVatAmount = calculatedGrandTotalInclVat - grandTotal;
 
   doc.setFillColor(248, 250, 252);
   doc.setDrawColor(203, 213, 225);
   doc.setLineWidth(0.7);
-  doc.roundedRect(summaryBoxX, finalY, summaryBoxW, 46, 4, 4, "FD");
+  doc.roundedRect(summaryBoxX, finalY, summaryBoxW, 76, 4, 4, "FD");
 
   doc.setFont("nyala", "normal");
   doc.setFontSize(7.5);
   doc.setTextColor(100, 116, 139);
-  doc.text("ጠቅላላ የተረከበ ብዛት / Total Accepted Units:", summaryBoxX + 8, finalY + 16);
+  doc.text("ጠቅላላ የተረከበ ብዛት / Total Accepted Units:", summaryBoxX + 8, finalY + 14);
   doc.setFont("nyala", "bold");
   doc.setTextColor(15, 23, 42);
-  doc.text(totalAcceptedQty.toLocaleString(), summaryBoxX + summaryBoxW - 8, finalY + 16, { align: "right" });
+  doc.text(totalAcceptedQty.toLocaleString(), summaryBoxX + summaryBoxW - 8, finalY + 14, { align: "right" });
+
+  doc.setFont("nyala", "normal");
+  doc.setFontSize(7.5);
+  doc.setTextColor(100, 116, 139);
+  doc.text("ድምር (ያለ ተ.እ.ታ) / Subtotal (Excl. VAT):", summaryBoxX + 8, finalY + 28);
+  doc.setFont("nyala", "bold");
+  doc.setTextColor(15, 23, 42);
+  doc.text(`${formatCurrency(grandTotal)} ETB`, summaryBoxX + summaryBoxW - 8, finalY + 28, { align: "right" });
+
+  doc.setFont("nyala", "normal");
+  doc.setFontSize(7.5);
+  doc.setTextColor(100, 116, 139);
+  doc.text("ጠቅላላ ተ.እ.ታ / Total VAT:", summaryBoxX + 8, finalY + 42);
+  doc.setFont("nyala", "bold");
+  doc.setTextColor(22, 163, 74);
+  doc.text(`+${formatCurrency(totalVatAmount)} ETB`, summaryBoxX + summaryBoxW - 8, finalY + 42, { align: "right" });
+
+  doc.setDrawColor(203, 213, 225);
+  doc.setLineWidth(0.5);
+  doc.line(summaryBoxX + 8, finalY + 50, summaryBoxX + summaryBoxW - 8, finalY + 50);
 
   doc.setFont("nyala", "bold");
   doc.setFontSize(8.5);
   doc.setTextColor(13, 148, 136);
-  doc.text("ጠቅላላ የተረከበ ዋጋ / Total Value (ETB):", summaryBoxX + 8, finalY + 34);
-  doc.text(`${formatCurrency(grandTotal)} ETB`, summaryBoxX + summaryBoxW - 8, finalY + 34, { align: "right" });
+  doc.text("ጠቅላላ (ከተ.እ.ታ ጋር) / Grand Total (Incl. VAT):", summaryBoxX + 8, finalY + 62);
+  doc.text(`${formatCurrency(calculatedGrandTotalInclVat)} ETB`, summaryBoxX + summaryBoxW - 8, finalY + 62, { align: "right" });
 
   // ── 6. Tripartite Official Signature Blocks ────────────────────
-  let sigY = Math.max(finalY + 56, doc.lastAutoTable.finalY + 60);
+  let sigY = Math.max(finalY + 86, doc.lastAutoTable.finalY + 90);
   if (sigY + 70 > pageHeight - 32) {
     doc.addPage();
     sigY = MARGIN + 20;

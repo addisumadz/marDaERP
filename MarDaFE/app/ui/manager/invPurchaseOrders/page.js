@@ -35,7 +35,9 @@ import {
   RefreshCw,
   AlertCircle,
   Loader2,
-  ExternalLink
+  ExternalLink,
+  Pencil,
+  Ban
 } from "lucide-react";
 
 /* ─── Status Colors ────────────────────────────────────────── */
@@ -47,12 +49,13 @@ const statusColors = {
   SENT_TO_SUPPLIER: "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300",
   PARTIALLY_RECEIVED: "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300",
   FULLY_RECEIVED: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
-  CANCELLED: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
+  REJECTED: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
+  CANCELLED: "bg-gray-200 text-gray-500 dark:bg-gray-600 dark:text-gray-400",
 };
 
 /* ─── Dynamic Approval Stepper for Purchase Orders ─────────── */
 function ApprovalStepper({ status, templateSteps = [], currentStep = null, rejectionReason = "" }) {
-  const rejected = status === "CANCELLED";
+  const rejected = status === "CANCELLED" || status === "REJECTED";
   const isDraft = status === "DRAFT";
   const isFullyApproved = status === "APPROVED_L2" || status === "SENT_TO_SUPPLIER" || status === "PARTIALLY_RECEIVED" || status === "FULLY_RECEIVED";
 
@@ -165,6 +168,14 @@ function InvPurchaseOrdersContent() {
   const [submitting, setSubmitting] = useState(false);
   const [printingId, setPrintingId] = useState(null);
 
+  // Edit mode
+  const [editingPo, setEditingPo] = useState(null);
+
+  // Cancel modal
+  const [cancelModal, setCancelModal] = useState(null);
+  const [cancelReason, setCancelReason] = useState("");
+  const [cancelErrors, setCancelErrors] = useState("");
+
   // PR Sourcing & Conversion
   const [prPickerModal, setPrPickerModal] = useState(false);
   const [approvedPrs, setApprovedPrs] = useState([]);
@@ -188,7 +199,7 @@ function InvPurchaseOrdersContent() {
     deliveryTerms: "Delivered to Store (DDP)",
     remarks: "",
     vatRate: "15",
-    lines: [{ itemId: "", orderedQuantity: "", unitPrice: "" }]
+    lines: [{ itemId: "", orderedQuantity: "", unitPrice: "", vatRate: "15" }]
   });
   const [formErrors, setFormErrors] = useState({});
   const [rejectErrors, setRejectErrors] = useState("");
@@ -302,12 +313,16 @@ function InvPurchaseOrdersContent() {
   const handleSelectPr = (pr) => {
     setSelectedPr(pr);
     const prLines = pr.lines && pr.lines.length > 0
-      ? pr.lines.map(l => ({
-          itemId: String(l.item?.id || l.itemId || ""),
-          orderedQuantity: String(l.approvedQuantity ?? l.requestedQuantity ?? 1),
-          unitPrice: String(l.estimatedUnitCost ?? 0)
-        }))
-      : [{ itemId: "", orderedQuantity: "", unitPrice: "" }];
+      ? pr.lines.map(l => {
+          const foundItem = items.find(i => String(i.id) === String(l.item?.id || l.itemId));
+          return {
+            itemId: String(l.item?.id || l.itemId || ""),
+            orderedQuantity: String(l.approvedQuantity ?? l.requestedQuantity ?? 1),
+            unitPrice: String(l.estimatedUnitCost ?? 0),
+            vatRate: String(foundItem?.vatRate ?? l.item?.vatRate ?? 15)
+          };
+        })
+      : [{ itemId: "", orderedQuantity: "", unitPrice: "", vatRate: "15" }];
 
     setForm(prev => ({
       ...prev,
@@ -327,14 +342,14 @@ function InvPurchaseOrdersContent() {
     setForm(prev => ({
       ...prev,
       requisitionId: "",
-      lines: [{ itemId: "", orderedQuantity: "", unitPrice: "" }]
+      lines: [{ itemId: "", orderedQuantity: "", unitPrice: "", vatRate: "15" }]
     }));
   };
 
   /* ── Line item management ── */
   const addLine = () => setForm(prev => ({
     ...prev,
-    lines: [...prev.lines, { itemId: "", orderedQuantity: "", unitPrice: "" }]
+    lines: [...prev.lines, { itemId: "", orderedQuantity: "", unitPrice: "", vatRate: "15" }]
   }));
 
   const removeLine = (idx) => {
@@ -351,6 +366,15 @@ function InvPurchaseOrdersContent() {
   const updateLine = (idx, field, value) => {
     const lines = [...form.lines];
     lines[idx][field] = value;
+
+    // Auto-fill vatRate from item when item is selected
+    if (field === "itemId" && value) {
+      const selectedItem = items.find(i => String(i.id) === String(value));
+      if (selectedItem && selectedItem.vatRate != null) {
+        lines[idx].vatRate = String(selectedItem.vatRate);
+      }
+    }
+
     setForm(prev => ({ ...prev, lines }));
 
     if (formErrors.lines?.[idx]?.[field]) {
@@ -402,20 +426,23 @@ function InvPurchaseOrdersContent() {
     return errs;
   };
 
-  /* ── Live Financial Calculations ── */
+  /* ── Live Financial Calculations (per-line VAT) ── */
   const liveCalculations = useMemo(() => {
-    const subtotal = form.lines.reduce((acc, l) => {
+    let subtotal = 0;
+    let totalVat = 0;
+    form.lines.forEach(l => {
       const q = parseFloat(l.orderedQuantity) || 0;
       const p = parseFloat(l.unitPrice) || 0;
-      return acc + (q * p);
-    }, 0);
-    const rate = parseFloat(form.vatRate) || 0;
-    const vat = subtotal * (rate / 100);
-    const total = subtotal + vat;
-    return { subtotal, vat, total };
-  }, [form.lines, form.vatRate]);
+      const lineSubtotal = q * p;
+      const rate = parseFloat(l.vatRate) || 0;
+      const lineVat = lineSubtotal * (rate / 100);
+      subtotal += lineSubtotal;
+      totalVat += lineVat;
+    });
+    return { subtotal, vat: totalVat, total: subtotal + totalVat };
+  }, [form.lines]);
 
-  /* ── Create Purchase Order ── */
+  /* ── Create / Update Purchase Order ── */
   const handleCreate = async () => {
     const errs = validateForm();
     if (Object.keys(errs).length > 0) {
@@ -429,26 +456,38 @@ function InvPurchaseOrdersContent() {
     }
 
     const validLines = form.lines.filter(l => l.itemId && l.orderedQuantity && Number(l.orderedQuantity) > 0);
+    const payload = {
+      supplierId: Number(form.supplierId),
+      storeId: Number(form.storeId),
+      requisitionId: form.requisitionId ? Number(form.requisitionId) : null,
+      expectedDeliveryDate: form.expectedDeliveryDate || null,
+      paymentTerms: form.paymentTerms || null,
+      deliveryTerms: form.deliveryTerms || null,
+      vatRate: form.vatRate || "15",
+      remarks: form.remarks || null,
+      lines: validLines.map(l => ({
+        itemId: Number(l.itemId),
+        orderedQuantity: Number(l.orderedQuantity),
+        unitPrice: Number(l.unitPrice || 0),
+        vatRate: Number(l.vatRate || 15)
+      }))
+    };
+
     setSubmitting(true);
     try {
-      await invPurchaseOrderService.create({
-        supplierId: Number(form.supplierId),
-        storeId: Number(form.storeId),
-        requisitionId: form.requisitionId ? Number(form.requisitionId) : null,
-        expectedDeliveryDate: form.expectedDeliveryDate || null,
-        paymentTerms: form.paymentTerms || null,
-        deliveryTerms: form.deliveryTerms || null,
-        vatRate: form.vatRate || "15",
-        remarks: form.remarks || null,
-        lines: validLines.map(l => ({
-          itemId: Number(l.itemId),
-          orderedQuantity: Number(l.orderedQuantity),
-          unitPrice: Number(l.unitPrice || 0)
-        }))
-      });
-
-      toast.success("Purchase Order created successfully");
+      if (editingPo) {
+        await invPurchaseOrderService.update(editingPo.id, payload);
+        toast.success(
+          editingPo.status === "REJECTED"
+            ? "Purchase Order revised — ready to resubmit"
+            : "Purchase Order updated successfully"
+        );
+      } else {
+        await invPurchaseOrderService.create(payload);
+        toast.success("Purchase Order created successfully");
+      }
       setModalOpen(false);
+      setEditingPo(null);
       setSelectedPr(null);
       setForm({
         supplierId: "",
@@ -459,12 +498,62 @@ function InvPurchaseOrdersContent() {
         deliveryTerms: "Delivered to Store (DDP)",
         remarks: "",
         vatRate: "15",
-        lines: [{ itemId: "", orderedQuantity: "", unitPrice: "" }]
+        lines: [{ itemId: "", orderedQuantity: "", unitPrice: "", vatRate: "15" }]
       });
       setFormErrors({});
       loadData();
     } catch (e) {
-      toast.error(e.response?.data?.message || "Failed to create purchase order");
+      toast.error(e.response?.data?.message || (editingPo ? "Update failed" : "Failed to create purchase order"));
+    }
+    setSubmitting(false);
+  };
+
+  /* ── Open Edit Modal ── */
+  const openEditModal = async (po) => {
+    try {
+      const fullPo = await invPurchaseOrderService.getById(po.id);
+      setEditingPo(fullPo);
+      setSelectedPr(fullPo.requisition || null);
+      setForm({
+        supplierId: String(fullPo.supplier?.id || ""),
+        storeId: String(fullPo.store?.id || ""),
+        requisitionId: String(fullPo.requisition?.id || ""),
+        expectedDeliveryDate: fullPo.expectedDeliveryDate || "",
+        paymentTerms: fullPo.paymentTerms || "Net 30 Days",
+        deliveryTerms: fullPo.deliveryTerms || "Delivered to Store (DDP)",
+        remarks: fullPo.remarks || "",
+        vatRate: String(fullPo.vatRate ?? "15"),
+        lines: (fullPo.lines || []).map(l => ({
+          itemId: String(l.item?.id || ""),
+          orderedQuantity: String(l.orderedQuantity || ""),
+          unitPrice: String(l.unitPrice || ""),
+          vatRate: String(l.vatRate ?? 15)
+        }))
+      });
+      setFormErrors({});
+      setModalOpen(true);
+    } catch (e) {
+      toast.error("Failed to load PO for editing");
+    }
+  };
+
+  /* ── Cancel PO ── */
+  const handleCancelPo = async () => {
+    if (!cancelReason.trim()) {
+      setCancelErrors("Cancellation reason is required");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await invPurchaseOrderService.cancel(cancelModal.id, cancelReason);
+      toast.success(`Purchase Order ${cancelModal.poNumber} cancelled`);
+      setCancelModal(null);
+      setCancelReason("");
+      setCancelErrors("");
+      loadData();
+      if (detailModal && detailModal.id === cancelModal.id) setDetailModal(null);
+    } catch (e) {
+      toast.error(e.response?.data?.message || "Cancellation failed");
     }
     setSubmitting(false);
   };
@@ -648,7 +737,7 @@ function InvPurchaseOrdersContent() {
             Convert Approved PR
           </button>
           <button
-            onClick={() => { setSelectedPr(null); setModalOpen(true); }}
+            onClick={() => { setEditingPo(null); setSelectedPr(null); setModalOpen(true); }}
             className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 shadow-md transition-all duration-200 font-medium text-sm"
           >
             <Plus className="w-4 h-4" />
@@ -740,7 +829,7 @@ function InvPurchaseOrdersContent() {
                   const isApproved = po.status === "APPROVED_L2" || po.status === "SENT_TO_SUPPLIER" || po.status === "PARTIALLY_RECEIVED" || po.status === "FULLY_RECEIVED";
 
                   return (
-                    <tr key={po.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                    <tr key={po.id} className={`hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors ${po.status === "CANCELLED" ? "opacity-50" : ""}`}>
                       <td className="px-5 py-3 font-mono font-semibold text-indigo-600 dark:text-indigo-400">
                         {po.poNumber}
                       </td>
@@ -854,6 +943,28 @@ function InvPurchaseOrdersContent() {
                               <PackageCheck className="w-4 h-4" />
                             </button>
                           )}
+
+                          {/* Edit Draft / Revise Rejected */}
+                          {(po.status === "DRAFT" || po.status === "REJECTED") && isPurchaser && (
+                            <button
+                              onClick={() => openEditModal(po)}
+                              className="p-1.5 rounded-lg hover:bg-amber-50 dark:hover:bg-amber-900/30 text-amber-600 dark:text-amber-400"
+                              title={po.status === "REJECTED" ? "Revise & Resubmit" : "Edit Draft"}
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                          )}
+
+                          {/* Cancel */}
+                          {po.status !== "CANCELLED" && po.status !== "FULLY_RECEIVED" && po.status !== "REJECTED" && isPurchaser && (
+                            <button
+                              onClick={() => setCancelModal(po)}
+                              className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/30 text-red-400 hover:text-red-600"
+                              title="Cancel Purchase Order"
+                            >
+                              <Ban className="w-4 h-4" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -890,7 +1001,7 @@ function InvPurchaseOrdersContent() {
 
       {/* ─── Approved Requisition Picker Modal ─────────────────── */}
       {prPickerModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40 backdrop-blur-sm">
           <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-3xl mx-4 max-h-[85vh] flex flex-col overflow-hidden border border-gray-200 dark:border-gray-700">
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
               <div className="flex items-center gap-2">
@@ -966,12 +1077,20 @@ function InvPurchaseOrdersContent() {
 
       {/* ─── Create Purchase Order Modal ────────────────────── */}
       {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40 backdrop-blur-sm">
           <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-3xl mx-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700 sticky top-0 bg-white dark:bg-gray-800 z-10">
               <div>
-                <h2 className="text-lg font-bold text-gray-900 dark:text-white">New Purchase Order</h2>
-                <p className="text-xs text-gray-500">Create vendor purchase order with real-time tax & line pricing</p>
+                <h2 className="text-lg font-bold text-gray-900 dark:text-white">
+                  {editingPo
+                    ? (editingPo.status === "REJECTED" ? "Revise & Resubmit PO" : `Edit Draft — ${editingPo.poNumber}`)
+                    : "New Purchase Order"}
+                </h2>
+                <p className="text-xs text-gray-500">
+                  {editingPo
+                    ? (editingPo.status === "REJECTED" ? "Fix issues and resubmit this rejected PO" : "Modify this draft purchase order")
+                    : "Create vendor purchase order with real-time tax & line pricing"}
+                </p>
               </div>
               <button onClick={() => setModalOpen(false)} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
                 <X className="w-5 h-5" />
@@ -1115,10 +1234,12 @@ function InvPurchaseOrdersContent() {
                 </div>
 
                 {form.lines.map((line, idx) => {
-                  const lineTotal = (parseFloat(line.orderedQuantity) || 0) * (parseFloat(line.unitPrice) || 0);
+                  const lineSubtotal = (parseFloat(line.orderedQuantity) || 0) * (parseFloat(line.unitPrice) || 0);
+                  const lineVat = lineSubtotal * ((parseFloat(line.vatRate) || 0) / 100);
+                  const lineTotal = lineSubtotal + lineVat;
                   return (
-                    <div key={idx} className="grid grid-cols-12 gap-2 items-start bg-gray-50 dark:bg-gray-700/30 rounded-xl p-3 border border-gray-200 dark:border-gray-700">
-                      <div className="col-span-5">
+                    <div key={idx} className="grid grid-cols-14 gap-2 items-start bg-gray-50 dark:bg-gray-700/30 rounded-xl p-3 border border-gray-200 dark:border-gray-700">
+                      <div className="col-span-4">
                         <label className="block text-xs text-gray-500 mb-1">
                           Item <span className="text-red-500">*</span>
                         </label>
@@ -1160,7 +1281,7 @@ function InvPurchaseOrdersContent() {
 
                       <div className="col-span-2">
                         <label className="block text-xs text-gray-500 mb-1">
-                          Unit Price (ETB) <span className="text-red-500">*</span>
+                          Unit Price <span className="text-red-500">*</span>
                         </label>
                         <input
                           type="number"
@@ -1178,9 +1299,27 @@ function InvPurchaseOrdersContent() {
                       </div>
 
                       <div className="col-span-2">
-                        <label className="block text-xs text-gray-500 mb-1">Line Total</label>
+                        <label className="block text-xs text-gray-500 mb-1">VAT %</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          max="100"
+                          value={line.vatRate}
+                          onChange={(e) => updateLine(idx, "vatRate", e.target.value)}
+                          className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-right font-mono"
+                        />
+                      </div>
+
+                      <div className="col-span-3">
+                        <label className="block text-xs text-gray-500 mb-1">Total (Incl. VAT)</label>
                         <div className="px-2 py-1.5 text-sm font-mono font-semibold text-right text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 rounded-lg truncate">
                           {lineTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          {lineVat > 0 && (
+                            <span className="block text-[10px] text-green-600 dark:text-green-400 font-normal">
+                              +{lineVat.toLocaleString(undefined, { minimumFractionDigits: 2 })} VAT
+                            </span>
+                          )}
                         </div>
                       </div>
 
@@ -1216,15 +1355,7 @@ function InvPurchaseOrdersContent() {
                   </span>
                 </div>
                 <div className="flex justify-between items-center text-sm">
-                  <div className="flex items-center gap-2">
-                    <span className="text-gray-500">VAT Rate (%):</span>
-                    <input
-                      type="number"
-                      value={form.vatRate}
-                      onChange={(e) => setForm({ ...form, vatRate: e.target.value })}
-                      className="w-16 px-2 py-0.5 text-xs border border-gray-300 rounded bg-white dark:bg-gray-700 font-mono text-right"
-                    />
-                  </div>
+                  <span className="text-gray-500">Total VAT (per-line):</span>
                   <span className="font-mono font-medium text-gray-800 dark:text-gray-200">
                     ETB {liveCalculations.vat.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                   </span>
@@ -1251,7 +1382,7 @@ function InvPurchaseOrdersContent() {
                 className="px-6 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg hover:bg-indigo-700 shadow-md disabled:opacity-50 flex items-center gap-2"
               >
                 {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-                {submitting ? "Creating..." : "Create Purchase Order"}
+                {submitting ? "Saving..." : (editingPo ? "Save Changes" : "Create Purchase Order")}
               </button>
             </div>
           </div>
@@ -1260,8 +1391,8 @@ function InvPurchaseOrdersContent() {
 
       {/* ─── Detail Modal with Stepper & Chronological Audit Trail ─ */}
       {detailModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-3xl mx-4 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-3xl max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
               <div className="flex items-center gap-3">
                 <h2 className="text-lg font-bold text-gray-900 dark:text-white font-mono">{detailModal.poNumber}</h2>
@@ -1385,41 +1516,50 @@ function InvPurchaseOrdersContent() {
                       <th className="px-4 py-2 text-right">Ordered Qty</th>
                       <th className="px-4 py-2 text-right">Received Qty</th>
                       <th className="px-4 py-2 text-right">Unit Price</th>
-                      <th className="px-4 py-2 text-right">Total (ETB)</th>
+                      <th className="px-4 py-2 text-right">VAT%</th>
+                      <th className="px-4 py-2 text-right">Total (Excl.)</th>
+                      <th className="px-4 py-2 text-right">Total (Incl.)</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                    {(detailModal.lines || []).map((l, i) => (
-                      <tr key={i}>
-                        <td className="px-4 py-2 text-gray-800 dark:text-gray-200 font-medium">
-                          {l.item?.itemCode ? `${l.item.itemCode} — ` : ""}{l.item?.itemName}
-                        </td>
-                        <td className="px-4 py-2 text-right font-mono">{l.orderedQuantity}</td>
-                        <td className="px-4 py-2 text-right font-mono">
-                          <span className={Number(l.receivedQuantity || 0) >= Number(l.orderedQuantity) ? "text-green-600 font-bold" : "text-gray-500"}>
-                            {l.receivedQuantity || 0}
-                          </span>
-                        </td>
-                        <td className="px-4 py-2 text-right font-mono">ETB {Number(l.unitPrice).toLocaleString()}</td>
-                        <td className="px-4 py-2 text-right font-mono font-semibold">ETB {Number(l.totalPrice).toLocaleString()}</td>
-                      </tr>
-                    ))}
+                    {(detailModal.lines || []).map((l, i) => {
+                      const vatR = Number(l.vatRate ?? 15);
+                      const exclTotal = Number(l.totalPrice || 0);
+                      const inclTotal = exclTotal * (1 + vatR / 100);
+                      return (
+                        <tr key={i}>
+                          <td className="px-4 py-2 text-gray-800 dark:text-gray-200 font-medium">
+                            {l.item?.itemCode ? `${l.item.itemCode} — ` : ""}{l.item?.itemName}
+                          </td>
+                          <td className="px-4 py-2 text-right font-mono">{l.orderedQuantity}</td>
+                          <td className="px-4 py-2 text-right font-mono">
+                            <span className={Number(l.receivedQuantity || 0) >= Number(l.orderedQuantity) ? "text-green-600 font-bold" : "text-gray-500"}>
+                              {l.receivedQuantity || 0}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2 text-right font-mono">ETB {Number(l.unitPrice).toLocaleString()}</td>
+                          <td className="px-4 py-2 text-right font-mono text-gray-500">{vatR}%</td>
+                          <td className="px-4 py-2 text-right font-mono">{exclTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                          <td className="px-4 py-2 text-right font-mono font-semibold text-indigo-600 dark:text-indigo-400">{inclTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                   <tfoot className="bg-gray-50 dark:bg-gray-700/50">
                     <tr>
-                      <td colSpan={4} className="px-4 py-1.5 text-right text-xs text-gray-500">Subtotal:</td>
+                      <td colSpan={6} className="px-4 py-1.5 text-right text-xs text-gray-500">Subtotal:</td>
                       <td className="px-4 py-1.5 text-right font-mono font-medium">
                         ETB {Number(detailModal.subtotal || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                       </td>
                     </tr>
                     <tr>
-                      <td colSpan={4} className="px-4 py-1.5 text-right text-xs text-gray-500">VAT ({detailModal.vatRate}%):</td>
+                      <td colSpan={6} className="px-4 py-1.5 text-right text-xs text-gray-500">Total VAT (per-line):</td>
                       <td className="px-4 py-1.5 text-right font-mono font-medium">
                         ETB {Number(detailModal.vatAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                       </td>
                     </tr>
                     <tr className="border-t border-gray-200 dark:border-gray-600">
-                      <td colSpan={4} className="px-4 py-2 text-right font-bold">Grand Total:</td>
+                      <td colSpan={6} className="px-4 py-2 text-right font-bold">Grand Total:</td>
                       <td className="px-4 py-2 text-right font-mono font-bold text-indigo-600 dark:text-indigo-400">
                         ETB {Number(detailModal.grandTotal || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                       </td>
@@ -1512,7 +1652,7 @@ function InvPurchaseOrdersContent() {
 
       {/* ─── Approve Modal ───────────────────────────────────── */}
       {approveModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40 backdrop-blur-sm">
           <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6 space-y-4">
             <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
               <Check className="w-5 h-5 text-green-600" />
@@ -1553,7 +1693,7 @@ function InvPurchaseOrdersContent() {
 
       {/* ─── Reject Modal ────────────────────────────────────── */}
       {rejectModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40 backdrop-blur-sm">
           <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6 space-y-4">
             <h3 className="text-lg font-bold text-red-600 flex items-center gap-2">
               <XCircle className="w-5 h-5" />
@@ -1598,6 +1738,67 @@ function InvPurchaseOrdersContent() {
               >
                 {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
                 {submitting ? "Rejecting..." : "Reject Order"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Cancel PO Modal ──────────────────────────────────── */}
+      {cancelModal && (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 pt-8 sm:pt-14 overflow-y-auto">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-orange-50 dark:bg-orange-900/20">
+              <h2 className="text-lg font-bold text-orange-700 dark:text-orange-300 flex items-center gap-2">
+                <Ban className="w-5 h-5" /> Cancel {cancelModal.poNumber}
+              </h2>
+              <p className="text-xs text-orange-600 dark:text-orange-400 mt-1">
+                This action will permanently cancel this purchase order. It will remain visible in history.
+              </p>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="bg-gray-50 dark:bg-gray-700/30 p-3 rounded-lg text-xs space-y-1">
+                <p><span className="text-gray-500">Supplier:</span> <strong>{cancelModal.supplier?.supplierName}</strong></p>
+                <p><span className="text-gray-500">Status:</span> <strong>{cancelModal.status?.replace(/_/g, " ")}</strong></p>
+                <p><span className="text-gray-500">Grand Total:</span> <strong>ETB {Number(cancelModal.grandTotal || 0).toLocaleString()}</strong></p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Cancellation Reason <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  value={cancelReason}
+                  onChange={(e) => {
+                    setCancelReason(e.target.value);
+                    if (cancelErrors) setCancelErrors("");
+                  }}
+                  rows={3}
+                  className={`w-full px-3 py-2 border rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white resize-none shadow-sm transition-colors ${
+                    cancelErrors ? "border-red-500 ring-1 ring-red-500 bg-red-50/20" : "border-gray-300 dark:border-gray-600"
+                  }`}
+                  placeholder="Explain why this purchase order is being cancelled..."
+                />
+                {cancelErrors && (
+                  <p className="text-xs text-red-600 dark:text-red-400 mt-1 flex items-center gap-1">
+                    <AlertCircle className="w-3.5 h-3.5" /> {cancelErrors}
+                  </p>
+                )}
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/30">
+              <button
+                onClick={() => { setCancelModal(null); setCancelReason(""); setCancelErrors(""); }}
+                className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg"
+              >
+                Keep Open
+              </button>
+              <button
+                onClick={handleCancelPo}
+                disabled={submitting}
+                className="px-6 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 shadow-md font-medium disabled:opacity-50 flex items-center gap-2"
+              >
+                {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                {submitting ? "Cancelling..." : "Confirm Cancellation"}
               </button>
             </div>
           </div>

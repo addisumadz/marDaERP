@@ -16,6 +16,6 @@ public interface InvPurchaseOrderRepository extends JpaRepository<InvPurchaseOrd
 
     java.util.List<InvPurchaseOrder> findByStatusInOrderByCreatedAtDesc(java.util.Collection<POStatus> statuses);
 
-    @Query("SELECT MAX(CAST(SUBSTRING(p.poNumber, 9) AS long)) FROM InvPurchaseOrder p WHERE p.poNumber LIKE CONCAT(:prefix, '%')")
+    @Query("SELECT MAX(CAST(SUBSTRING(p.poNumber, 4) AS long)) FROM InvPurchaseOrder p WHERE p.poNumber LIKE CONCAT(:prefix, '%')")
     Long findMaxSequence(String prefix);
 }

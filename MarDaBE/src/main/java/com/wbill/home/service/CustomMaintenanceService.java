@@ -405,19 +405,25 @@ public class CustomMaintenanceService {
         }
 
         // Apply Rates for Maintenance:
+        // 25% Transport Charge is strictly calculated from items supplied by the water utility (excluding store water meter).
         // Water meter from store is EXEMPT from both 25% transport charge and 55% service charge.
         // The meter's store sale value is simply summed into total payable via utilityMaterialsTotal.
-        BigDecimal totalMaterials = utilityMaterialsTotal.add(outsideMaterialsTotal);
-        BigDecimal materialsSubjectToOverhead = totalMaterials.subtract(meterUtilityTotal);
-        if (materialsSubjectToOverhead.compareTo(BigDecimal.ZERO) < 0) {
-            materialsSubjectToOverhead = BigDecimal.ZERO;
+        BigDecimal materialsSubjectToTransport = utilityMaterialsTotal.subtract(meterUtilityTotal);
+        if (materialsSubjectToTransport.compareTo(BigDecimal.ZERO) < 0) {
+            materialsSubjectToTransport = BigDecimal.ZERO;
         }
 
         BigDecimal transportChargePercent = new BigDecimal("25.00");
-        BigDecimal transportCharge = materialsSubjectToOverhead.multiply(new BigDecimal("0.25")).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal transportCharge = materialsSubjectToTransport.multiply(new BigDecimal("0.25")).setScale(2, RoundingMode.HALF_UP);
+
+        BigDecimal totalMaterials = utilityMaterialsTotal.add(outsideMaterialsTotal);
+        BigDecimal materialsSubjectToService = totalMaterials.subtract(meterUtilityTotal);
+        if (materialsSubjectToService.compareTo(BigDecimal.ZERO) < 0) {
+            materialsSubjectToService = BigDecimal.ZERO;
+        }
 
         BigDecimal serviceChargePercent = new BigDecimal("55.00");
-        BigDecimal serviceChargeBase = materialsSubjectToOverhead.add(transportCharge);
+        BigDecimal serviceChargeBase = materialsSubjectToService.add(transportCharge);
         BigDecimal serviceCharge = serviceChargeBase.multiply(new BigDecimal("0.55")).setScale(2, RoundingMode.HALF_UP);
 
         // Total Payable = Utility Materials (includes meter sale value) + Service Charge + Transport Charge + Additional Fees
@@ -508,14 +514,18 @@ public class CustomMaintenanceService {
                 outsideMaterialsTotal = outsideMaterialsTotal.add(outTotal);
             }
 
-            BigDecimal totalMaterials = utilityMaterialsTotal.add(outsideMaterialsTotal);
-            BigDecimal materialsSubjectToOverhead = totalMaterials.subtract(meterUtilityTotal);
-            if (materialsSubjectToOverhead.compareTo(BigDecimal.ZERO) < 0) {
-                materialsSubjectToOverhead = BigDecimal.ZERO;
+            BigDecimal materialsSubjectToTransport = utilityMaterialsTotal.subtract(meterUtilityTotal);
+            if (materialsSubjectToTransport.compareTo(BigDecimal.ZERO) < 0) {
+                materialsSubjectToTransport = BigDecimal.ZERO;
             }
+            BigDecimal transportCharge = materialsSubjectToTransport.multiply(new BigDecimal("0.25")).setScale(2, RoundingMode.HALF_UP);
 
-            BigDecimal transportCharge = materialsSubjectToOverhead.multiply(new BigDecimal("0.25")).setScale(2, RoundingMode.HALF_UP);
-            BigDecimal serviceChargeBase = materialsSubjectToOverhead.add(transportCharge);
+            BigDecimal totalMaterials = utilityMaterialsTotal.add(outsideMaterialsTotal);
+            BigDecimal materialsSubjectToService = totalMaterials.subtract(meterUtilityTotal);
+            if (materialsSubjectToService.compareTo(BigDecimal.ZERO) < 0) {
+                materialsSubjectToService = BigDecimal.ZERO;
+            }
+            BigDecimal serviceChargeBase = materialsSubjectToService.add(transportCharge);
             BigDecimal serviceCharge = serviceChargeBase.multiply(new BigDecimal("0.55")).setScale(2, RoundingMode.HALF_UP);
 
             BigDecimal additionalFeesTotal = req.getAdditionalFeesTotal() != null ? req.getAdditionalFeesTotal() : BigDecimal.ZERO;
@@ -820,15 +830,24 @@ public class CustomMaintenanceService {
     }
 
     public CustomMaintenanceCommonMaterial saveCommonMaterial(CustomMaintenanceCommonMaterial material) {
-        if (material.getMaintenanceType() != null && material.getMaintenanceType().getId() != null) {
-            typeRepo.findById(material.getMaintenanceType().getId()).ifPresent(material::setMaintenanceType);
-        }
-        if (material.getInvItem() != null && material.getInvItem().getId() > 0 && invItemRepo != null) {
-            material.setInvItem(invItemRepo.findById(material.getInvItem().getId()).orElse(null));
+        CustomMaintenanceCommonMaterial entity;
+        if (material.getId() != null && material.getId() > 0) {
+            entity = commonMaterialRepo.findById(material.getId()).orElse(new CustomMaintenanceCommonMaterial());
         } else {
-            material.setInvItem(null);
+            entity = new CustomMaintenanceCommonMaterial();
         }
-        return commonMaterialRepo.save(material);
+        if (material.getMaintenanceType() != null && material.getMaintenanceType().getId() != null) {
+            typeRepo.findById(material.getMaintenanceType().getId()).ifPresent(entity::setMaintenanceType);
+        }
+        entity.setDisplayOrder(material.getDisplayOrder() != null ? material.getDisplayOrder() : 0);
+        entity.setIsActive(material.getIsActive() != null ? material.getIsActive() : true);
+        if (material.getInvItem() != null && material.getInvItem().getId() > 0 && invItemRepo != null) {
+            InvItem item = invItemRepo.findById(material.getInvItem().getId()).orElse(null);
+            entity.setInvItem(item);
+        } else {
+            entity.setInvItem(null);
+        }
+        return commonMaterialRepo.save(entity);
     }
 
     public void deleteCommonMaterial(Long id) {
@@ -925,6 +944,7 @@ public class CustomMaintenanceService {
             itemMap.put("materialNameAm", mat.getMaterialNameAm());
             itemMap.put("unitOfMeasure", mat.getUnitOfMeasure() != null ? mat.getUnitOfMeasure() : "በቁጥር");
             itemMap.put("maintenanceTypeId", mat.getMaintenanceType() != null ? mat.getMaintenanceType().getId() : null);
+            itemMap.put("isWaterMeter", mat.getIsWaterMeter());
 
             InvItem matchedInvItem = null;
             if (mat.getInvItem() != null) {

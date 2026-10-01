@@ -14,6 +14,6 @@ public interface InvGoodsReceivedNoteRepository extends JpaRepository<InvGoodsRe
     Page<InvGoodsReceivedNote> findAllByOrderByCreatedAtDesc(Pageable pageable);
     List<InvGoodsReceivedNote> findByPurchaseOrderId(long purchaseOrderId);
 
-    @Query("SELECT MAX(CAST(SUBSTRING(g.grnNumber, 10) AS long)) FROM InvGoodsReceivedNote g WHERE g.grnNumber LIKE CONCAT(:prefix, '%')")
+    @Query("SELECT MAX(CAST(SUBSTRING(g.grnNumber, 5) AS long)) FROM InvGoodsReceivedNote g WHERE g.grnNumber LIKE CONCAT(:prefix, '%')")
     Long findMaxSequence(String prefix);
 }

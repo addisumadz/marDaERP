@@ -149,11 +149,23 @@ const BankImportUnicash = () => {
 
   // Format a JS Date to YYYY-MM-DD (Gregorian) for API calls
   const formatDateGC = (d) => {
-    if (!(d instanceof Date) || isNaN(d)) return "";
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, "0");
-    const day = String(d.getDate()).padStart(2, "0");
-    return `${y}-${m}-${day}`;
+    if (!d) return "";
+    if (d instanceof Date && !isNaN(d.getTime())) {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      return `${y}-${m}-${day}`;
+    }
+    try {
+      const parsed = new Date(d);
+      if (!isNaN(parsed.getTime())) {
+        const y = parsed.getFullYear();
+        const m = String(parsed.getMonth() + 1).padStart(2, "0");
+        const day = String(parsed.getDate()).padStart(2, "0");
+        return `${y}-${m}-${day}`;
+      }
+    } catch (_) {}
+    return "";
   };
 
   const { data: allBanks = [] } = useQuery({
@@ -475,9 +487,10 @@ const BankImportUnicash = () => {
     []
   );
 
+  const newPaymentsData = useMemo(() => processResult?.newPayments || [], [processResult?.newPayments]);
   const newPaymentsTable = useMaterialReactTable({
     columns: newPaymentsColumns,
-    data: processResult?.newPayments || [],
+    data: newPaymentsData,
     enableRowSelection: false,
     enableColumnOrdering: false,
     enableGlobalFilter: true,
@@ -537,9 +550,10 @@ const BankImportUnicash = () => {
     { accessorKey: "reason", header: "Skip Reason", size: 350 },
   ], []);
 
+  const skippedBillsData = useMemo(() => processResult?.skippedBills || [], [processResult?.skippedBills]);
   const skippedBillsTable = useMaterialReactTable({
     columns: skippedBillsColumns,
-    data: processResult?.skippedBills || [],
+    data: skippedBillsData,
     enableRowSelection: false,
     enableColumnOrdering: false,
     enableGlobalFilter: true,
@@ -856,8 +870,9 @@ const BankImportUnicash = () => {
   );
 };
 
+const queryClient = new QueryClient();
+
 const BankImportUnicashWithProvider = () => {
-  const queryClient = new QueryClient();
   return (
     <QueryClientProvider client={queryClient}>
       <BankImportUnicash />

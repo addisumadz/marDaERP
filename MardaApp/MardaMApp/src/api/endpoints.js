@@ -8,18 +8,43 @@ import apiClient from './client';
 export const authAPI = {
     /**
      * Authenticate user
-     * POST /huseraccount/{username}/{password}/{mobileId}
-     * @returns "success" | "perror" | "error"
+     * Tries modern POST /auth/login with request body first.
+     * Falls back to legacy POST /huseraccount/{username}/{password}/{mobileId} if not supported.
+     * @returns { status: "success" | "perror" | "error", user_id, ... }
      */
     login: async (username, password, mobileId) => {
-        const response = await apiClient.post(
-            `/huseraccount/${username}/${password}/${mobileId}`
-        );
-        return response.data;
+        try {
+            // 1. Modern secure body endpoint (avoids sending passwords in URL)
+            const response = await apiClient.post('/auth/login', {
+                username,
+                password,
+                mobileId,
+            });
+            return response.data;
+        } catch (error) {
+            // If the server doesn't have /auth/login (404/405), fallback to legacy path endpoint
+            if (error.response && (error.response.status === 404 || error.response.status === 405)) {
+                console.warn('[authAPI] /auth/login not found on server, falling back to legacy endpoint');
+                const response = await apiClient.post(
+                    `/huseraccount/${encodeURIComponent(username)}/${encodeURIComponent(password)}/${encodeURIComponent(mobileId)}`
+                );
+                return response.data;
+            }
+            throw error;
+        }
     },
 };
 
 export const syncAPI = {
+    /**
+     * Get unified customer data (master + previous readings + arrears) in a single JSON request
+     * GET /customers/unified/{username}
+     */
+    getUnifiedCustomerData: async (username) => {
+        const response = await apiClient.get(`/customers/unified/${username}`);
+        return response.data;
+    },
+
     /**
      * Get current billing period and system flags
      * GET /kfyawor/{username}

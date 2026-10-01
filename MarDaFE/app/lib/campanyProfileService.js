@@ -17,6 +17,23 @@ export class CampanyProfileService {
     return res;
   }
 
+  async getCampanyProfile() {
+    try {
+      let user_accessToken = getAccesToken();
+      const res = await axios.get(commonUrl + "company-profile/latest", {
+        headers: authHeader(user_accessToken),
+      });
+      return res.data;
+    } catch (e) {
+      try {
+        const fallback = await this.getCompanyProfileByStatus("Active");
+        return Array.isArray(fallback?.data) ? fallback.data[0] : fallback?.data;
+      } catch (_) {
+        return null;
+      }
+    }
+  }
+
   // New: backend endpoint uses capitalized path under /api/card_managenment
   async getCompanyProfileByStatus(status) {
     let user_accessToken = getAccesToken();

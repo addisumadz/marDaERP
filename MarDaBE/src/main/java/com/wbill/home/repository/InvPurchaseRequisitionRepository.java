@@ -24,6 +24,6 @@ public interface InvPurchaseRequisitionRepository extends JpaRepository<InvPurch
     Page<InvPurchaseRequisition> findAllByOrderByCreatedAtDesc(Pageable pageable);
     java.util.List<InvPurchaseRequisition> findByStatusInOrderByCreatedAtDesc(java.util.Collection<PRStatus> statuses);
 
-    @Query("SELECT MAX(CAST(SUBSTRING(r.requisitionNumber, 9) AS long)) FROM InvPurchaseRequisition r WHERE r.requisitionNumber LIKE CONCAT(:prefix, '%')")
+    @Query("SELECT MAX(CAST(SUBSTRING(r.requisitionNumber, 4) AS long)) FROM InvPurchaseRequisition r WHERE r.requisitionNumber LIKE CONCAT(:prefix, '%')")
     Long findMaxSequence(String prefix);
 }

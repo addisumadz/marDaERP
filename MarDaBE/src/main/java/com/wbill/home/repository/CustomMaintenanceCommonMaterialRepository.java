@@ -10,5 +10,4 @@ import java.util.Optional;
 public interface CustomMaintenanceCommonMaterialRepository extends JpaRepository<CustomMaintenanceCommonMaterial, Long> {
     List<CustomMaintenanceCommonMaterial> findByIsActiveTrueOrderByDisplayOrderAsc();
     List<CustomMaintenanceCommonMaterial> findByMaintenanceTypeIdAndIsActiveTrueOrderByDisplayOrderAsc(Long maintenanceTypeId);
-    Optional<CustomMaintenanceCommonMaterial> findByMaterialCode(String materialCode);
 }

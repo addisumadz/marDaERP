@@ -1,4 +1,6 @@
 import axios from 'axios';
+import authHeader from './authHeader/authhheader';
+import getAccesToken from './getToken';
 import { baseURL } from './httpCommon/http-common';
 
 export class UnicashPaymentImportService {
@@ -14,6 +16,7 @@ export class UnicashPaymentImportService {
    */
   async updateUnicashPayments(updateRequests) {
     try {
+      const token = getAccesToken();
       const requestBody = {
         updates: updateRequests
       };
@@ -25,6 +28,7 @@ export class UnicashPaymentImportService {
         requestBody,
         {
           headers: {
+            ...authHeader(token),
             'Content-Type': 'application/json',
           },
         }
@@ -53,6 +57,7 @@ export class UnicashPaymentImportService {
    */
   async importUnicashPaymentsFromCsv(file, kifyaWer) {
     try {
+      const token = getAccesToken();
       const formData = new FormData();
       formData.append('file', file);
       formData.append('kifyaWer', kifyaWer);
@@ -64,6 +69,7 @@ export class UnicashPaymentImportService {
         formData,
         {
           headers: {
+            ...authHeader(token),
             'Content-Type': 'multipart/form-data',
           },
         }

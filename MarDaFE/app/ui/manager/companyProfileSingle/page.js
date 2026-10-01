@@ -33,11 +33,25 @@ const svc = new CompanyProfileService();
 // Ethiopian Date Picker using habesha-datepicker directly
 const EthiopianDatePicker = ({ value, onChange, label }) => {
   const handleDateChange = (newDate) => {
-    if (newDate) {
-      // Convert Date object to ISO string for storage
-      onChange(newDate.toISOString().split('T')[0]);
-    } else {
+    if (!newDate) {
       onChange(null);
+      return;
+    }
+    if (typeof newDate.toISOString === "function") {
+      onChange(newDate.toISOString().split("T")[0]);
+    } else if (newDate instanceof Date && !isNaN(newDate)) {
+      onChange(newDate.toISOString().split("T")[0]);
+    } else if (typeof newDate === "string") {
+      onChange(newDate.split("T")[0]);
+    } else {
+      try {
+        const d = new Date(newDate);
+        if (!isNaN(d.getTime())) {
+          onChange(d.toISOString().split("T")[0]);
+        }
+      } catch (_) {
+        onChange(null);
+      }
     }
   };
 
@@ -49,6 +63,7 @@ const EthiopianDatePicker = ({ value, onChange, label }) => {
     />
   );
 };
+
 
 const editableKeysBlacklist = new Set([
   // internal or immutable fields
@@ -179,12 +194,21 @@ function CompanyProfileSingle() {
 
   const updateMutation = useMutation({
     mutationFn: ({ id, payload }) => svc.update(id, payload),
-    onSuccess: () => {
+    onSuccess: (updated) => {
       toast.success("Company profile updated successfully");
+      const normalized =
+        updated && typeof updated === "object" && "data" in updated && updated.data
+          ? updated.data
+          : updated;
+      if (normalized && typeof normalized === "object") {
+        setProfile({ ...normalized });
+        setDraft({ ...normalized });
+      }
       queryClient.invalidateQueries(["company-profile-latest"]);
     },
     onError: (err) => {
-      toast.error(err.response?.data?.message || "Failed to update company profile");
+      console.error("Failed to update company profile:", err);
+      toast.error(err.response?.data?.message || err.message || "Failed to update company profile");
     },
   });
 
@@ -206,8 +230,34 @@ function CompanyProfileSingle() {
   };
 
   const handleSave = () => {
-    if (!draft?.id) return;
-    updateMutation.mutate({ id: draft.id, payload: draft });
+    if (!draft?.id) {
+      toast.error("No company profile record found to save");
+      return;
+    }
+
+    const payload = { ...draft };
+
+    // Sanitize numeric fields (ensure integer primitives are numbers and not null or NaN)
+    for (const key of numericKeys) {
+      if (key === "mBillingAdditionalPayment1Value" || key === "mBillingAdditionalPayment2Value") {
+        payload[key] =
+          payload[key] === "" || payload[key] === null || payload[key] === undefined || Number.isNaN(payload[key])
+            ? null
+            : Number(payload[key]);
+      } else {
+        payload[key] =
+          payload[key] === "" || payload[key] === null || payload[key] === undefined || Number.isNaN(payload[key])
+            ? 0
+            : parseInt(payload[key], 10) || 0;
+      }
+    }
+
+    // Ensure boolean fields are strictly boolean
+    for (const key of booleanKeys) {
+      payload[key] = !!payload[key];
+    }
+
+    updateMutation.mutate({ id: draft.id, payload });
   };
 
   if (isLoading) {
@@ -262,17 +312,18 @@ function CompanyProfileSingle() {
         <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
           <Typography variant="h5">Company Profile {draft?.id ? `(ID: ${draft.id})` : ""}</Typography>
           <Box sx={{ display: "flex", gap: 1 }}>
-            <Button variant="outlined" onClick={() => refetch()} disabled={isFetching}>
+            <Button variant="outlined" type="button" onClick={() => refetch()} disabled={isFetching}>
               {isFetching ? "Refreshing..." : "Refresh"}
             </Button>
             <Button
               variant="outlined"
+              type="button"
               onClick={() => initMutation.mutate()}
               disabled={!!draft || initMutation.isPending}
             >
               {initMutation.isPending ? "Initializing..." : "Initialize Default Profile"}
             </Button>
-            <Button variant="contained" onClick={handleSave} disabled={updateMutation.isPending}>
+            <Button variant="contained" type="button" onClick={handleSave} disabled={updateMutation.isPending}>
               {updateMutation.isPending ? "Saving..." : "Save Changes"}
             </Button>
           </Box>
@@ -482,6 +533,15 @@ function CompanyProfileSingle() {
             </TableContainer>
           </AccordionDetails>
         </Accordion>
+        {/* Bottom Action Bar */}
+        <Box sx={{ display: "flex", justifyContent: "flex-end", gap: 1, mt: 3, pt: 2, borderTop: "1px solid", borderColor: "divider" }}>
+          <Button variant="outlined" type="button" onClick={() => refetch()} disabled={isFetching}>
+            {isFetching ? "Refreshing..." : "Refresh"}
+          </Button>
+          <Button variant="contained" type="button" onClick={handleSave} disabled={updateMutation.isPending}>
+            {updateMutation.isPending ? "Saving..." : "Save Changes"}
+          </Button>
+        </Box>
       </Paper>
       <ToastContainer />
     </Box>

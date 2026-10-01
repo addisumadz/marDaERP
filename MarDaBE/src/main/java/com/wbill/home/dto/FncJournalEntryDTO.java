@@ -32,8 +32,8 @@ public class FncJournalEntryDTO {
         this.id = je.getId();
         this.entryNumber = je.getEntryNumber();
         this.entryDate = je.getEntryDate().toString();
-        this.fiscalYearId = je.getFiscalYear().getId();
-        this.fiscalYearName = je.getFiscalYear().getFiscalYearName();
+        this.fiscalYearId = je.getFiscalYear() != null ? je.getFiscalYear().getId() : 0;
+        this.fiscalYearName = je.getFiscalYear() != null ? je.getFiscalYear().getFiscalYearName() : "—";
         this.referenceNumber = je.getReferenceNumber();
         this.sourceType = je.getSourceType();
         this.sourceId = je.getSourceId();

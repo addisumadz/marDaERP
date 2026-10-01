@@ -117,18 +117,26 @@ export default function CustomCommonMaterialsModal({ isOpen, onClose }) {
                     </td>
                   </tr>
                 ) : (
-                  materials.map((m, idx) => (
-                    <tr key={m.id} className="hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors">
-                      <td className="px-3 py-2 text-center font-mono text-gray-400">{m.displayOrder || idx + 1}</td>
-                      <td className="px-3 py-2 font-mono font-medium text-blue-600 dark:text-blue-400">{m.materialCode}</td>
-                      <td className="px-4 py-2 font-bold text-gray-900 dark:text-white">{m.materialNameAm}</td>
-                      <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{m.materialName || "—"}</td>
-                      <td className="px-3 py-2 text-center">{m.unitOfMeasure}</td>
-                      <td className="px-4 py-2 text-right font-mono font-semibold">
-                        {(Number(m.defaultUnitPrice) || 0).toFixed(2)}
-                      </td>
-                    </tr>
-                  ))
+                  materials.map((m, idx) => {
+                    const code = m.invItem?.itemCode || m.materialCode;
+                    const nameAm = m.invItem?.itemNameAm || m.materialNameAm || m.invItem?.itemName;
+                    const nameEn = m.invItem?.itemName || m.materialName || "—";
+                    const uom = (typeof m.unitOfMeasure === "object" ? m.unitOfMeasure?.unitName : m.unitOfMeasure) || m.invItem?.unitOfMeasure?.unitName || "በቁጥር";
+                    const price = m.invItem?.defaultUnitCost != null && Number(m.invItem.defaultUnitCost) > 0 ? Number(m.invItem.defaultUnitCost) : (Number(m.defaultUnitPrice) || 0);
+
+                    return (
+                      <tr key={m.id} className="hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors">
+                        <td className="px-3 py-2 text-center font-mono text-gray-400">{m.displayOrder || idx + 1}</td>
+                        <td className="px-3 py-2 font-mono font-medium text-blue-600 dark:text-blue-400">{code}</td>
+                        <td className="px-4 py-2 font-bold text-gray-900 dark:text-white">{nameAm}</td>
+                        <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{nameEn}</td>
+                        <td className="px-3 py-2 text-center">{uom}</td>
+                        <td className="px-4 py-2 text-right font-mono font-semibold">
+                          {price.toFixed(2)}
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>

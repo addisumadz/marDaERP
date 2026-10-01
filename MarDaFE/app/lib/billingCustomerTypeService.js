@@ -11,7 +11,7 @@ export class BillingCustomerTypeService {
   // Get all customer types
   async getAllCustomerTypes() {
     try {
-      const token = localStorage.getItem("token");
+      const token = getAccesToken();
       const res = await axios.get(`${commonUrl}billing-customer-types/all`, {
         headers: authHeader(token),
       });
@@ -25,7 +25,7 @@ export class BillingCustomerTypeService {
   // Get customer types by status with pagination
   async getCustomerTypesByStatus(status, page = 0, size = 10) {
     try {
-      const token = localStorage.getItem("token");
+      const token = getAccesToken();
       const res = await axios.get(
         `${commonUrl}billing-customer-types/status/${status}?page=${page}&size=${size}`,
         {
@@ -42,7 +42,7 @@ export class BillingCustomerTypeService {
   // Get customer type by ID
   async getCustomerTypeById(id) {
     try {
-      const token = localStorage.getItem("token");
+      const token = getAccesToken();
       const res = await axios.get(`${commonUrl}billing-customer-types/${id}`, {
         headers: authHeader(token),
       });
@@ -56,7 +56,7 @@ export class BillingCustomerTypeService {
   // Create new customer type
   async createCustomerType(customerTypeData) {
     try {
-      const token = localStorage.getItem("token");
+      const token = getAccesToken();
       const res = await axios.post(
         `${commonUrl}billing-customer-types`,
         customerTypeData,
@@ -74,7 +74,7 @@ export class BillingCustomerTypeService {
   // Update existing customer type
   async updateCustomerType(id, customerTypeData) {
     try {
-      const token = localStorage.getItem("token");
+      const token = getAccesToken();
       const res = await axios.put(
         `${commonUrl}billing-customer-types/${id}`,
         customerTypeData,
@@ -92,7 +92,7 @@ export class BillingCustomerTypeService {
   // Deactivate customer type
   async deactivateCustomerType(payload) {
     try {
-      const token = localStorage.getItem("token");
+      const token = getAccesToken();
       const res = await axios.post(
         `${commonUrl}billing-customer-types/${payload.id}/deactivate`,
         { remark: payload.remark || "" },
@@ -110,7 +110,7 @@ export class BillingCustomerTypeService {
   // Activate customer type
   async activateCustomerType(id) {
     try {
-      const token = localStorage.getItem("token");
+      const token = getAccesToken();
       const res = await axios.post(
         `${commonUrl}billing-customer-types/${id}/activate`,
         {},
@@ -128,7 +128,7 @@ export class BillingCustomerTypeService {
   // Get customer type statistics
   async getCustomerTypeStatistics() {
     try {
-      const token = localStorage.getItem("token");
+      const token = getAccesToken();
       const res = await axios.get(
         `${commonUrl}billing-customer-types/statistics`,
         {

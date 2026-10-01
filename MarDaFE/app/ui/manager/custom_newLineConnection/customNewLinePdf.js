@@ -2,12 +2,38 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import "@/app/fonts/nyala-normal";
 import customNewLineConnectionService from "../../../lib/custom_newLineConnectionService";
+import { CompanyProfileService } from "@/app/lib/companyProfileService";
 
 let ethiopianDate;
 try {
   ethiopianDate = require("ethiopian-date");
 } catch (e) {
   ethiopianDate = null;
+}
+
+let cachedCompanyProfile = null;
+
+async function resolveCompanyProfile(explicitProfile = null) {
+  if (explicitProfile && typeof explicitProfile === "object") {
+    return explicitProfile.data || explicitProfile;
+  }
+  if (cachedCompanyProfile) {
+    return cachedCompanyProfile;
+  }
+  if (typeof window !== "undefined") {
+    try {
+      const s = new CompanyProfileService();
+      const res = await s.getLatest();
+      const profile = res?.data || res;
+      if (profile && (profile.companyName || profile.companyNameAmh)) {
+        cachedCompanyProfile = profile;
+        return profile;
+      }
+    } catch (e) {
+      console.warn("Could not fetch company profile for PDF:", e);
+    }
+  }
+  return null;
 }
 
 function formatEthDate(date = new Date()) {
@@ -54,8 +80,83 @@ function createMonochromeDoc() {
   return doc;
 }
 
+/**
+ * Draws utility header from CompanyProfile:
+ * companyNameAmh (large font) & companyName (small font) with separator line
+ */
+function drawCompanyHeader(doc, profile) {
+  const companyNameAmh = (profile?.companyNameAmh || profile?.companyName || "የውሃ እና ፍሳሽ አገልግሎት ድርጅት").trim();
+  const companyNameEng = (profile?.companyName || "").trim();
+
+  // 1. Amharic Utility Name in large bold font
+  doc.setFont("nyala", "bold");
+  doc.setFontSize(14.5);
+  doc.setTextColor(0, 0, 0);
+  doc.text(companyNameAmh, 105, 11, { align: "center" });
+
+  // 2. English Utility Name in smaller font
+  if (companyNameEng && companyNameEng !== companyNameAmh) {
+    doc.setFont("nyala", "normal");
+    doc.setFontSize(8.5);
+    doc.setTextColor(0, 0, 0);
+    doc.text(companyNameEng, 105, 15.5, { align: "center" });
+  }
+
+  // Thin divider line below header
+  doc.setDrawColor(0, 0, 0);
+  doc.setLineWidth(0.25);
+  doc.line(14, 17.5, 196, 17.5);
+}
+
+/**
+ * Adds page footer across all pages with CompanyProfile info:
+ * officePhoneNumber, mobilePhoneNumber, websiteAddress, companyMoto, and page numbers
+ */
+function addDocumentFooter(doc, profile) {
+  const pageCount = doc.getNumberOfPages();
+  const officePhone = (profile?.officePhoneNumber || profile?.officePhone || "").trim();
+  const mobilePhone = (profile?.mobilePhoneNumber || profile?.mobilePhone || "").trim();
+  const website = (profile?.websiteAddress || profile?.website || "").trim();
+  const motto = (profile?.companyMoto || profile?.campanyMoto || "").trim();
+
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
+    const pageHeight = doc.internal.pageSize.getHeight();
+
+    // Bottom divider line
+    doc.setDrawColor(0, 0, 0);
+    doc.setLineWidth(0.2);
+    doc.line(14, pageHeight - 14, 196, pageHeight - 14);
+
+    doc.setFont("nyala", "normal");
+    doc.setFontSize(7.5);
+    doc.setTextColor(0, 0, 0);
+
+    // Left/Center: Contact numbers & website
+    const contacts = [];
+    if (officePhone) contacts.push(`ስልክ: ${officePhone}`);
+    if (mobilePhone) contacts.push(`ሞባይል: ${mobilePhone}`);
+    if (website) contacts.push(`ድረ-ገጽ: ${website}`);
+    const contactLine = contacts.join("  |  ");
+
+    if (contactLine) {
+      doc.text(contactLine, 14, pageHeight - 9.5);
+    }
+
+    // Right: Page number
+    doc.text(`ገጽ ${i} ከ ${pageCount}`, 196, pageHeight - 9.5, { align: "right" });
+
+    // Center bottom: Company motto
+    if (motto) {
+      doc.setFont("nyala", "italic");
+      doc.setFontSize(7);
+      doc.text(`መሪ ቃል፡ "${motto}"`, 105, pageHeight - 5.5, { align: "center" });
+    }
+  }
+}
+
 // ─── 1. Field Survey Checklist (Monochrome / B&W Optimized) ────────────────
-export async function generateSurveyChecklistPdf(commonMaterials = [], request = null) {
+export async function generateSurveyChecklistPdf(commonMaterials = [], request = null, explicitCompanyProfile = null) {
   let materials = Array.isArray(commonMaterials) && commonMaterials.length > 0 ? [...commonMaterials] : [];
   if (materials.length === 0) {
     try {
@@ -68,45 +169,49 @@ export async function generateSurveyChecklistPdf(commonMaterials = [], request =
     }
   }
 
+  const profile = await resolveCompanyProfile(explicitCompanyProfile || request?.companyProfile);
   const doc = createMonochromeDoc();
 
-  // Document Title Header
+  // Utility Company Header (Amharic large, English small)
+  drawCompanyHeader(doc, profile);
+
+  // Document Title & Subtitle
   doc.setFont("nyala", "bold");
-  doc.setFontSize(14);
+  doc.setFontSize(12);
   doc.setTextColor(0, 0, 0);
-  doc.text("የአዲስ ውሃ መስመር ዝርጋታ - የዳሰሳ ጥናት ማረጋገጫ ቅጽ", 105, 16, { align: "center" });
+  doc.text("የአዲስ ውሃ መስመር ዝርጋታ - የዳሰሳ ጥናት ማረጋገጫ ቅጽ", 105, 23, { align: "center" });
 
   doc.setFont("nyala", "normal");
-  doc.setFontSize(9);
-  doc.text("New Water Connection - Field Survey & Material Verification Form", 105, 21, { align: "center" });
+  doc.setFontSize(8);
+  doc.text("New Water Connection - Field Survey & Material Verification Form", 105, 27, { align: "center" });
 
-  doc.setFontSize(9);
-  doc.text(`ቀን: ${formatEthDate(new Date())}`, 195, 26, { align: "right" });
+  doc.setFontSize(8.5);
+  doc.text(`ቀን: ${formatEthDate(new Date())}`, 195, 32, { align: "right" });
 
   // Customer Information Box (Crisp B&W border)
   doc.setDrawColor(0, 0, 0);
   doc.setLineWidth(0.3);
   doc.setFillColor(255, 255, 255);
-  doc.roundedRect(14, 28, 182, 26, 1.5, 1.5, "FD");
+  doc.roundedRect(14, 34, 182, 26, 1.5, 1.5, "FD");
 
   doc.setFontSize(9);
   doc.setTextColor(0, 0, 0);
   if (request) {
-    doc.text(`የማመልከቻ ቁጥር: ${request.applicationNumber || "—"}`, 18, 35);
-    doc.text(`የደንበኛ ስም: ${request.customerFullName || "—"} ${request.customerFullNameEng ? `(${request.customerFullNameEng})` : ""}`, 18, 42);
-    doc.text(`ስልክ ቁጥር: ${request.phoneNumber || "—"}`, 18, 49);
+    doc.text(`የማመልከቻ ቁጥር: ${request.applicationNumber || "—"}`, 18, 41);
+    doc.text(`የደንበኛ ስም: ${request.customerFullName || "—"} ${request.customerFullNameEng ? `(${request.customerFullNameEng})` : ""}`, 18, 48);
+    doc.text(`ስልክ ቁጥር: ${request.phoneNumber || "—"}`, 18, 55);
 
-    doc.text(`ቀበሌ: ${request.kebele?.streetsName ? `ቀበሌ ${request.kebele.streetsName}` : (request.kebele?.name || "—")}`, 110, 35);
-    doc.text(`የቤት ቁጥር: ${request.houseNumber || "—"}`, 110, 42);
-    doc.text(`የተመደበው ባለሙያ: ${request.surveyPlumber?.firstName || "—"} ${request.surveyPlumber?.lastName || ""}`, 110, 49);
+    doc.text(`ቀበሌ: ${request.kebele?.streetsName ? `ቀበሌ ${request.kebele.streetsName}` : (request.kebele?.name || "—")}`, 110, 41);
+    doc.text(`የቤት ቁጥር: ${request.houseNumber || "—"}`, 110, 48);
+    doc.text(`የተመደበው ባለሙያ: ${request.surveyPlumber?.firstName || "—"} ${request.surveyPlumber?.lastName || ""}`, 110, 55);
   } else {
-    doc.text("የደንበኛ ስም: ________________________________________", 18, 36);
-    doc.text("ስልክ ቁጥር: ________________________________________", 18, 46);
-    doc.text("ቀበሌ / የቤት ቁጥር: __________________________________", 110, 36);
-    doc.text("የተመደበ ባለሙያ: ____________________________________", 110, 46);
+    doc.text("የደንበኛ ስም: ________________________________________", 18, 42);
+    doc.text("ስልክ ቁጥር: ________________________________________", 18, 52);
+    doc.text("ቀበሌ / የቤት ቁጥር: __________________________________", 110, 42);
+    doc.text("የተመደበ ባለሙያ: ____________________________________", 110, 52);
   }
 
-  // Common Materials Table (Optimized for sharp black-and-white print)
+  // Common Materials Table
   const tableData = materials.map((m, idx) => [
     idx + 1,
     m.materialNameAm || m.materialName,
@@ -119,7 +224,7 @@ export async function generateSurveyChecklistPdf(commonMaterials = [], request =
   ]);
 
   autoTable(doc, {
-    startY: 58,
+    startY: 64,
     styles: {
       font: "nyala",
       fontSize: 8.5,
@@ -159,51 +264,58 @@ export async function generateSurveyChecklistPdf(commonMaterials = [], request =
   const finalY = doc.lastAutoTable?.finalY || 230;
 
   // Plumber Notes & Signature Section
-  const noteY = Math.min(finalY + 10, 260);
+  const noteY = Math.min(finalY + 10, 258);
   doc.setFont("nyala", "normal");
   doc.setFontSize(9);
   doc.setTextColor(0, 0, 0);
   doc.text("የባለሙያ አስተያየት / ማስታወሻ: ____________________________________________________________________", 14, noteY);
   doc.text("የባለሙያ ፊርማ: _________________________             የቴክኒክ ኃላፊ ፊርማ: _________________________", 14, noteY + 12);
 
+  // Add document footer across all pages
+  addDocumentFooter(doc, profile);
+
   doc.save(`Survey_Checklist_${request?.applicationNumber || "Standard"}.pdf`);
 }
 
 // ─── 2. Cost Estimation & Payment Assessment Sheet (B&W Optimized) ───────────
-export function generateCostEstimationPdf(request) {
+export async function generateCostEstimationPdf(request, explicitCompanyProfile = null) {
+  const profile = await resolveCompanyProfile(explicitCompanyProfile || request?.companyProfile);
   const doc = createMonochromeDoc();
 
-  // Document Title & Subtitle (Black & White high contrast)
+  // 1. Utility Company Header from CompanyProfile (Amharic large, English small)
+  drawCompanyHeader(doc, profile);
+
+  // 2. Document Title & Subtitle
   doc.setFont("nyala", "bold");
-  doc.setFontSize(14);
+  doc.setFontSize(12.5);
   doc.setTextColor(0, 0, 0);
-  doc.text("የአዲስ ውሃ መስመር ዝርጋታ የዋጋ ማጠቃለያ እና የክፍያ ማዘዣ ቅጽ", 105, 15, { align: "center" });
+  doc.text("የአዲስ ውሃ መስመር ዝርጋታ የዋጋ ማጠቃለያ እና የክፍያ ማዘዣ ቅጽ", 105, 23, { align: "center" });
 
   doc.setFont("nyala", "normal");
-  doc.setFontSize(8.5);
+  doc.setFontSize(8);
   doc.setTextColor(0, 0, 0);
-  doc.text("New Line Connection - Cost Estimation & Payment Assessment Form", 105, 20, { align: "center" });
+  doc.text("New Line Connection - Cost Estimation & Payment Assessment Form", 105, 27, { align: "center" });
 
-  // Top Metadata
-  doc.setFontSize(9);
-  doc.text(`የማመልከቻ ቁጥር: ${request.applicationNumber || "—"}`, 14, 26);
-  doc.text(`ቀን: ${formatEthDate(request.createdAt || new Date())}`, 196, 26, { align: "right" });
+  // Top Metadata (Application No, Date)
+  doc.setFontSize(8.5);
+  doc.text(`የማመልከቻ ቁጥር: ${request.applicationNumber || "—"}`, 14, 32);
+  doc.text(`ቀን: ${formatEthDate(request.createdAt || new Date())}`, 196, 32, { align: "right" });
 
   // Customer & Location details box (Crisp black border, white fill)
   doc.setDrawColor(0, 0, 0);
   doc.setLineWidth(0.3);
   doc.setFillColor(255, 255, 255);
-  doc.roundedRect(14, 29, 182, 26, 1.5, 1.5, "FD");
+  doc.roundedRect(14, 34, 182, 26, 1.5, 1.5, "FD");
 
   doc.setFontSize(9);
   doc.setTextColor(0, 0, 0);
-  doc.text(`የደንበኛ ስም: ${request.customerFullName || "—"} ${request.customerFullNameEng ? `(${request.customerFullNameEng})` : ""}`, 18, 36);
-  doc.text(`ስልክ ቁጥር: ${request.phoneNumber || "—"}`, 18, 43);
-  doc.text(`የመታወቂያ ቁጥር: ${request.nationalIdNumber || "—"}`, 18, 50);
+  doc.text(`የደንበኛ ስም: ${request.customerFullName || "—"} ${request.customerFullNameEng ? `(${request.customerFullNameEng})` : ""}`, 18, 41);
+  doc.text(`ስልክ ቁጥር: ${request.phoneNumber || "—"}`, 18, 48);
+  doc.text(`የመታወቂያ ቁጥር: ${request.nationalIdNumber || "—"}`, 18, 55);
 
-  doc.text(`ቀበሌ: ${request.kebele?.streetsName ? `ቀበሌ ${request.kebele.streetsName}` : (request.kebele?.name || "—")}`, 110, 36);
-  doc.text(`የቤት ቁጥር: ${request.houseNumber || "—"}`, 110, 43);
-  doc.text(`የደንበኛ ዓይነት: ${request.customerType?.customerTypeDescription || "የግል"}`, 110, 50);
+  doc.text(`ቀበሌ: ${request.kebele?.streetsName ? `ቀበሌ ${request.kebele.streetsName}` : (request.kebele?.name || "—")}`, 110, 41);
+  doc.text(`የቤት ቁጥር: ${request.houseNumber || "—"}`, 110, 48);
+  doc.text(`የደንበኛ ዓይነት: ${request.customerType?.customerTypeDescription || "የግል"}`, 110, 55);
 
   // ─── Items Table (Include ONLY items used / have value of quantity) ───
   const rawItems = Array.isArray(request.items) ? request.items : [];
@@ -218,6 +330,13 @@ export function generateCostEstimationPdf(request) {
 
   const displayItems = activeItems.length > 0 ? activeItems : [];
   let hasMeterFromStore = false;
+
+  let totalSurveyedQty = 0;
+  let totalUtilQty = 0;
+  let totalUtilAmount = 0;
+  let totalOutQty = 0;
+  let totalOutAmount = 0;
+
   const itemsData = displayItems.map((it, idx) => {
     const isMeter = isWaterMeterItem(it);
     const uQty = Number(it.utilityQuantity || 0);
@@ -235,6 +354,12 @@ export function generateCostEstimationPdf(request) {
     const oPrice = Number(it.outsideUnitPrice || 0);
     const oTotal = Number(it.outsideTotalPrice || (oQty * oPrice));
 
+    totalSurveyedQty += sQty;
+    totalUtilQty += uQty;
+    totalUtilAmount += uTotal;
+    totalOutQty += oQty;
+    totalOutAmount += oTotal;
+
     return [
       idx + 1,
       itemNameDisplay,
@@ -250,7 +375,7 @@ export function generateCostEstimationPdf(request) {
   });
 
   autoTable(doc, {
-    startY: 58,
+    startY: 63,
     styles: {
       font: "nyala",
       fontSize: 8,
@@ -276,8 +401,8 @@ export function generateCostEstimationPdf(request) {
         { content: "የእቃው ዓይነት", rowSpan: 2, styles: { valign: "middle" } },
         { content: "መለኪያ", rowSpan: 2, styles: { valign: "middle" } },
         { content: "ብዛት", rowSpan: 2, styles: { valign: "middle" } },
-        { content: "ከድርጅቱ የተገዛ (መጋዘን)", colSpan: 3, styles: { halign: "center" } },
-        { content: "ከውጭ የተገዛ (ገበያ)", colSpan: 3, styles: { halign: "center" } },
+        { content: "ከድርጅቱ የቀረበ (መጋዘን)", colSpan: 3, styles: { halign: "center" } },
+        { content: "ከውጭ በደንበኛ (ገበያ)", colSpan: 3, styles: { halign: "center" } },
       ],
       ["ብዛት", "የአንዱ ዋጋ", "ጠቅላላ", "ብዛት", "የአንዱ ዋጋ", "ጠቅላላ"],
     ],
@@ -287,6 +412,26 @@ export function generateCostEstimationPdf(request) {
         { content: "ምንም ጥቅም ላይ የዋለ እቃ አልተመዘገበም (No materials used)", colSpan: 9, styles: { halign: "center" } },
       ],
     ],
+    // Total Sums Row: Bold with increased font size (10pt) for utility and outside totals
+    foot: itemsData.length > 0 ? [
+      [
+        { content: "ጠቅላላ ድምር (Total):", colSpan: 4, styles: { halign: "right", fontStyle: "bold", fontSize: 9 } },
+        { content: totalUtilQty.toFixed(1), styles: { halign: "right", fontStyle: "bold", fontSize: 9 } },
+        { content: "-", styles: { halign: "center", fontStyle: "bold" } },
+        { content: totalUtilAmount.toFixed(2), styles: { halign: "right", fontStyle: "bold", fontSize: 10 } },
+        { content: totalOutQty.toFixed(1), styles: { halign: "right", fontStyle: "bold", fontSize: 9 } },
+        { content: "-", styles: { halign: "center", fontStyle: "bold" } },
+        { content: totalOutAmount.toFixed(2), styles: { halign: "right", fontStyle: "bold", fontSize: 10 } },
+      ],
+    ] : undefined,
+    footStyles: {
+      fillColor: [235, 235, 235],
+      textColor: [0, 0, 0],
+      font: "nyala",
+      fontStyle: "bold",
+      lineColor: [0, 0, 0],
+      lineWidth: 0.25,
+    },
     theme: "grid",
     columnStyles: {
       0: { cellWidth: 8, halign: "center" },
@@ -295,10 +440,10 @@ export function generateCostEstimationPdf(request) {
       3: { cellWidth: 12, halign: "center" },
       4: { cellWidth: 14, halign: "right" },
       5: { cellWidth: 18, halign: "right" },
-      6: { cellWidth: 20, halign: "right" },
+      6: { cellWidth: 20, halign: "right", fontStyle: "bold" },
       7: { cellWidth: 14, halign: "right" },
       8: { cellWidth: 18, halign: "right" },
-      9: { cellWidth: 20, halign: "right" },
+      9: { cellWidth: 20, halign: "right", fontStyle: "bold" },
     },
   });
 
@@ -306,14 +451,24 @@ export function generateCostEstimationPdf(request) {
 
   // Additional Fees Table (if present)
   if (request.additionalFees && request.additionalFees.length > 0) {
-    const feeData = request.additionalFees.map((f, i) => [
-      i + 1,
-      f.feeNameAm || f.feeName,
-      f.unitName || "ብር",
-      Number(f.quantity || 1).toFixed(1),
-      Number(f.unitPrice || 0).toFixed(2),
-      Number(f.totalPrice || 0).toFixed(2),
-    ]);
+    let totalFeeQty = 0;
+    let totalFeeAmount = 0;
+
+    const feeData = request.additionalFees.map((f, i) => {
+      const qty = Number(f.quantity || 1);
+      const price = Number(f.unitPrice || 0);
+      const total = Number(f.totalPrice || (qty * price));
+      totalFeeQty += qty;
+      totalFeeAmount += total;
+      return [
+        i + 1,
+        f.feeNameAm || f.feeName,
+        f.unitName || "ብር",
+        qty.toFixed(1),
+        price.toFixed(2),
+        total.toFixed(2),
+      ];
+    });
 
     autoTable(doc, {
       startY: currentY + 5,
@@ -337,6 +492,21 @@ export function generateCostEstimationPdf(request) {
       },
       head: [["ተ.ቁ", "ተጨማሪ ክፍያ ዓይነት", "መለኪያ", "ብዛት/መጠን", "የአንዱ ዋጋ", "ጠቅላላ ዋጋ"]],
       body: feeData,
+      // Total Sums Row for Additional Fees: Bold with increased font size (10pt)
+      foot: [
+        [
+          { content: "ተጨማሪ ክፍያዎች ድምር (Total Fees):", colSpan: 5, styles: { halign: "right", fontStyle: "bold", fontSize: 9 } },
+          { content: totalFeeAmount.toFixed(2), styles: { halign: "right", fontStyle: "bold", fontSize: 10 } },
+        ],
+      ],
+      footStyles: {
+        fillColor: [235, 235, 235],
+        textColor: [0, 0, 0],
+        font: "nyala",
+        fontStyle: "bold",
+        lineColor: [0, 0, 0],
+        lineWidth: 0.25,
+      },
       theme: "grid",
       columnStyles: {
         0: { cellWidth: 10, halign: "center" },
@@ -344,7 +514,7 @@ export function generateCostEstimationPdf(request) {
         2: { cellWidth: 25, halign: "center" },
         3: { cellWidth: 25, halign: "right" },
         4: { cellWidth: 28, halign: "right" },
-        5: { cellWidth: 31, halign: "right" },
+        5: { cellWidth: 31, halign: "right", fontStyle: "bold" },
       },
     });
 
@@ -352,7 +522,7 @@ export function generateCostEstimationPdf(request) {
   }
 
   // Check if we have enough room on page for summary & signatures (requires ~65mm)
-  if (currentY > 215) {
+  if (currentY > 210) {
     doc.addPage();
     currentY = 15;
   }
@@ -415,60 +585,77 @@ export function generateCostEstimationPdf(request) {
   doc.setTextColor(0, 0, 0);
   doc.text("የክፍያ ማጠቃለያ (Payment Assessment)", 108, boxStartY + 5);
 
-  // Breakdown lines in high-contrast black
-  doc.setFont("nyala", "normal");
-  doc.setFontSize(8.5);
-  doc.setTextColor(0, 0, 0);
-
   const utilityMat = Number(request.materialsUtilityTotal ?? request.utilityTotal ?? 0).toFixed(2);
   const transAmount = Number(request.transportChargeAmount ?? request.transportCharge ?? 0).toFixed(2);
   const servAmount = Number(request.serviceChargeAmount ?? request.serviceCharge ?? 0).toFixed(2);
   const feesAmount = Number(request.additionalFeesTotal ?? request.feesTotal ?? 0).toFixed(2);
   const totalAmount = Number(request.totalPayableAmount ?? request.totalPayable ?? 0).toFixed(2);
 
-  doc.text("ከድርጅቱ የተገዙ እቃዎች:", 108, boxStartY + 13);
-  doc.text(`ETB ${utilityMat}`, 192, boxStartY + 13, { align: "right" });
+  // Row 1: Utility Materials
+  doc.setFont("nyala", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(0, 0, 0);
+  doc.text("ከድርጅቱ የቀረቡ እቃዎች:", 108, boxStartY + 12.5);
+  doc.setFont("nyala", "bold");
+  doc.setFontSize(10.5);
+  doc.text(`${utilityMat}`, 192, boxStartY + 12.5, { align: "right" });
 
+  // Row 2: Transport Charge (25%)
+  doc.setFont("nyala", "normal");
+  doc.setFontSize(9);
   doc.text(
     hasMeterFromStore ? "የትራንስፖርት ክፍያ (25%) *:" : "የትራንስፖርት ክፍያ (25%):",
     108,
-    boxStartY + 19
+    boxStartY + 18.5
   );
-  doc.text(`ETB ${transAmount}`, 192, boxStartY + 19, { align: "right" });
+  doc.setFont("nyala", "bold");
+  doc.setFontSize(10.5);
+  doc.text(`${transAmount}`, 192, boxStartY + 18.5, { align: "right" });
 
-  doc.text("የአገልግሎት ክፍያ (55%):", 108, boxStartY + 25);
-  doc.text(`ETB ${servAmount}`, 192, boxStartY + 25, { align: "right" });
+  // Row 3: Service Charge (55%)
+  doc.setFont("nyala", "normal");
+  doc.setFontSize(9);
+  doc.text("የአገልግሎት ክፍያ (55%):", 108, boxStartY + 24.5);
+  doc.setFont("nyala", "bold");
+  doc.setFontSize(10.5);
+  doc.text(`${servAmount}`, 192, boxStartY + 24.5, { align: "right" });
 
-  doc.text("ተጨማሪ ክፍያዎች:", 108, boxStartY + 31);
-  doc.text(`ETB ${feesAmount}`, 192, boxStartY + 31, { align: "right" });
+  // Row 4: Additional Fees
+  doc.setFont("nyala", "normal");
+  doc.setFontSize(9);
+  doc.text("ተጨማሪ ክፍያዎች:", 108, boxStartY + 30.5);
+  doc.setFont("nyala", "bold");
+  doc.setFontSize(10.5);
+  doc.text(`${feesAmount}`, 192, boxStartY + 30.5, { align: "right" });
 
   // Thin black separator line above total
   doc.setDrawColor(0, 0, 0);
   doc.setLineWidth(0.3);
-  doc.line(106, boxStartY + 36, 194, boxStartY + 36);
+  doc.line(106, boxStartY + 35, 194, boxStartY + 35);
 
   // TOTAL PAYABLE ROW (Bold, Clear Amharic Text with Accounting Double-Underline)
   doc.setFont("nyala", "bold");
-  doc.setFontSize(10.5);
+  doc.setFontSize(11);
   doc.setTextColor(0, 0, 0);
-  doc.text("ጠቅላላ ክፍያ:", 108, boxStartY + 43);
-  doc.text(`ETB ${totalAmount}`, 192, boxStartY + 43, { align: "right" });
+  doc.text("ጠቅላላ ክፍያ:", 108, boxStartY + 41.5);
+  doc.setFontSize(12.5);
+  doc.text(`${totalAmount}`, 192, boxStartY + 41.5, { align: "right" });
 
   // Accounting double underline under total
-  doc.setLineWidth(0.2);
-  doc.line(106, boxStartY + 45.5, 194, boxStartY + 45.5);
-  doc.line(106, boxStartY + 46.5, 194, boxStartY + 46.5);
+  doc.setLineWidth(0.25);
+  doc.line(106, boxStartY + 43.5, 194, boxStartY + 43.5);
+  doc.line(106, boxStartY + 44.5, 194, boxStartY + 44.5);
 
   // Water meter store exemption footnote if applicable
   if (hasMeterFromStore) {
     doc.setFont("nyala", "normal");
     doc.setFontSize(7.5);
     doc.setTextColor(0, 0, 0);
-    doc.text("*(የውሃ ቆጣሪ ከመጋዘን ስለሆነ ከ 25% ትራንስፖርት ክፍያ ነፃ ተደርጓል)*", 108, boxStartY + 49.5);
+    doc.text("*(የውሃ ቆጣሪ ከመጋዘን ስለሆነ ከ 25% ትራንስፖርት ክፍያ ነፃ ተደርጓል)*", 108, boxStartY + 48);
   }
 
   // Official Signatures Section (Clean, sharp B&W print layout)
-  const sigY = Math.min(boxStartY + 62, 280);
+  const sigY = Math.min(boxStartY + 62, 275);
   doc.setFont("nyala", "normal");
   doc.setFontSize(8.5);
   doc.setTextColor(0, 0, 0);
@@ -476,6 +663,9 @@ export function generateCostEstimationPdf(request) {
   doc.text("ያዘጋጀው ባለሙያ: _____________________", 14, sigY);
   doc.text("ያረጋገጠው የቴክኒክ ኃላፊ: _________________", 76, sigY);
   doc.text("ያፀደቀው የገቢዎች ኦፊሰር: _________________", 138, sigY);
+
+  // 4. Add CompanyProfile Footer across all pages
+  addDocumentFooter(doc, profile);
 
   doc.save(`Cost_Estimation_${request.applicationNumber || "Document"}.pdf`);
 }

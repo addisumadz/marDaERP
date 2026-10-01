@@ -39,7 +39,9 @@ import {
   Tag,
   Package,
   PackageSearch,
-  Filter
+  Filter,
+  Pencil,
+  Ban
 } from "lucide-react";
 import { generatePurchaseRequisitionPdf } from "./purchaseRequisitionPdf";
 
@@ -524,6 +526,17 @@ export default function InvPurchaseRequisitionsPage() {
   const [submitting, setSubmitting] = useState(false);
   const [printingId, setPrintingId] = useState(null);
 
+  // Edit mode
+  const [editingPr, setEditingPr] = useState(null); // null = create mode, object = edit mode
+
+  // Cancel modal
+  const [cancelModal, setCancelModal] = useState(null);
+  const [cancelReason, setCancelReason] = useState("");
+  const [cancelErrors, setCancelErrors] = useState("");
+
+  // Search
+  const [searchQuery, setSearchQuery] = useState("");
+
   // Pagination & Filtering
   const [page, setPage] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
@@ -753,7 +766,7 @@ export default function InvPurchaseRequisitionsPage() {
     return errs;
   };
 
-  /* ── Creation ── */
+  /* ── Creation & Edit ── */
   const openCreateModal = () => {
     let defaultStoreId = "";
     if (assignedStore) {
@@ -765,6 +778,7 @@ export default function InvPurchaseRequisitionsPage() {
       }
     }
 
+    setEditingPr(null);
     setForm({
       storeId: defaultStoreId,
       remarks: "",
@@ -772,6 +786,28 @@ export default function InvPurchaseRequisitionsPage() {
     });
     setFormErrors({});
     setModalOpen(true);
+  };
+
+  const openEditModal = async (pr) => {
+    try {
+      const fullPr = await invPurchaseRequisitionService.getById(pr.id);
+      setEditingPr(fullPr);
+      setForm({
+        storeId: String(fullPr.store?.id || ""),
+        remarks: fullPr.remarks || "",
+        lines: (fullPr.lines || []).map(l => ({
+          categoryId: String(l.item?.category?.id || l.item?.categoryId || ""),
+          itemId: String(l.item?.id || ""),
+          requestedQuantity: String(l.requestedQuantity || ""),
+          estimatedUnitCost: String(l.estimatedUnitCost || ""),
+          purpose: l.purpose || ""
+        }))
+      });
+      setFormErrors({});
+      setModalOpen(true);
+    } catch (e) {
+      toast.error("Failed to load requisition for editing");
+    }
   };
 
   const handleCreate = async () => {
@@ -791,25 +827,58 @@ export default function InvPurchaseRequisitionsPage() {
     }
 
     const validLines = form.lines.filter(l => l.itemId && l.requestedQuantity && Number(l.requestedQuantity) > 0);
+    const payload = {
+      storeId: Number(form.storeId || assignedStore?.id),
+      remarks: form.remarks,
+      lines: validLines.map(l => ({
+        itemId: Number(l.itemId),
+        requestedQuantity: l.requestedQuantity,
+        estimatedUnitCost: l.estimatedUnitCost,
+        purpose: l.purpose
+      }))
+    };
+
     setSubmitting(true);
     try {
-      await invPurchaseRequisitionService.create({
-        storeId: Number(form.storeId || assignedStore?.id),
-        remarks: form.remarks,
-        lines: validLines.map(l => ({
-          itemId: Number(l.itemId),
-          requestedQuantity: l.requestedQuantity,
-          estimatedUnitCost: l.estimatedUnitCost,
-          purpose: l.purpose
-        }))
-      });
-      toast.success("Requisition created successfully");
+      if (editingPr) {
+        await invPurchaseRequisitionService.update(editingPr.id, payload);
+        toast.success(
+          editingPr.status === "REJECTED"
+            ? "Requisition revised — ready to resubmit"
+            : "Requisition updated successfully"
+        );
+      } else {
+        await invPurchaseRequisitionService.create(payload);
+        toast.success("Requisition created successfully");
+      }
       setModalOpen(false);
+      setEditingPr(null);
       setForm({ storeId: "", remarks: "", lines: [{ categoryId: "", itemId: "", requestedQuantity: "", estimatedUnitCost: "", purpose: "" }] });
       setFormErrors({});
       loadData();
     } catch (e) {
-      toast.error(e.response?.data?.message || "Creation failed");
+      toast.error(e.response?.data?.message || (editingPr ? "Update failed" : "Creation failed"));
+    }
+    setSubmitting(false);
+  };
+
+  /* ── Cancel ── */
+  const handleCancel = async () => {
+    if (!cancelReason.trim()) {
+      setCancelErrors("Cancellation reason is required");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await invPurchaseRequisitionService.cancel(cancelModal.id, cancelReason);
+      toast.success(`Requisition ${cancelModal.requisitionNumber} cancelled`);
+      setCancelModal(null);
+      setCancelReason("");
+      setCancelErrors("");
+      loadData();
+      if (detailModal && detailModal.id === cancelModal.id) setDetailModal(null);
+    } catch (e) {
+      toast.error(e.response?.data?.message || "Cancellation failed");
     }
     setSubmitting(false);
   };
@@ -974,6 +1043,16 @@ export default function InvPurchaseRequisitionsPage() {
 
       {/* ─── Filter Bar ────────────────────────────────────── */}
       <div className="flex gap-3 flex-wrap">
+        <div className="relative flex-1 min-w-[220px]">
+          <Search className="w-4 h-4 absolute left-3 top-3 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Search PR #, Requester, or Store..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+          />
+        </div>
         <select
           value={filterStore}
           onChange={(e) => { setFilterStore(e.target.value); setPage(0); }}
@@ -1017,17 +1096,28 @@ export default function InvPurchaseRequisitionsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-              {loading ? (
-                <tr><td colSpan={8} className="px-6 py-12 text-center text-gray-400">Loading requisitions...</td></tr>
-              ) : prs.length === 0 ? (
-                <tr><td colSpan={8} className="px-6 py-12 text-center text-gray-400">No requisitions found</td></tr>
-              ) : (
-                prs.map(pr => {
+              {(() => {
+                const filteredPrs = searchQuery
+                  ? prs.filter(pr => {
+                      const q = searchQuery.toLowerCase();
+                      return (
+                        (pr.requisitionNumber || "").toLowerCase().includes(q) ||
+                        (pr.requestedBy || "").toLowerCase().includes(q) ||
+                        (pr.store?.storeName || "").toLowerCase().includes(q) ||
+                        (pr.remarks || "").toLowerCase().includes(q)
+                      );
+                    })
+                  : prs;
+
+                if (loading) return <tr><td colSpan={8} className="px-6 py-12 text-center text-gray-400">Loading requisitions...</td></tr>;
+                if (filteredPrs.length === 0) return <tr><td colSpan={8} className="px-6 py-12 text-center text-gray-400">No requisitions found</td></tr>;
+
+                return filteredPrs.map(pr => {
                   const inst = wfInstances[pr.id];
                   const canAct = (pr.status === "SUBMITTED" || pr.status === "APPROVED_L1") && canUserApprove(pr.id);
 
                   return (
-                    <tr key={pr.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                    <tr key={pr.id} className={`hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors ${pr.status === "CANCELLED" ? "opacity-50" : ""}`}>
                       <td className="px-5 py-3 font-mono font-semibold text-indigo-600">{pr.requisitionNumber}</td>
                       <td className="px-5 py-3 text-gray-700 dark:text-gray-300">{pr.store?.storeName || "—"}</td>
                       <td className="px-5 py-3 text-gray-600 dark:text-gray-400">{pr.requestedBy}</td>
@@ -1082,6 +1172,17 @@ export default function InvPurchaseRequisitionsPage() {
                             </button>
                           )}
 
+                          {/* Edit Draft / Revise Rejected */}
+                          {(pr.status === "DRAFT" || pr.status === "REJECTED") && isRequester && (
+                            <button
+                              onClick={() => openEditModal(pr)}
+                              className="p-1.5 rounded-lg hover:bg-amber-50 dark:hover:bg-amber-900/30 text-amber-600 dark:text-amber-400"
+                              title={pr.status === "REJECTED" ? "Revise & Resubmit" : "Edit Draft"}
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                          )}
+
                           {/* Submit Draft */}
                           {pr.status === "DRAFT" && isRequester && (
                             <button
@@ -1112,12 +1213,23 @@ export default function InvPurchaseRequisitionsPage() {
                               </button>
                             </>
                           )}
+
+                          {/* Cancel */}
+                          {pr.status !== "CANCELLED" && pr.status !== "CONVERTED_TO_PO" && pr.status !== "REJECTED" && isRequester && (
+                            <button
+                              onClick={() => setCancelModal(pr)}
+                              className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/30 text-red-400 hover:text-red-600"
+                              title="Cancel Requisition"
+                            >
+                              <Ban className="w-4 h-4" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
                   );
                 })
-              )}
+              })()}
             </tbody>
           </table>
         </div>
@@ -1156,8 +1268,16 @@ export default function InvPurchaseRequisitionsPage() {
                   <FileText className="w-5 h-5" />
                 </div>
                 <div>
-                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white">New Purchase Requisition</h2>
-                  <p className="text-xs text-gray-500">Create a material / goods requisition for approval</p>
+                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+                    {editingPr
+                      ? (editingPr.status === "REJECTED" ? "Revise & Resubmit Requisition" : `Edit Draft — ${editingPr.requisitionNumber}`)
+                      : "New Purchase Requisition"}
+                  </h2>
+                  <p className="text-xs text-gray-500">
+                    {editingPr
+                      ? (editingPr.status === "REJECTED" ? "Fix issues and resubmit this rejected requisition" : "Modify this draft requisition before submission")
+                      : "Create a material / goods requisition for approval"}
+                  </p>
                 </div>
               </div>
               <button onClick={() => setModalOpen(false)} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg text-gray-400 hover:text-gray-600">
@@ -1423,7 +1543,7 @@ export default function InvPurchaseRequisitionsPage() {
                 className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-md font-medium disabled:opacity-50 flex items-center gap-2 text-sm"
               >
                 {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                {submitting ? "Creating..." : "Create Requisition"}
+                {submitting ? "Saving..." : (editingPr ? "Save Changes" : "Create Requisition")}
               </button>
             </div>
           </div>
@@ -1733,6 +1853,67 @@ export default function InvPurchaseRequisitionsPage() {
               >
                 {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
                 {submitting ? "Rejecting..." : "Confirm Rejection"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Cancel Modal with Mandatory Reason ──────────────── */}
+      {cancelModal && (
+        <div className="fixed inset-0 z-99999 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 pt-8 sm:pt-14 overflow-y-auto">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-orange-50 dark:bg-orange-900/20">
+              <h2 className="text-lg font-bold text-orange-700 dark:text-orange-300 flex items-center gap-2">
+                <Ban className="w-5 h-5" /> Cancel {cancelModal.requisitionNumber}
+              </h2>
+              <p className="text-xs text-orange-600 dark:text-orange-400 mt-1">
+                This action will permanently cancel this requisition. It will remain visible in history.
+              </p>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="bg-gray-50 dark:bg-gray-700/30 p-3 rounded-lg text-xs space-y-1">
+                <p><span className="text-gray-500">Store:</span> <strong>{cancelModal.store?.storeName}</strong></p>
+                <p><span className="text-gray-500">Status:</span> <strong>{cancelModal.status?.replace(/_/g, " ")}</strong></p>
+                <p><span className="text-gray-500">Amount:</span> <strong>ETB {Number(cancelModal.totalEstimatedAmount || 0).toLocaleString()}</strong></p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Cancellation Reason <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  value={cancelReason}
+                  onChange={(e) => {
+                    setCancelReason(e.target.value);
+                    if (cancelErrors) setCancelErrors("");
+                  }}
+                  rows={3}
+                  className={`w-full px-3 py-2 border rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white resize-none shadow-sm transition-colors ${
+                    cancelErrors ? "border-red-500 ring-1 ring-red-500 bg-red-50/20" : "border-gray-300 dark:border-gray-600"
+                  }`}
+                  placeholder="Explain why this requisition is being cancelled..."
+                />
+                {cancelErrors && (
+                  <p className="text-xs text-red-600 dark:text-red-400 mt-1 flex items-center gap-1">
+                    <AlertCircle className="w-3.5 h-3.5" /> {cancelErrors}
+                  </p>
+                )}
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/30">
+              <button
+                onClick={() => { setCancelModal(null); setCancelReason(""); setCancelErrors(""); }}
+                className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg"
+              >
+                Keep Open
+              </button>
+              <button
+                onClick={handleCancel}
+                disabled={submitting}
+                className="px-6 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 shadow-md font-medium disabled:opacity-50 flex items-center gap-2"
+              >
+                {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                {submitting ? "Cancelling..." : "Confirm Cancellation"}
               </button>
             </div>
           </div>

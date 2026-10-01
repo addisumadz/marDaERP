@@ -107,4 +107,40 @@ public class InvPurchaseRequisitionController {
             return ResponseEntity.badRequest().body(java.util.Collections.singletonMap("message", e.getMessage() != null ? e.getMessage() : e.toString()));
         }
     }
+
+    @PutMapping("/{id}")
+    public ResponseEntity<?> update(@PathVariable long id, @RequestBody Map<String, Object> body, Principal principal) {
+        try {
+            String username = principal != null ? principal.getName() : "system";
+            int storeId = Integer.parseInt(body.get("storeId").toString());
+            String remarks = body.get("remarks") != null ? (String) body.get("remarks") : "";
+
+            List<Map<String, Object>> lineData = (List<Map<String, Object>>) body.get("lines");
+            List<InvPurchaseRequisitionLine> lines = new ArrayList<>();
+            for (Map<String, Object> ld : lineData) {
+                InvPurchaseRequisitionLine line = new InvPurchaseRequisitionLine();
+                InvItem item = new InvItem();
+                item.setId(Long.parseLong(ld.get("itemId").toString()));
+                line.setItem(item);
+                line.setRequestedQuantity(new BigDecimal(ld.get("requestedQuantity").toString()));
+                line.setEstimatedUnitCost(new BigDecimal(ld.get("estimatedUnitCost").toString()));
+                line.setPurpose((String) ld.get("purpose"));
+                lines.add(line);
+            }
+            return ResponseEntity.ok(service.update(id, storeId, remarks, lines, username));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(java.util.Collections.singletonMap("message", e.getMessage() != null ? e.getMessage() : e.toString()));
+        }
+    }
+
+    @PutMapping("/{id}/cancel")
+    public ResponseEntity<?> cancel(@PathVariable long id, @RequestBody Map<String, String> body, Principal principal) {
+        try {
+            String username = principal != null ? principal.getName() : "system";
+            String reason = body != null ? body.get("reason") : "";
+            return ResponseEntity.ok(service.cancel(id, username, reason));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(java.util.Collections.singletonMap("message", e.getMessage() != null ? e.getMessage() : e.toString()));
+        }
+    }
 }

@@ -161,7 +161,7 @@ function InvGRNContent() {
       setGrns(data?.content || []);
       setTotalPages(data?.totalPages || 0);
     } catch (e) {
-      toast.error("Failed to load Goods Received Notes");
+      toast.error("Failed to load Goods Received Vouchers");
     }
     setLoading(false);
   };
@@ -203,6 +203,9 @@ function InvGRNContent() {
       const ordered = Number(l.orderedQuantity || 0);
       const received = Number(l.receivedQuantity || 0);
       const remaining = Math.max(0, ordered - received);
+      const unitPriceExcl = Number(l.unitPrice || 0);
+      const vatRate = Number(l.vatRate ?? 15);
+      const unitCostInclVat = unitPriceExcl * (1 + vatRate / 100);
 
       return {
         itemId: l.item?.id,
@@ -217,7 +220,9 @@ function InvGRNContent() {
         receivedQuantity: remaining,
         acceptedQuantity: remaining,
         rejectedQuantity: 0,
-        unitCost: Number(l.unitPrice || 0),
+        unitCost: unitPriceExcl,
+        vatRate: vatRate,
+        unitCostInclVat: unitCostInclVat,
         batchNumber: "",
         expiryDate: "",
         rejectionReason: "",
@@ -280,23 +285,29 @@ function InvGRNContent() {
     }
   };
 
-  // Calculations for Create Modal
+  // Calculations for Create Modal (VAT-inclusive)
   const createCalculations = useMemo(() => {
     let totalAcceptedUnits = 0;
     let totalRejectedUnits = 0;
+    let grandTotalExclVat = 0;
+    let grandTotalVat = 0;
     let grandTotalValue = 0;
 
     (form.lines || []).forEach((l) => {
       const acc = Number(l.acceptedQuantity || 0);
       const rej = Number(l.rejectedQuantity || 0);
       const cost = Number(l.unitCost || 0);
+      const vatRate = Number(l.vatRate || 0);
+      const inclCost = cost * (1 + vatRate / 100);
 
       totalAcceptedUnits += acc;
       totalRejectedUnits += rej;
-      grandTotalValue += acc * cost;
+      grandTotalExclVat += acc * cost;
+      grandTotalVat += acc * cost * (vatRate / 100);
+      grandTotalValue += acc * inclCost;
     });
 
-    return { totalAcceptedUnits, totalRejectedUnits, grandTotalValue };
+    return { totalAcceptedUnits, totalRejectedUnits, grandTotalExclVat, grandTotalVat, grandTotalValue };
   }, [form.lines]);
 
   // Dynamic Finance Accounts for GRN Preview
@@ -393,7 +404,7 @@ function InvGRNContent() {
     setSubmitting(true);
     try {
       await invGrnService.create(form);
-      toast.success("Goods Received Note created as DRAFT");
+      toast.success("Goods Received Voucher created as DRAFT");
       setCreateModalOpen(false);
       setSelectedPo(null);
       setFormErrors({});
@@ -427,7 +438,7 @@ function InvGRNContent() {
       toast.success("GRN PDF generated successfully");
     } catch (e) {
       console.error("GRN PDF generation error:", e);
-      toast.error("Error generating GRN PDF Note: " + (e.message || "Unknown error"));
+      toast.error("Error generating GRV PDF: " + (e.message || "Unknown error"));
     } finally {
       setPrintingId(null);
     }
@@ -480,7 +491,7 @@ function InvGRNContent() {
             </div>
             <div>
               <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-                Goods Received Notes (GRN)
+                Goods Received Vouchers (GRV)
               </h1>
               <p className="text-xs font-amharic text-gray-500 dark:text-gray-400">
                 የዕቃ መረከቢያ ሰነዶች አስተዳደር (Receiving Workbench & Stock Intake)
@@ -628,14 +639,14 @@ function InvGRNContent() {
                 <tr>
                   <td colSpan={9} className="px-6 py-16 text-center text-gray-400">
                     <Loader2 className="w-8 h-8 animate-spin mx-auto text-teal-600 mb-2" />
-                    Loading Goods Received Notes...
+                    Loading Goods Received Vouchers...
                   </td>
                 </tr>
               ) : filteredGrns.length === 0 ? (
                 <tr>
                   <td colSpan={9} className="px-6 py-16 text-center text-gray-400">
                     <PackageCheck className="w-10 h-10 mx-auto text-gray-300 mb-2" />
-                    No Goods Received Notes found matching current filters.
+                    No Goods Received Vouchers found matching current filters.
                   </td>
                 </tr>
               ) : (
@@ -708,7 +719,7 @@ function InvGRNContent() {
                             <Eye className="w-4 h-4" />
                           </button>
 
-                          {/* Print PDF Note */}
+                          {/* Print PDF Voucher */}
                           <button
                             onClick={() => handlePrintPdf(g)}
                             disabled={printingId === g.id}
@@ -1023,8 +1034,9 @@ function InvGRNContent() {
                         <th className="px-3 py-2.5 text-right w-20">Delivered</th>
                         <th className="px-3 py-2.5 text-right w-20 text-emerald-600">Accepted</th>
                         <th className="px-3 py-2.5 text-right w-20 text-red-600">Rejected</th>
-                        <th className="px-3 py-2.5 text-right w-24">Unit Cost</th>
-                        <th className="px-3 py-2.5 text-right w-28">Line Total</th>
+                        <th className="px-3 py-2.5 text-right w-20">Unit Price</th>
+                        <th className="px-3 py-2.5 text-right w-14">VAT%</th>
+                        <th className="px-3 py-2.5 text-right w-28">Total (Incl.)</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
@@ -1085,8 +1097,11 @@ function InvGRNContent() {
                             <td className="px-3 py-2.5 text-right font-mono text-gray-700 dark:text-gray-300">
                               ETB {Number(line.unitCost || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                             </td>
+                            <td className="px-3 py-2.5 text-right font-mono text-gray-500">
+                              {Number(line.vatRate || 0)}%
+                            </td>
                             <td className="px-3 py-2.5 text-right font-mono font-semibold text-gray-900 dark:text-white">
-                              ETB {(Number(line.acceptedQuantity || 0) * Number(line.unitCost || 0)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                              ETB {(Number(line.acceptedQuantity || 0) * Number(line.unitCost || 0) * (1 + Number(line.vatRate || 0) / 100)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                             </td>
                           </tr>
 
@@ -1169,7 +1184,7 @@ function InvGRNContent() {
                       {financePreview.drAccount.accountCode} &bull; {financePreview.drAccount.accountName}
                     </div>
                     <div className="text-right font-mono font-bold text-blue-600 mt-1">
-                      ETB {createCalculations.grandTotalValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      ETB {createCalculations.grandTotalExclVat.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                     </div>
                   </div>
 
@@ -1181,7 +1196,7 @@ function InvGRNContent() {
                       {financePreview.crAccount.accountCode} &bull; {financePreview.crAccount.accountName}
                     </div>
                     <div className="text-right font-mono font-bold text-emerald-600 mt-1">
-                      ETB {createCalculations.grandTotalValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      ETB {createCalculations.grandTotalExclVat.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                     </div>
                   </div>
                 </div>
@@ -1202,20 +1217,30 @@ function InvGRNContent() {
               </div>
 
               {/* Grand Total Summary Box */}
-              <div className="bg-gray-50 dark:bg-gray-700/40 p-4 rounded-xl flex items-center justify-between text-sm">
-                <div>
-                  <span className="text-gray-500">Accepted Units: </span>
-                  <strong className="font-mono text-emerald-600">
-                    {createCalculations.totalAcceptedUnits}
-                  </strong>
-                  {createCalculations.totalRejectedUnits > 0 && (
-                    <span className="ml-3 text-red-600 font-mono">
-                      ({createCalculations.totalRejectedUnits} rejected)
-                    </span>
-                  )}
+              <div className="bg-gray-50 dark:bg-gray-700/40 p-4 rounded-xl space-y-2 text-sm">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-gray-500">Accepted Units: </span>
+                    <strong className="font-mono text-emerald-600">
+                      {createCalculations.totalAcceptedUnits}
+                    </strong>
+                    {createCalculations.totalRejectedUnits > 0 && (
+                      <span className="ml-3 text-red-600 font-mono">
+                        ({createCalculations.totalRejectedUnits} rejected)
+                      </span>
+                    )}
+                  </div>
                 </div>
-                <div className="text-right">
-                  <span className="text-gray-500 text-xs block">Total Received Value</span>
+                <div className="flex justify-between items-center text-xs text-gray-500">
+                  <span>Subtotal (excl. VAT):</span>
+                  <span className="font-mono">ETB {createCalculations.grandTotalExclVat.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                </div>
+                <div className="flex justify-between items-center text-xs text-gray-500">
+                  <span>Total VAT:</span>
+                  <span className="font-mono text-green-600">+ETB {createCalculations.grandTotalVat.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                </div>
+                <div className="flex justify-between items-center pt-1 border-t border-gray-200 dark:border-gray-600">
+                  <span className="text-gray-500 text-xs">Total Received Value (Incl. VAT)</span>
                   <span className="text-lg font-bold font-mono text-teal-600 dark:text-teal-400">
                     ETB {createCalculations.grandTotalValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                   </span>
@@ -1260,7 +1285,7 @@ function InvGRNContent() {
                     {detailModal.grnNumber}
                   </h2>
                   <p className="text-xs text-gray-500">
-                    Goods Received Note & Warehouse Stock Intake Details
+                    Goods Received Voucher & Warehouse Stock Intake Details
                   </p>
                 </div>
               </div>
@@ -1269,7 +1294,7 @@ function InvGRNContent() {
                   onClick={() => handlePrintPdf(detailModal)}
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-50 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300 border border-purple-200 dark:border-purple-700 rounded-lg text-xs font-semibold hover:bg-purple-100"
                 >
-                  <Printer className="w-3.5 h-3.5" /> Print PDF Note
+                  <Printer className="w-3.5 h-3.5" /> Print PDF Voucher
                 </button>
                 <button
                   onClick={() => setDetailModal(null)}
@@ -1373,22 +1398,25 @@ function InvGRNContent() {
                         <th className="px-4 py-2.5 text-right">Delivered</th>
                         <th className="px-4 py-2.5 text-right font-bold text-emerald-600">Accepted</th>
                         <th className="px-4 py-2.5 text-right text-red-600">Rejected</th>
-                        <th className="px-4 py-2.5 text-right">Unit Cost</th>
-                        <th className="px-4 py-2.5 text-right">Total (ETB)</th>
+                        <th className="px-4 py-2.5 text-right">Unit Price</th>
+                        <th className="px-4 py-2.5 text-right">VAT%</th>
+                        <th className="px-4 py-2.5 text-right">Total (Incl.)</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
                       {(detailModal.lines || []).length === 0 ? (
                         <tr>
                           <td colSpan={6} className="px-4 py-8 text-center text-gray-400 italic">
-                            No item lines found for this Goods Received Note.
+                            No item lines found for this Goods Received Voucher.
                           </td>
                         </tr>
                       ) : (
                         detailModal.lines.map((l, i) => {
                           const unitCost = Number(l.unitCost || 0);
                           const accepted = Number(l.acceptedQuantity || 0);
-                          const total = Number(l.totalCost) || (accepted * unitCost);
+                          const vatRate = Number(l.poLine?.vatRate ?? 15);
+                          const inclCost = unitCost * (1 + vatRate / 100);
+                          const total = accepted * inclCost;
 
                           return (
                             <tr key={l.id || i} className="hover:bg-gray-50/50">
@@ -1420,6 +1448,9 @@ function InvGRNContent() {
                               <td className="px-4 py-2.5 text-right font-mono">
                                 ETB {unitCost.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                               </td>
+                              <td className="px-4 py-2.5 text-right font-mono text-gray-500">
+                                {vatRate}%
+                              </td>
                               <td className="px-4 py-2.5 text-right font-mono font-bold">
                                 ETB {total.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                               </td>
@@ -1430,11 +1461,41 @@ function InvGRNContent() {
                     </tbody>
                     <tfoot className="bg-gray-50 dark:bg-gray-700/50 font-bold">
                       <tr>
-                        <td colSpan={5} className="px-4 py-2.5 text-right">
-                          Grand Total Received:
+                        <td colSpan={6} className="px-4 py-2 text-right text-xs text-gray-500 font-normal">
+                          Subtotal (Excl. VAT):
+                        </td>
+                        <td className="px-4 py-2 text-right font-mono text-gray-700 dark:text-gray-300 font-normal">
+                          ETB {Number(detailModal.totalAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td colSpan={6} className="px-4 py-2 text-right text-xs text-gray-500 font-normal">
+                          Total VAT:
+                        </td>
+                        <td className="px-4 py-2 text-right font-mono text-green-600 font-normal">
+                          +ETB {(() => {
+                            const excl = Number(detailModal.totalAmount || 0);
+                            const incl = (detailModal.lines || []).reduce((sum, l) => {
+                              const cost = Number(l.unitCost || 0);
+                              const qty = Number(l.acceptedQuantity || 0);
+                              const vat = Number(l.poLine?.vatRate ?? 15);
+                              return sum + qty * cost * (1 + vat / 100);
+                            }, 0);
+                            return (incl - excl).toLocaleString(undefined, { minimumFractionDigits: 2 });
+                          })()}
+                        </td>
+                      </tr>
+                      <tr className="border-t border-gray-200 dark:border-gray-600">
+                        <td colSpan={6} className="px-4 py-2.5 text-right">
+                          Grand Total Received (Incl. VAT):
                         </td>
                         <td className="px-4 py-2.5 text-right font-mono text-teal-600">
-                          ETB {Number(detailModal.totalAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                          ETB {(detailModal.lines || []).reduce((sum, l) => {
+                            const cost = Number(l.unitCost || 0);
+                            const qty = Number(l.acceptedQuantity || 0);
+                            const vat = Number(l.poLine?.vatRate ?? 15);
+                            return sum + qty * cost * (1 + vat / 100);
+                          }, 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                         </td>
                       </tr>
                     </tfoot>
@@ -1476,7 +1537,7 @@ function InvGRNContent() {
                 <Check className="w-6 h-6" />
               </div>
               <h3 className="text-lg font-bold text-gray-900 dark:text-white">
-                Confirm Goods Received Note?
+                Confirm Goods Received Voucher?
               </h3>
             </div>
 
@@ -1515,7 +1576,7 @@ function InvGRNContent() {
 
 export default function InvGRNPage() {
   return (
-    <Suspense fallback={<div className="p-8 text-center text-gray-400">Loading Goods Received Notes...</div>}>
+    <Suspense fallback={<div className="p-8 text-center text-gray-400">Loading Goods Received Vouchers...</div>}>
       <InvGRNContent />
     </Suspense>
   );

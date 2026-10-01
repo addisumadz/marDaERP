@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
-import { X, UserPlus, Loader2, Building2 } from "lucide-react";
+import { X, UserPlus, Loader2, Building2, AlertTriangle } from "lucide-react";
 import { toast } from "react-toastify";
 import { useSession } from "next-auth/react";
 import customNewLineConnectionService from "../../../lib/custom_newLineConnectionService";
@@ -28,6 +28,9 @@ export default function CustomApplicationModal({
   const [isKetenasLoading, setIsKetenasLoading] = useState(false);
   const [resolvedBranchId, setResolvedBranchId] = useState(userBranchId);
   const [resolvedBranchName, setResolvedBranchName] = useState(userBranchName);
+
+  // Duplicate detection state
+  const [duplicateWarning, setDuplicateWarning] = useState({ show: false, matches: [], checking: false });
 
   // Amharic phonetic keyboard and phone digit state
   const [isAmharicKeyboardOn, setIsAmharicKeyboardOn] = useState(true);
@@ -196,6 +199,53 @@ export default function CustomApplicationModal({
     }));
   };
 
+  // Sanitize helpers (shared by dedup check and submit)
+  const cleanStr = (val) => {
+    if (typeof val !== "string") return null;
+    const trimmed = val.trim();
+    return trimmed === "" ? null : trimmed;
+  };
+
+  const cleanId = (val) => {
+    if (!val || String(val).trim() === "") return null;
+    const num = Number(val);
+    return isNaN(num) ? null : num;
+  };
+
+  const buildPayload = () => {
+    const fullPhoneNumber = `+251${phoneDigits}`;
+    return {
+      applicantName: cleanStr(form.applicantName) || cleanStr(form.customerFullName),
+      customerFullName: cleanStr(form.customerFullName),
+      customerFullNameEng: cleanStr(form.customerFullNameEng),
+      phoneNumber: cleanStr(fullPhoneNumber),
+      nationalIdNumber: cleanStr(form.nationalIdNumber),
+      houseNumber: cleanStr(form.houseNumber),
+      kebeleId: cleanId(form.kebeleId),
+      ketenaId: cleanId(form.ketenaId),
+      customerTypeId: cleanId(form.customerTypeId),
+      branchId: cleanId(form.branchId) || cleanId(resolvedBranchId),
+      addressDescription: cleanStr(form.addressDescription),
+    };
+  };
+
+  // Core submission logic (called after dedup check passes or user confirms)
+  const executeSubmit = async () => {
+    setSubmitting(true);
+    try {
+      const payload = buildPayload();
+      const res = await customNewLineConnectionService.createApplication(payload);
+      toast.success(`አዲስ የመስመር ጥያቄ ተመዝግቧል! የማመልከቻ ቁጥር: ${res.applicationNumber}`);
+      setDuplicateWarning({ show: false, matches: [], checking: false });
+      onSuccess();
+      onClose();
+    } catch (error) {
+      toast.error(error.response?.data?.message || "ጥያቄውን መመዝገብ አልተቻለም");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.customerFullName.trim()) {
@@ -210,47 +260,39 @@ export default function CustomApplicationModal({
       toast.warning("የሞባይል ስልክ ቁጥር በ 9 ወይም 7 መጀመር አለበት");
     }
 
-    setSubmitting(true);
-    try {
-      // Sanitize: convert empty/whitespace-only strings to null so the DB stores NULL
-      // instead of empty strings for optional fields (matching CustomerFormModal.js pattern)
-      const cleanStr = (val) => {
-        if (typeof val !== "string") return null;
-        const trimmed = val.trim();
-        return trimmed === "" ? null : trimmed;
-      };
-
-      const cleanId = (val) => {
-        if (!val || String(val).trim() === "") return null;
-        const num = Number(val);
-        return isNaN(num) ? null : num;
-      };
-
-      const fullPhoneNumber = `+251${phoneDigits}`;
-
-      const payload = {
-        applicantName: cleanStr(form.applicantName) || cleanStr(form.customerFullName),
-        customerFullName: cleanStr(form.customerFullName),
-        customerFullNameEng: cleanStr(form.customerFullNameEng),
-        phoneNumber: cleanStr(fullPhoneNumber),
-        nationalIdNumber: cleanStr(form.nationalIdNumber),
-        houseNumber: cleanStr(form.houseNumber),
-        kebeleId: cleanId(form.kebeleId),
-        ketenaId: cleanId(form.ketenaId),
-        customerTypeId: cleanId(form.customerTypeId),
-        branchId: cleanId(form.branchId) || cleanId(resolvedBranchId),
-        addressDescription: cleanStr(form.addressDescription),
-      };
-
-      const res = await customNewLineConnectionService.createApplication(payload);
-      toast.success(`አዲስ የመስመር ጥያቄ ተመዝግቧል! የማመልከቻ ቁጥር: ${res.applicationNumber}`);
-      onSuccess();
-      onClose();
-    } catch (error) {
-      toast.error(error.response?.data?.message || "ጥያቄውን መመዝገብ አልተቻለም");
-    } finally {
-      setSubmitting(false);
+    // --- Customer Deduplication Check ---
+    // If user already confirmed the duplicate warning, skip re-check
+    if (duplicateWarning.show) {
+      await executeSubmit();
+      return;
     }
+
+    setDuplicateWarning((prev) => ({ ...prev, checking: true }));
+    try {
+      const fullPhoneNumber = `+251${phoneDigits}`;
+      const existing = await customNewLineConnectionService.getApplications({
+        search: fullPhoneNumber,
+        page: 0,
+        size: 10,
+      });
+
+      const matches = (existing?.content || []).filter(
+        (app) => app.phoneNumber === fullPhoneNumber
+      );
+
+      if (matches.length > 0) {
+        // Show warning with matching applications — user must explicitly confirm
+        setDuplicateWarning({ show: true, matches, checking: false });
+        return;
+      }
+    } catch (err) {
+      // If dedup check fails (network, etc.), don't block registration — just warn
+      console.warn("Dedup check failed, proceeding:", err);
+    }
+    setDuplicateWarning((prev) => ({ ...prev, checking: false }));
+
+    // No duplicates found — submit directly
+    await executeSubmit();
   };
 
   if (!isOpen) return null;
@@ -536,6 +578,52 @@ export default function CustomApplicationModal({
             />
           </div>
 
+          {/* ─── Duplicate Warning Panel ─── */}
+          {duplicateWarning.show && duplicateWarning.matches.length > 0 && (
+            <div className="p-3.5 bg-amber-50 dark:bg-amber-950/40 border-2 border-amber-400 dark:border-amber-600 rounded-xl space-y-2 animate-in fade-in">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <h4 className="text-sm font-extrabold text-amber-900 dark:text-amber-200">
+                    ⚠️ ማስጠንቀቂያ — ተመሳሳይ ስልክ ቁጥር ተገኝቷል!
+                  </h4>
+                  <p className="text-xs text-amber-800 dark:text-amber-300 mt-0.5">
+                    ይህ ስልክ ቁጥር (+251{phoneDigits}) ቀድሞ በሚከተሉት ማመልከቻዎች ውስጥ ተመዝግቧል፡
+                  </p>
+                </div>
+              </div>
+              <div className="bg-white dark:bg-gray-800 rounded-lg border border-amber-200 dark:border-amber-700 divide-y divide-amber-100 dark:divide-amber-800 max-h-32 overflow-y-auto">
+                {duplicateWarning.matches.map((m) => (
+                  <div key={m.id} className="px-3 py-2 text-xs flex items-center justify-between gap-2">
+                    <div>
+                      <span className="font-bold text-blue-600 dark:text-blue-400 font-mono">{m.applicationNumber}</span>
+                      <span className="mx-1.5 text-gray-400">—</span>
+                      <span className="font-semibold text-gray-900 dark:text-white">{m.customerFullName}</span>
+                    </div>
+                    <span className="text-[10px] text-gray-500 whitespace-nowrap">{m.status?.replace(/_/g, " ")}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setDuplicateWarning({ show: false, matches: [], checking: false })}
+                  className="px-3 py-1.5 text-xs font-semibold text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors"
+                >
+                  ← ተመለስ (Go Back)
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="px-3 py-1.5 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-lg shadow-sm transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  {submitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <AlertTriangle className="w-3.5 h-3.5" />}
+                  {submitting ? "በመመዝገብ ላይ..." : "ቢሆንም ቀጥል (Continue Anyway)"}
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="flex justify-end gap-3 pt-3 border-t border-gray-100 dark:border-gray-700">
             <button
               type="button"
@@ -547,11 +635,11 @@ export default function CustomApplicationModal({
             </button>
             <button
               type="submit"
-              disabled={submitting}
+              disabled={submitting || duplicateWarning.checking}
               className="flex items-center gap-2 px-5 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm transition-colors disabled:opacity-50"
             >
-              {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
-              {submitting ? "በመመዝገብ ላይ..." : "ማመልከቻውን መዝግብ"}
+              {submitting || duplicateWarning.checking ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
+              {duplicateWarning.checking ? "ድግግሞሽ በመፈተሽ ላይ..." : submitting ? "በመመዝገብ ላይ..." : "ማመልከቻውን መዝግብ"}
             </button>
           </div>
         </form>

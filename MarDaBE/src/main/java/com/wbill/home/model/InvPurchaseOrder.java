@@ -75,6 +75,15 @@ public class InvPurchaseOrder implements Serializable {
     @Column(name = "remarks", length = 500)
     private String remarks;
 
+    @Column(name = "rejected_by", length = 100)
+    private String rejectedBy;
+
+    @Column(name = "rejected_date")
+    private LocalDateTime rejectedDate;
+
+    @Column(name = "rejection_reason", length = 500)
+    private String rejectionReason;
+
     @OneToMany(mappedBy = "purchaseOrder", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @OrderBy("lineOrder ASC")
     private List<InvPurchaseOrderLine> lines = new ArrayList<>();
@@ -100,7 +109,7 @@ public class InvPurchaseOrder implements Serializable {
     }
 
     public enum POStatus {
-        DRAFT, SUBMITTED, APPROVED_L1, APPROVED_L2, SENT_TO_SUPPLIER, PARTIALLY_RECEIVED, FULLY_RECEIVED, CANCELLED
+        DRAFT, SUBMITTED, APPROVED_L1, APPROVED_L2, SENT_TO_SUPPLIER, PARTIALLY_RECEIVED, FULLY_RECEIVED, REJECTED, CANCELLED
     }
 
     public InvPurchaseOrder() {}
@@ -119,7 +128,10 @@ public class InvPurchaseOrder implements Serializable {
         this.subtotal = lines.stream()
                 .map(InvPurchaseOrderLine::getTotalPrice)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
-        this.vatAmount = this.subtotal.multiply(this.vatRate).divide(new BigDecimal("100"), 2, java.math.RoundingMode.HALF_UP);
+        // Sum per-line VAT amounts instead of applying flat PO-level rate
+        this.vatAmount = lines.stream()
+                .map(l -> l.getVatAmount() != null ? l.getVatAmount() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
         this.grandTotal = this.subtotal.add(this.vatAmount);
     }
 
@@ -180,6 +192,15 @@ public class InvPurchaseOrder implements Serializable {
 
     public String getRemarks() { return remarks; }
     public void setRemarks(String remarks) { this.remarks = remarks; }
+
+    public String getRejectedBy() { return rejectedBy; }
+    public void setRejectedBy(String rejectedBy) { this.rejectedBy = rejectedBy; }
+
+    public LocalDateTime getRejectedDate() { return rejectedDate; }
+    public void setRejectedDate(LocalDateTime rejectedDate) { this.rejectedDate = rejectedDate; }
+
+    public String getRejectionReason() { return rejectionReason; }
+    public void setRejectionReason(String rejectionReason) { this.rejectionReason = rejectionReason; }
 
     public List<InvPurchaseOrderLine> getLines() { return lines; }
     public void setLines(List<InvPurchaseOrderLine> lines) { this.lines = lines; }

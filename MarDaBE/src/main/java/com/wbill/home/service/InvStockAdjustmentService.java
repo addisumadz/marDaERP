@@ -120,7 +120,7 @@ public class InvStockAdjustmentService {
     }
 
     private String generateNumber() {
-        String prefix = "ADJ-" + Year.now().getValue() + "-";
+        String prefix = "ADJ-";
         Long maxSeq = repository.findMaxSequence(prefix);
         long next = (maxSeq != null ? maxSeq : 0) + 1;
         return prefix + String.format("%05d", next);

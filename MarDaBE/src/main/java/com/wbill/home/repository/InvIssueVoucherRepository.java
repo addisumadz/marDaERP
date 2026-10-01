@@ -15,6 +15,6 @@ public interface InvIssueVoucherRepository extends JpaRepository<InvIssueVoucher
     Page<InvIssueVoucher> findByIssueTypeOrderByCreatedAtDesc(IssueType issueType, Pageable pageable);
     Page<InvIssueVoucher> findAllByOrderByCreatedAtDesc(Pageable pageable);
 
-    @Query("SELECT MAX(CAST(SUBSTRING(v.voucherNumber, 10) AS long)) FROM InvIssueVoucher v WHERE v.voucherNumber LIKE CONCAT(:prefix, '%')")
+    @Query("SELECT MAX(CAST(SUBSTRING(v.voucherNumber, 5) AS long)) FROM InvIssueVoucher v WHERE v.voucherNumber LIKE CONCAT(:prefix, '%')")
     Long findMaxSequence(String prefix);
 }

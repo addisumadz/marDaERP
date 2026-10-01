@@ -38,6 +38,12 @@ public class InvPurchaseOrderLine implements Serializable {
     @Column(name = "total_price", nullable = false, precision = 15, scale = 2)
     private BigDecimal totalPrice = BigDecimal.ZERO;
 
+    @Column(name = "vat_rate", precision = 5, scale = 2)
+    private BigDecimal vatRate = new BigDecimal("15.00");
+
+    @Column(name = "vat_amount", precision = 15, scale = 2)
+    private BigDecimal vatAmount = BigDecimal.ZERO;
+
     @Column(name = "line_order", nullable = false)
     private int lineOrder = 0;
 
@@ -53,6 +59,14 @@ public class InvPurchaseOrderLine implements Serializable {
         if (orderedQuantity == null) return false;
         BigDecimal rec = receivedQuantity != null ? receivedQuantity : BigDecimal.ZERO;
         return rec.compareTo(orderedQuantity) >= 0;
+    }
+
+    /** VAT-inclusive unit price for stock valuation */
+    public BigDecimal getUnitPriceInclVat() {
+        if (unitPrice == null) return BigDecimal.ZERO;
+        BigDecimal rate = vatRate != null ? vatRate : BigDecimal.ZERO;
+        return unitPrice.add(unitPrice.multiply(rate).divide(
+            new BigDecimal("100"), 4, java.math.RoundingMode.HALF_UP));
     }
 
     // Getters and Setters
@@ -76,6 +90,12 @@ public class InvPurchaseOrderLine implements Serializable {
 
     public BigDecimal getTotalPrice() { return totalPrice; }
     public void setTotalPrice(BigDecimal totalPrice) { this.totalPrice = totalPrice; }
+
+    public BigDecimal getVatRate() { return vatRate; }
+    public void setVatRate(BigDecimal vatRate) { this.vatRate = vatRate; }
+
+    public BigDecimal getVatAmount() { return vatAmount; }
+    public void setVatAmount(BigDecimal vatAmount) { this.vatAmount = vatAmount; }
 
     public int getLineOrder() { return lineOrder; }
     public void setLineOrder(int lineOrder) { this.lineOrder = lineOrder; }

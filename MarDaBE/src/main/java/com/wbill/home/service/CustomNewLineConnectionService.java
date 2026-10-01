@@ -397,9 +397,9 @@ public class CustomNewLineConnectionService {
             }
         }
 
-        // Apply Rates: 25% Transportation Charge on materials EXCLUDING store water meter, 55% Service Charge on (totalMaterials + transportCharge)
+        // Apply Rates: 25% Transportation Charge strictly on utility-supplied materials (EXCLUDING store water meter), 55% Service Charge on (totalMaterials + transportCharge)
         BigDecimal totalMaterials = utilityMaterialsTotal.add(outsideMaterialsTotal);
-        BigDecimal materialsSubjectToTransport = totalMaterials.subtract(meterUtilityTotal);
+        BigDecimal materialsSubjectToTransport = utilityMaterialsTotal.subtract(meterUtilityTotal);
         if (materialsSubjectToTransport.compareTo(BigDecimal.ZERO) < 0) {
             materialsSubjectToTransport = BigDecimal.ZERO;
         }
@@ -504,7 +504,7 @@ public class CustomNewLineConnectionService {
             }
 
             BigDecimal totalMaterials = utilityMaterialsTotal.add(outsideMaterialsTotal);
-            BigDecimal materialsSubjectToTransport = totalMaterials.subtract(meterUtilityTotal);
+            BigDecimal materialsSubjectToTransport = utilityMaterialsTotal.subtract(meterUtilityTotal);
             if (materialsSubjectToTransport.compareTo(BigDecimal.ZERO) < 0) {
                 materialsSubjectToTransport = BigDecimal.ZERO;
             }
@@ -929,12 +929,21 @@ public class CustomNewLineConnectionService {
     }
 
     public CustomCommonMaterial saveCommonMaterial(CustomCommonMaterial material) {
-        if (material.getInvItem() != null && material.getInvItem().getId() > 0 && invItemRepo != null) {
-            material.setInvItem(invItemRepo.findById(material.getInvItem().getId()).orElse(null));
+        CustomCommonMaterial entity;
+        if (material.getId() != null && material.getId() > 0) {
+            entity = commonMaterialRepo.findById(material.getId()).orElse(new CustomCommonMaterial());
         } else {
-            material.setInvItem(null);
+            entity = new CustomCommonMaterial();
         }
-        return commonMaterialRepo.save(material);
+        entity.setDisplayOrder(material.getDisplayOrder() != null ? material.getDisplayOrder() : 0);
+        entity.setIsActive(material.getIsActive() != null ? material.getIsActive() : true);
+        if (material.getInvItem() != null && material.getInvItem().getId() > 0 && invItemRepo != null) {
+            InvItem item = invItemRepo.findById(material.getInvItem().getId()).orElse(null);
+            entity.setInvItem(item);
+        } else {
+            entity.setInvItem(null);
+        }
+        return commonMaterialRepo.save(entity);
     }
 
     public void deleteCommonMaterial(Long id) {
@@ -1039,6 +1048,7 @@ public class CustomNewLineConnectionService {
             itemMap.put("materialName", mat.getMaterialName());
             itemMap.put("materialNameAm", mat.getMaterialNameAm());
             itemMap.put("unitOfMeasure", mat.getUnitOfMeasure() != null ? mat.getUnitOfMeasure() : "በቁጥር");
+            itemMap.put("isWaterMeter", mat.getIsWaterMeter());
 
             InvItem matchedInvItem = null;
             if (mat.getInvItem() != null) {

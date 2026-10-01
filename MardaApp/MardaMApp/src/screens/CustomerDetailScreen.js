@@ -26,7 +26,11 @@ import QRScannerModal from '../components/QRScannerModal';
 import { locationService } from '../services/locationService';
 import { validation } from '../utils/validation';
 
-export default function CustomerDetailScreen({ customer, onBack, onSave }) {
+export default function CustomerDetailScreen({ customer: propCustomer, onBack, onSave, route, navigation }) {
+    const customer = propCustomer || route?.params?.customer || {};
+    const handleBack = onBack || (() => navigation?.goBack());
+    const handleSave = onSave || route?.params?.onSave || (async () => {});
+
     const [phoneNumber, setPhoneNumber] = useState(customer.phone_number || '');
     const [qrCode, setQrCode] = useState(customer.qr_code || '');
     const [showQRScanner, setShowQRScanner] = useState(false);
@@ -79,10 +83,10 @@ export default function CustomerDetailScreen({ customer, onBack, onSave }) {
     // Initialize zero reasons and encoded reading data
     useEffect(() => {
         loadZeroReasons();
-        if (customer.reading_status === 'encoded') {
+        if (customer?.reading_status === 'encoded' && customer?.id) {
             loadEncodedReading();
         }
-    }, []);
+    }, [customer?.id]);
 
     const loadZeroReasons = async () => {
         try {
@@ -95,6 +99,7 @@ export default function CustomerDetailScreen({ customer, onBack, onSave }) {
 
     const loadEncodedReading = async () => {
         try {
+            if (!customer?.id) return;
             const data = await databaseService.getPendingReadingForCustomer(customer.id);
             setEncodedReadingData(data);
         } catch (error) {
@@ -332,8 +337,8 @@ export default function CustomerDetailScreen({ customer, onBack, onSave }) {
                         location_coordination: coordsString,
                         isModified: true
                     };
-                    onSave(updatedCustomer);
-                    // Don't show another modal - onSave already handles confirmation
+                    handleSave(updatedCustomer);
+                    // Don't show another modal - handleSave already handles confirmation
                 }
             );
         } catch (error) {
@@ -361,7 +366,7 @@ export default function CustomerDetailScreen({ customer, onBack, onSave }) {
             qr_code: qrCode,
             isModified: true
         };
-        onSave(updatedCustomer);
+        handleSave(updatedCustomer);
         showAlert('Success', 'Customer info updated', 'success');
     };
 
@@ -371,7 +376,7 @@ export default function CustomerDetailScreen({ customer, onBack, onSave }) {
 
             {/* Header */}
             <View style={styles.header}>
-                <TouchableOpacity onPress={onBack} style={styles.backButton}>
+                <TouchableOpacity onPress={handleBack} style={styles.backButton}>
                     <Ionicons name="arrow-back" size={24} color="#2196F3" />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>Customer Detail</Text>

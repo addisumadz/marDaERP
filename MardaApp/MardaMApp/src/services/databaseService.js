@@ -284,10 +284,12 @@ export const databaseService = {
                 query += ` AND (
                     full_name LIKE ? OR 
                     account_number LIKE ? OR 
-                    meter_number LIKE ?
+                    meter_number LIKE ? OR 
+                    phone_number LIKE ? OR 
+                    house_number LIKE ?
                 )`;
                 const searchTerm = `%${filters.search}%`;
-                params.push(searchTerm, searchTerm, searchTerm);
+                params.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm);
             }
 
             if (filters.readingStatus) {

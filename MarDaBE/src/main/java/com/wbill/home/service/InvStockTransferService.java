@@ -360,7 +360,7 @@ public class InvStockTransferService {
     }
 
     private String generateNumber() {
-        String prefix = "TRF-" + Year.now().getValue() + "-";
+        String prefix = "TRF-";
         Long maxSeq = repository.findMaxSequence(prefix);
         long next = (maxSeq != null ? maxSeq : 0) + 1;
         return prefix + String.format("%05d", next);

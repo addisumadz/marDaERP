@@ -337,8 +337,8 @@ export default function CustomMaterialSurveyModal({ isOpen, onClose, onSuccess, 
     });
 
     const totalMaterials = utilityTotal + outsideTotal;
-    // Special Rule: Water meter provided from corporation/store is exempt from 25% transport charge
-    const materialsSubjectToTransport = Math.max(0, totalMaterials - meterUtilityTotal);
+    // 25% Transport Charge is strictly calculated from items supplied by the water utility (excluding store water meter)
+    const materialsSubjectToTransport = Math.max(0, utilityTotal - meterUtilityTotal);
     const transportCharge = materialsSubjectToTransport * 0.25;
     // 55% service charge still includes all materials + transport charge
     const serviceCharge = (totalMaterials + transportCharge) * 0.55;

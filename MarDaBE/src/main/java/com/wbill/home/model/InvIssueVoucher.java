@@ -68,6 +68,11 @@ public class InvIssueVoucher implements Serializable {
     @OrderBy("lineOrder ASC")
     private List<InvIssueVoucherLine> lines = new ArrayList<>();
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "material_request_id")
+    @JsonIgnoreProperties({"hibernateLazyInitializer", "handler", "lines", "issueVoucher"})
+    private InvMaterialRequest materialRequest;
+
     @Column(name = "created_by", length = 100)
     private String createdBy;
 
@@ -89,7 +94,7 @@ public class InvIssueVoucher implements Serializable {
     }
 
     public enum IssueType {
-        SALE, INTERNAL_USE, PROJECT, MAINTENANCE
+        SALE, INTERNAL_USE, PROJECT, MAINTENANCE, MATERIAL_REQUEST
     }
 
     public enum IssueStatus {
@@ -153,6 +158,9 @@ public class InvIssueVoucher implements Serializable {
 
     public List<InvIssueVoucherLine> getLines() { return lines; }
     public void setLines(List<InvIssueVoucherLine> lines) { this.lines = lines; }
+
+    public InvMaterialRequest getMaterialRequest() { return materialRequest; }
+    public void setMaterialRequest(InvMaterialRequest materialRequest) { this.materialRequest = materialRequest; }
 
     public String getCreatedBy() { return createdBy; }
     public void setCreatedBy(String createdBy) { this.createdBy = createdBy; }

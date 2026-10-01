@@ -64,6 +64,18 @@ class InvPurchaseOrderService {
     const res = await axios.get(`${commonUrl}inv-purchase-orders/approved-requisitions`, { headers: authHeader(token) });
     return res.data;
   }
+
+  async update(id, data) {
+    const token = getAccesToken();
+    const res = await axios.put(`${commonUrl}inv-purchase-orders/${id}`, data, { headers: authHeader(token) });
+    return res.data;
+  }
+
+  async cancel(id, reason) {
+    const token = getAccesToken();
+    const res = await axios.put(`${commonUrl}inv-purchase-orders/${id}/cancel`, { reason }, { headers: authHeader(token) });
+    return res.data;
+  }
 }
 
 const invPurchaseOrderService = new InvPurchaseOrderService();

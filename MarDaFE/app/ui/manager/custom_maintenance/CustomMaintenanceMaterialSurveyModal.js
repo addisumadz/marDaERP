@@ -379,11 +379,13 @@ export default function CustomMaintenanceMaterialSurveyModal({
     });
 
     const totalMaterials = utilityMaterialsTotal + outsideMaterialsTotal;
-    // Special Rule for Maintenance: Water meter from store is EXEMPT from both 25% transport and 55% service charge.
-    // Its material sale value is simply summed into total payable via utilityMaterialsTotal.
-    const materialsSubjectToOverhead = Math.max(0, totalMaterials - meterUtilityTotal);
-    const transportCharge = materialsSubjectToOverhead * 0.25;
-    const serviceCharge = (materialsSubjectToOverhead + transportCharge) * 0.55;
+    // 25% Transport Charge is strictly calculated from items supplied by the water utility (excluding store water meter).
+    // Water meter from store is EXEMPT from both 25% transport and 55% service charge.
+    const materialsSubjectToTransport = Math.max(0, utilityMaterialsTotal - meterUtilityTotal);
+    const transportCharge = materialsSubjectToTransport * 0.25;
+
+    const materialsSubjectToService = Math.max(0, totalMaterials - meterUtilityTotal);
+    const serviceCharge = (materialsSubjectToService + transportCharge) * 0.55;
 
     let additionalFeesTotal = 0;
     fees.forEach((f) => {

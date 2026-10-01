@@ -77,13 +77,32 @@ export default function CustomPaymentApprovalModal({
     ]);
   }, [effectiveRoles]);
 
-  // Technical role users must NEVER have payment confirmation capability
+  // Determine if payment has already been approved for this request
+  const isPaymentApproved = useMemo(() => {
+    if (!request) return false;
+    return Boolean(
+      request.isPaid ||
+      (request.status &&
+        request.status !== "PENDING_PAYMENT_APPROVAL" &&
+        request.status !== "SURVEY_IN_PROGRESS" &&
+        request.status !== "PENDING_SURVEY_ASSIGNMENT" &&
+        request.status !== "RETURNED_FOR_REVISION") ||
+      request.paymentReceiptNumber ||
+      request.paymentApprovedDate
+    );
+  }, [request]);
+
+  // Technical role users must NEVER have payment confirmation capability.
+  // When payment is already approved, NO ONE can edit items/prices or approve payment again.
   const canConfirmPayment = useMemo(() => {
+    if (isPaymentApproved) {
+      return false;
+    }
     if (isTechnical && !isRevenueOfficer) {
       return false;
     }
     return isRevenueOfficer || (isAdminRole(effectiveRoles) && !isTechnical);
-  }, [isTechnical, isRevenueOfficer, effectiveRoles]);
+  }, [isPaymentApproved, isTechnical, isRevenueOfficer, effectiveRoles]);
 
   // Payment form inputs
   const [receiptNumber, setReceiptNumber] = useState("");
@@ -102,8 +121,8 @@ export default function CustomPaymentApprovalModal({
   useEffect(() => {
     if (isOpen && request?.id) {
       loadData();
-      setReceiptNumber("");
-      setReferenceNumber("");
+      setReceiptNumber(request.paymentReceiptNumber || "");
+      setReferenceNumber(request.paymentReferenceNumber || "");
       setRemarks("");
       setIsRevisionOpen(false);
       setRevisionRemarks("");
@@ -113,32 +132,51 @@ export default function CustomPaymentApprovalModal({
   const loadData = async () => {
     setLoadingItems(true);
     try {
-      const [itms, fs] = await Promise.all([
-        customMaintenanceService.getRequestItems(request.id),
-        customMaintenanceService.getRequestFees(request.id),
+      const branchId = request.branch?.id;
+      const mTypeId = request.maintenanceType?.id;
+      const [itms, fs, stockRes] = await Promise.all([
+        customMaintenanceService.getRequestItems(request.id).catch(() => []),
+        customMaintenanceService.getRequestFees(request.id).catch(() => []),
+        customMaintenanceService.getBranchCatalogStock(branchId, mTypeId).catch(() => ({ items: [] })),
       ]);
+
+      const storeCatalog = stockRes && Array.isArray(stockRes.items) ? stockRes.items : [];
 
       setItems(
         (itms || []).map((it) => {
+          const matched = storeCatalog.find(
+            (c) =>
+              (c.maintenanceCommonMaterialId && it.maintenanceCommonMaterial?.id && c.maintenanceCommonMaterialId === it.maintenanceCommonMaterial.id) ||
+              c.materialName === it.itemName ||
+              c.materialNameAm === it.itemNameAm
+          );
+          const storePrice = matched ? Number(matched.unitPrice) || 0 : Number(it.utilityUnitPrice) || 0;
+          const uPrice = storePrice > 0 ? storePrice : (Number(it.utilityUnitPrice) || 0);
+          const rawOPrice = Number(it.outsideUnitPrice) || 0;
+          const oPrice = (rawOPrice >= storePrice && rawOPrice > 0) ? rawOPrice : (storePrice > 0 ? storePrice : (rawOPrice > 0 ? rawOPrice : uPrice));
+
           const isMeter = Boolean(
             it.isWaterMeter ||
               it.invItem?.isWaterMeter ||
               it.maintenanceCommonMaterial?.isWaterMeter ||
-              isWaterMeterItem(it)
+              isWaterMeterItem(it) ||
+              isWaterMeterItem(matched)
           );
           return {
             id: it.id,
-            maintenanceCommonMaterialId: it.maintenanceCommonMaterial?.id || null,
-            invItemId: it.invItem?.id || null,
+            maintenanceCommonMaterialId: it.maintenanceCommonMaterial?.id || matched?.maintenanceCommonMaterialId || null,
+            invItemId: it.invItem?.id || matched?.invItemId || null,
             isWaterMeter: isMeter,
             itemName: it.itemName,
             itemNameAm: it.itemNameAm || it.itemName,
-            unitOfMeasure: it.unitOfMeasure || "በቁጥር",
-            surveyedQuantity: Number(it.surveyedQuantity) || 0,
+            unitOfMeasure: it.unitOfMeasure || matched?.unitOfMeasure || "በቁጥር",
+            availableStock: matched ? Number(matched.availableStock) || 0 : (Number(it.availableStock) || 0),
+            unitPrice: storePrice,
+            surveyedQuantity: Number(it.surveyedQuantity) || (Number(it.utilityQuantity || 0) + Number(it.outsideQuantity || 0)) || 0,
             utilityQuantity: Number(it.utilityQuantity) || 0,
-            utilityUnitPrice: Number(it.utilityUnitPrice) || 0,
+            utilityUnitPrice: uPrice,
             outsideQuantity: Number(it.outsideQuantity) || 0,
-            outsideUnitPrice: Number(it.outsideUnitPrice) || 0,
+            outsideUnitPrice: oPrice,
             remarks: it.remarks || "",
           };
         })
@@ -164,18 +202,47 @@ export default function CustomPaymentApprovalModal({
     }
   };
 
+  const handleSurveyedQtyChange = (idx, val) => {
+    const num = Math.max(0, parseFloat(val) || 0);
+    setItems((prev) => {
+      const updated = [...prev];
+      const item = { ...updated[idx] };
+      item.surveyedQuantity = val;
+      const avail = Number(item.availableStock) || 0;
+      const storePrice = Number(item.unitPrice || item.utilityUnitPrice || 0);
+
+      const uQty = Math.min(num, avail);
+      const oQty = Math.max(0, num - avail);
+      item.utilityQuantity = Math.round(uQty * 100) / 100;
+      item.outsideQuantity = Math.round(oQty * 100) / 100;
+
+      if (storePrice > 0) {
+        item.utilityUnitPrice = storePrice;
+      }
+      if (item.outsideUnitPrice == null || item.outsideUnitPrice === 0 || (storePrice > 0 && item.outsideUnitPrice < storePrice)) {
+        item.outsideUnitPrice = storePrice;
+      }
+      updated[idx] = item;
+      return updated;
+    });
+  };
+
   const handleItemPriceChange = (idx, field, val) => {
     const num = Math.max(0, parseFloat(val) || 0);
-    const updated = [...items];
-    updated[idx] = { ...updated[idx], [field]: num };
-    setItems(updated);
+    setItems((prev) => {
+      const updated = [...prev];
+      updated[idx] = { ...updated[idx], [field]: num };
+      return updated;
+    });
   };
 
   const handleFeePriceChange = (idx, val) => {
     const num = Math.max(0, parseFloat(val) || 0);
-    const updated = [...fees];
-    updated[idx] = { ...updated[idx], unitPrice: num };
-    setFees(updated);
+    setFees((prev) => {
+      const updated = [...prev];
+      updated[idx] = { ...updated[idx], unitPrice: num };
+      return updated;
+    });
   };
 
   // Real-time recalculated totals
@@ -202,11 +269,13 @@ export default function CustomPaymentApprovalModal({
     });
 
     const totalMaterials = utilityMaterialsTotal + outsideMaterialsTotal;
-    // Special Rule for Maintenance: Water meter from store is EXEMPT from both 25% transport and 55% service charge.
-    // Its material sale value is simply summed into total payable via utilityMaterialsTotal.
-    const materialsSubjectToOverhead = Math.max(0, totalMaterials - meterUtilityTotal);
-    const transportCharge = materialsSubjectToOverhead * 0.25;
-    const serviceCharge = (materialsSubjectToOverhead + transportCharge) * 0.55;
+    // 25% Transport Charge is strictly calculated from items supplied by the water utility (excluding store water meter).
+    // Water meter from store is EXEMPT from both 25% transport and 55% service charge.
+    const materialsSubjectToTransport = Math.max(0, utilityMaterialsTotal - meterUtilityTotal);
+    const transportCharge = materialsSubjectToTransport * 0.25;
+
+    const materialsSubjectToService = Math.max(0, totalMaterials - meterUtilityTotal);
+    const serviceCharge = (materialsSubjectToService + transportCharge) * 0.55;
 
     let additionalFeesTotal = 0;
     fees.forEach((f) => {
@@ -233,6 +302,31 @@ export default function CustomPaymentApprovalModal({
       return;
     }
 
+    const activeItems = items.filter(
+      (it) =>
+        (Number(it.surveyedQuantity) || 0) > 0 ||
+        (Number(it.utilityQuantity) || 0) > 0 ||
+        (Number(it.outsideQuantity) || 0) > 0
+    );
+    if (activeItems.length === 0) {
+      toast.error("እባክዎ ቢያንስ ለአንድ ዕቃ ብዛት ያስገቡ");
+      return;
+    }
+
+    // Validation: for all items with outsideQuantity > 0, outsideUnitPrice must be >= store inventory price
+    for (const it of activeItems) {
+      if ((Number(it.outsideQuantity) || 0) > 0) {
+        const invPrice = Number(it.unitPrice || it.utilityUnitPrice || 0);
+        const outPrice = Number(it.outsideUnitPrice) || 0;
+        if (invPrice > 0 && outPrice < invPrice) {
+          toast.error(
+            `"${it.itemNameAm || it.itemName}" የገበያ ዋጋ (${outPrice.toFixed(2)}) ከመጋዘን መደበኛ ዋጋ (${invPrice.toFixed(2)}) ማነስ አይችልም`
+          );
+          return;
+        }
+      }
+    }
+
     setSubmitting(true);
     try {
       const payload = {
@@ -246,21 +340,21 @@ export default function CustomPaymentApprovalModal({
           itemName: it.itemName,
           itemNameAm: it.itemNameAm,
           unitOfMeasure: it.unitOfMeasure,
-          surveyedQuantity: it.surveyedQuantity,
-          utilityQuantity: it.utilityQuantity,
-          utilityUnitPrice: it.utilityUnitPrice,
-          outsideQuantity: it.outsideQuantity,
-          outsideUnitPrice: it.outsideUnitPrice,
-          remarks: it.remarks,
+          surveyedQuantity: Number(it.surveyedQuantity) || 0,
+          utilityQuantity: Number(it.utilityQuantity) || 0,
+          utilityUnitPrice: Number(it.utilityUnitPrice) || 0,
+          outsideQuantity: Number(it.outsideQuantity) || 0,
+          outsideUnitPrice: Number(it.outsideUnitPrice) || 0,
+          remarks: it.remarks || "",
         })),
         updatedFees: fees.map((f) => ({
           feeTypeId: f.feeTypeId,
           feeName: f.feeName,
           feeNameAm: f.feeNameAm,
           unitName: f.unitName,
-          quantity: f.quantity,
-          unitPrice: f.unitPrice,
-          remarks: f.remarks,
+          quantity: Number(f.quantity) || 1,
+          unitPrice: Number(f.unitPrice) || 0,
+          remarks: f.remarks || "",
         })),
       };
 
@@ -381,6 +475,28 @@ export default function CustomPaymentApprovalModal({
             </div>
           </div>
 
+          {/* Instruction banner */}
+          <div className={`px-4 py-2.5 rounded-xl text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1.5 border ${
+            isPaymentApproved
+              ? "bg-emerald-50/80 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800 text-emerald-900 dark:text-emerald-200"
+              : "bg-purple-50/70 dark:bg-purple-950/20 border-purple-200 dark:border-purple-900/40 text-purple-900 dark:text-purple-300"
+          }`}>
+            <span>
+              {isPaymentApproved ? (
+                <>
+                  🔒 <strong>የተጠናቀቀ የክፍያ መረጃ:</strong> ክፍያው ስለጸደቀ የእቃዎች ዝርዝር፣ ብዛት እና ዋጋዎች ለውጥ ማድረግ አይቻልም (Read-only)።
+                </>
+              ) : (
+                <>
+                  💡 <strong>ለክፍያ ማረጋገጫ:</strong> ከመጋዘን የቀረቡ ዕቃዎች ብዛትና ዋጋ ከመጋዘን ክምችት የተወሰደ በመሆኑ አይቀየርም። ለጎደሉ (ከውጭ ገበያ) ዕቃዎች ብቻ የገበያ ዋጋ ማስተካከል ይችላሉ (ዋጋው ከመጋዘን መደበኛ ዋጋ ማነስ የለበትም)።
+                </>
+              )}
+            </span>
+            <span className={`font-semibold shrink-0 ${isPaymentApproved ? "text-emerald-700 dark:text-emerald-400" : "text-purple-700 dark:text-purple-400"}`}>
+              የተካተቱ: {items.filter((it) => (Number(it.surveyedQuantity) || 0) > 0 || (Number(it.utilityQuantity) || 0) > 0 || (Number(it.outsideQuantity) || 0) > 0).length} ዕቃዎች
+            </span>
+          </div>
+
           {/* Section 1: Item Price Review */}
           <div className="space-y-2">
             <h4 className="text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider flex items-center gap-2">
@@ -391,20 +507,36 @@ export default function CustomPaymentApprovalModal({
               <table className="w-full text-xs text-left">
                 <thead className="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 font-bold border-b border-gray-200 dark:border-gray-600 text-[11px]">
                   <tr>
-                    <th className="py-2 px-3 w-10 text-center">ተ.ቁ</th>
-                    <th className="py-2 px-3">የዕቃው ዝርዝር</th>
-                    <th className="py-2 px-3 w-16 text-center">መለኪያ</th>
-                    <th className="py-2 px-3 w-20 text-right">ከድርጅቱ</th>
-                    <th className="py-2 px-3 w-24 text-right">የአንዱ ዋጋ (ETB)</th>
-                    <th className="py-2 px-3 w-24 text-right">ድርጅት ጠቅላላ</th>
-                    <th className="py-2 px-3 w-20 text-right">ከውጭ</th>
-                    <th className="py-2 px-3 w-24 text-right">ውጭ ጠቅላላ</th>
+                    <th className="py-2.5 px-2.5 w-10 text-center">ተ.ቁ</th>
+                    <th className="py-2.5 px-3 min-w-[170px]">የዕቃው ዝርዝር</th>
+                    <th className="py-2.5 px-2.5 w-14 text-center">መለኪያ</th>
+                    <th className="py-2.5 px-2.5 w-24 text-center bg-purple-50 dark:bg-purple-950/40 text-purple-900 dark:text-purple-200">
+                      የተገመተ ብዛት
+                    </th>
+                    <th className="py-2.5 px-2 text-right bg-blue-50/70 dark:bg-blue-950/30 text-blue-900 dark:text-blue-200 w-16">
+                      ከድርጅቱ
+                    </th>
+                    <th className="py-2.5 px-2 text-right bg-blue-50/70 dark:bg-blue-950/30 text-blue-900 dark:text-blue-200 w-24">
+                      የአንዱ ዋጋ
+                    </th>
+                    <th className="py-2.5 px-2.5 text-right bg-blue-50/70 dark:bg-blue-950/30 text-blue-900 dark:text-blue-200 w-24">
+                      ድርጅት ጠቅላላ
+                    </th>
+                    <th className="py-2.5 px-2 text-right bg-amber-50/70 dark:bg-amber-950/30 text-amber-900 dark:text-amber-200 w-16">
+                      ከውጭ
+                    </th>
+                    <th className="py-2.5 px-2 text-right bg-amber-50/70 dark:bg-amber-950/30 text-amber-900 dark:text-amber-200 w-24">
+                      የገበያ ዋጋ
+                    </th>
+                    <th className="py-2.5 px-2.5 text-right bg-amber-50/70 dark:bg-amber-950/30 text-amber-900 dark:text-amber-200 w-24">
+                      ውጭ ጠቅላላ
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 dark:divide-gray-700/60 bg-white dark:bg-gray-800">
                   {items.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="py-4 text-center text-gray-400">
+                      <td colSpan={10} className="py-4 text-center text-gray-400">
                         {loadingItems ? "እቃዎችን በመጫን ላይ..." : "ምንም የተገመተ ዕቃ የለም"}
                       </td>
                     </tr>
@@ -413,12 +545,18 @@ export default function CustomPaymentApprovalModal({
                       const uQty = Number(it.utilityQuantity) || 0;
                       const uPrice = Number(it.utilityUnitPrice) || 0;
                       const oQty = Number(it.outsideQuantity) || 0;
+                      const oPrice = Number(it.outsideUnitPrice) || 0;
                       const uTotal = uQty * uPrice;
-                      const oTotal = oQty * uPrice;
+                      const oTotal = oQty * oPrice;
+
+                      const isStoreItem = uQty > 0;
+                      const hasOutside = oQty > 0;
+                      const inventoryPrice = Number(it.unitPrice || it.utilityUnitPrice || 0);
+                      const isBelowInventory = hasOutside && inventoryPrice > 0 && Number(it.outsideUnitPrice || 0) < inventoryPrice;
 
                       return (
-                        <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-gray-700/30">
-                          <td className="py-2 px-3 text-center text-gray-400 font-mono">{idx + 1}</td>
+                        <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                          <td className="py-2 px-2.5 text-center text-gray-400 font-mono">{idx + 1}</td>
                           <td className="py-2 px-3">
                             <div className="font-semibold text-gray-800 dark:text-gray-200">
                               {it.itemNameAm || it.itemName}
@@ -429,28 +567,92 @@ export default function CustomPaymentApprovalModal({
                               </span>
                             )}
                           </td>
-                          <td className="py-2 px-3 text-center text-gray-500">{it.unitOfMeasure}</td>
-                          <td className="py-2 px-3 text-right font-mono font-bold text-emerald-700 dark:text-emerald-400">
+                          <td className="py-2 px-2.5 text-center text-gray-500">{it.unitOfMeasure}</td>
+
+                          {/* Surveyed Quantity: Locked if Store Item */}
+                          <td className="py-2 px-2 text-center bg-purple-50/30 dark:bg-purple-950/10">
+                            {isStoreItem ? (
+                              <div className="flex flex-col items-center">
+                                <input
+                                  type="number"
+                                  readOnly
+                                  disabled
+                                  value={it.surveyedQuantity === 0 ? "" : it.surveyedQuantity}
+                                  className="w-18 text-center font-bold px-1.5 py-1 border border-purple-200 dark:border-purple-800 rounded bg-gray-100 dark:bg-gray-700/60 text-gray-800 dark:text-gray-200 text-xs cursor-not-allowed"
+                                />
+                                <span className="text-[9px] text-gray-500 dark:text-gray-400 font-medium mt-0.5" title="በቴክኒክ ክፍል የተገመተ (መቀየር አይቻልም)">
+                                  🔒 በቴክኒክ የተገመተ
+                                </span>
+                              </div>
+                            ) : (
+                              <input
+                                type="number"
+                                disabled={!canConfirmPayment}
+                                min="0"
+                                step="0.1"
+                                value={it.surveyedQuantity === 0 ? "" : it.surveyedQuantity}
+                                onChange={(e) => handleSurveyedQtyChange(idx, e.target.value)}
+                                className="w-18 text-center font-bold px-1.5 py-1 border border-purple-400 dark:border-purple-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-xs disabled:opacity-75 disabled:cursor-not-allowed"
+                              />
+                            )}
+                          </td>
+
+                          {/* Utility Columns: Qty & Price Locked to Inventory */}
+                          <td className="py-2 px-2 text-right font-mono font-bold text-emerald-700 dark:text-emerald-400 bg-blue-50/20 dark:bg-blue-950/10">
                             {uQty.toFixed(2)}
                           </td>
-                          <td className="py-2 px-3 text-right">
+                          <td className="py-2 px-2 text-right bg-blue-50/20 dark:bg-blue-950/10">
                             <input
                               type="number"
-                              disabled={!canConfirmPayment}
-                              min="0"
-                              step="any"
+                              readOnly
+                              disabled
                               value={it.utilityUnitPrice}
-                              onChange={(e) => handleItemPriceChange(idx, "utilityUnitPrice", e.target.value)}
-                              className="w-20 px-1.5 py-0.5 text-right font-mono font-bold border border-purple-300 dark:border-purple-600 rounded bg-purple-50/40 text-purple-900 dark:text-purple-200 disabled:opacity-75 disabled:cursor-not-allowed"
+                              className="w-20 px-1.5 py-1 text-right font-mono font-bold border border-blue-200 dark:border-blue-800 rounded bg-gray-100 dark:bg-gray-700/60 text-blue-700 dark:text-blue-300 text-xs cursor-not-allowed"
                             />
                           </td>
-                          <td className="py-2 px-3 text-right font-mono font-bold text-gray-900 dark:text-white">
+                          <td className="py-2 px-2.5 text-right font-mono font-bold text-gray-900 dark:text-white bg-blue-50/20 dark:bg-blue-950/10">
                             {uTotal.toFixed(2)}
                           </td>
-                          <td className="py-2 px-3 text-right font-mono font-bold text-amber-700 dark:text-amber-400">
+
+                          {/* Outside Columns: Qty Read-Only, Price Verifiable (>= Inventory Price) */}
+                          <td className="py-2 px-2 text-right font-mono font-bold text-amber-700 dark:text-amber-400 bg-amber-50/20 dark:bg-amber-950/10">
                             {oQty.toFixed(2)}
                           </td>
-                          <td className="py-2 px-3 text-right font-mono font-bold text-gray-900 dark:text-white">
+                          <td className="py-2 px-2 text-right bg-amber-50/20 dark:bg-amber-950/10">
+                            <div className="flex flex-col items-end">
+                              <input
+                                type="number"
+                                disabled={!canConfirmPayment || !hasOutside}
+                                min={inventoryPrice > 0 ? inventoryPrice : 0}
+                                step="0.5"
+                                value={it.outsideUnitPrice}
+                                onChange={(e) => {
+                                  const val = parseFloat(e.target.value) || 0;
+                                  handleItemPriceChange(idx, "outsideUnitPrice", val);
+                                }}
+                                onBlur={(e) => {
+                                  const val = parseFloat(e.target.value) || 0;
+                                  if (hasOutside && inventoryPrice > 0 && val < inventoryPrice) {
+                                    handleItemPriceChange(idx, "outsideUnitPrice", inventoryPrice);
+                                    toast.warn(
+                                      `${it.itemNameAm || it.itemName}: የገበያ ዋጋ ከመጋዘን ዋጋ (ETB ${inventoryPrice.toFixed(2)}) ማነስ ስለማይችል ወደ መጋዘን ዋጋ ተስተካክሏል`
+                                    );
+                                  }
+                                }}
+                                className={`w-20 px-1.5 py-1 text-right font-mono font-bold border rounded text-xs outline-none disabled:opacity-75 disabled:bg-gray-100 dark:disabled:bg-gray-700/60 ${
+                                  isBelowInventory
+                                    ? "border-red-500 bg-red-50/60 dark:bg-red-950/30 text-red-600 focus:ring-1 focus:ring-red-500"
+                                    : "border-amber-300 dark:border-amber-700 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-1 focus:ring-amber-500"
+                                }`}
+                              />
+                              {isBelowInventory && (
+                                <span className="text-[9px] text-red-600 dark:text-red-400 font-semibold mt-0.5">
+                                  ⚠️ ≥ ETB {inventoryPrice.toFixed(2)}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-2 px-2.5 text-right font-mono font-bold text-gray-900 dark:text-white bg-amber-50/20 dark:bg-amber-950/10">
                             {oTotal.toFixed(2)}
                           </td>
                         </tr>
@@ -501,8 +703,45 @@ export default function CustomPaymentApprovalModal({
             )}
           </div>
 
-          {/* Section 3: Receipt & Payment Details Form (Only for Revenue Officers) */}
-          {canConfirmPayment ? (
+          {/* Section 3: Receipt & Payment Details Form / Approved Read-Only View */}
+          {isPaymentApproved ? (
+            <div className="space-y-3 bg-emerald-50/60 dark:bg-emerald-950/30 p-4 rounded-2xl border border-emerald-200 dark:border-emerald-800 text-xs">
+              <div className="flex items-center gap-2 pb-2 border-b border-emerald-200 dark:border-emerald-800/60 text-emerald-800 dark:text-emerald-300 font-bold">
+                <CheckCircle className="w-4 h-4 text-emerald-600" />
+                <span>የተከፈለ እና የጸደቀ ክፍያ መረጃ (Approved Payment Details - Read-only)</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-emerald-950 dark:text-emerald-200">
+                <div>
+                  <span className="block text-[11px] text-gray-500 dark:text-gray-400">የደረሰኝ ቁጥር:</span>
+                  <strong className="font-mono text-sm">{request.paymentReceiptNumber || request.receiptNumber || "—"}</strong>
+                </div>
+                <div>
+                  <span className="block text-[11px] text-gray-500 dark:text-gray-400">የባንክ ማመሳከሪያ:</span>
+                  <strong className="font-mono text-sm">{request.paymentReferenceNumber || request.referenceNumber || "—"}</strong>
+                </div>
+                <div>
+                  <span className="block text-[11px] text-gray-500 dark:text-gray-400">የክፍያ ሁኔታ:</span>
+                  <span className="inline-block px-2 py-0.5 bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200 rounded font-bold text-xs mt-0.5">
+                    የተከፈለ እና የጸደቀ (PAID) ✓
+                  </span>
+                </div>
+              </div>
+              {(request.paymentRemarks || request.remarks) && (
+                <div className="pt-2 border-t border-emerald-200/60 text-[11px] text-gray-600 dark:text-gray-300">
+                  <span className="font-semibold">ማስታወሻ: </span>{request.paymentRemarks || request.remarks}
+                </div>
+              )}
+              <div className="flex justify-end pt-2 border-t border-emerald-200/60">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-5 py-2 text-xs font-semibold text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl transition-colors"
+                >
+                  ዝጋ (Close)
+                </button>
+              </div>
+            </div>
+          ) : canConfirmPayment ? (
             <form onSubmit={handleSubmit} className="space-y-4 pt-2 border-t border-gray-200 dark:border-gray-700">
               <h4 className="text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider flex items-center gap-2">
                 <FileCheck2 className="w-4 h-4 text-purple-600" />

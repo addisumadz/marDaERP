@@ -57,7 +57,9 @@ import {
     FileSpreadsheet,
     FileSearch,
     PiggyBank,
-    Wrench
+    Wrench,
+    Trash2,
+    RotateCcw
 } from "lucide-react";
 
 export const menuGroups = [
@@ -298,12 +300,27 @@ export const menuGroups = [
                 title: "Inventory Operations",
                 path: "#",
                 icon: Package,
-                roles: ["M_BRANCH_STORE", "M_GEBI_OFFICER", "M_TECHNICAL_MANAGER", "billzgjt"],
+                roles: ["M_BRANCH_STORE", "M_GEBI_OFFICER", "M_TECHNICAL_MANAGER", "M_PURCHASING_OFFICER", "billzgjt"],
                 children: [
+                    {
+                        title: "Material Requests",
+                        path: "/ui/manager/invMaterialRequests",
+                        icon: FileEdit,
+                    },
                     {
                         title: "Issue Vouchers",
                         path: "/ui/manager/invIssueVouchers",
                         icon: PackageX,
+                    },
+                    {
+                        title: "Return Vouchers",
+                        path: "/ui/manager/invReturnVouchers",
+                        icon: RotateCcw,
+                    },
+                    {
+                        title: "Goods Received (GRV)",
+                        path: "/ui/manager/invGRN",
+                        icon: PackageCheck,
                     },
                     {
                         title: "Stock Transfers",
@@ -316,6 +333,16 @@ export const menuGroups = [
                         icon: ClipboardCheck,
                     },
                     {
+                        title: "Physical Stock Count",
+                        path: "/ui/manager/invStockCount",
+                        icon: ClipboardList,
+                    },
+                    {
+                        title: "Disposal & Write-Off",
+                        path: "/ui/manager/invDisposal",
+                        icon: Trash2,
+                    },
+                    {
                         title: "Stock Levels",
                         path: "/ui/manager/invStockLevels",
                         icon: Boxes,
@@ -324,6 +351,11 @@ export const menuGroups = [
                         title: "Stock Card",
                         path: "/ui/manager/invStockCard",
                         icon: ClipboardList,
+                    },
+                    {
+                        title: "Bin Card (Model 22)",
+                        path: "/ui/manager/invBinCard",
+                        icon: BookMarked,
                     }
                 ]
             },
@@ -332,8 +364,18 @@ export const menuGroups = [
                 title: "Inventory Reports",
                 path: "#",
                 icon: BarChart2,
-                roles: ["M_BRANCH_STORE", "M_GEBI_OFFICER", "M_BRANCH_MANAGER", "billzgjt"],
+                roles: ["M_BRANCH_STORE", "M_GEBI_OFFICER", "M_BRANCH_MANAGER", "M_FINANCE_HEAD", "billzgjt"],
                 children: [
+                    {
+                        title: "Stock Movement Summary",
+                        path: "/ui/manager/invReports",
+                        icon: ArrowRightLeft,
+                    },
+                    {
+                        title: "Consumption Report",
+                        path: "/ui/manager/invReports",
+                        icon: TrendingUp,
+                    },
                     {
                         title: "Stock Valuation",
                         path: "/ui/manager/invStockValuation",

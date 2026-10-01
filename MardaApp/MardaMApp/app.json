@@ -46,7 +46,10 @@
             "minSdkVersion": 24
           }
         }
-      ]
+      ],
+      "expo-secure-store",
+      "expo-sharing",
+      "expo-status-bar"
     ]
   }
 }

@@ -31,6 +31,7 @@ import {
   CardContent,
   Avatar,
   Alert,
+  Tooltip,
 } from "@mui/material";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
@@ -51,9 +52,18 @@ import {
   X,
 } from "lucide-react";
 import hrmsEmployeeService from "../../../lib/hrmsEmployeeService";
+import hrmsDepartmentService from "../../../lib/hrmsDepartmentService";
+import { UserAccountService } from "../../../lib/userAccountService";
+import { DropdownService } from "../../../lib/dropdownService";
+
+const userService = new UserAccountService();
+const dropdownService = new DropdownService();
 
 export default function HrmsEmployeesPage() {
   const [employees, setEmployees] = useState([]);
+  const [departments, setDepartments] = useState([]);
+  const [positions, setPositions] = useState([]);
+  const [branches, setBranches] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
@@ -120,6 +130,9 @@ export default function HrmsEmployeesPage() {
     motherName: "",
     sex: "MALE",
     dateOfBirth: "",
+    departmentId: "",
+    positionId: "",
+    branchId: "",
     tinNumber: "",
     pensionNumber: "",
     faydaNationalId: "",
@@ -138,9 +151,42 @@ export default function HrmsEmployeesPage() {
   };
 
   const [form, setForm] = useState(initialForm);
+  const [userAccountMap, setUserAccountMap] = useState(new Map());
+
+  const loadUserAccounts = async () => {
+    try {
+      const users = await userService.getAllUsers();
+      const map = new Map();
+      (users || []).forEach((u) => {
+        if (u.employeeId) {
+          map.set(u.employeeId, u);
+        }
+      });
+      setUserAccountMap(map);
+    } catch (err) {
+      console.error("Failed to load user accounts for HRMS mapping:", err);
+    }
+  };
+
+  const loadLookups = async () => {
+    try {
+      const [deptData, posData, branchData] = await Promise.all([
+        hrmsDepartmentService.getAllDepartments().catch(() => []),
+        hrmsDepartmentService.getAllPositions().catch(() => []),
+        dropdownService.getActiveBranches().catch(() => []),
+      ]);
+      setDepartments(Array.isArray(deptData) ? deptData : []);
+      setPositions(Array.isArray(posData) ? posData : []);
+      setBranches(Array.isArray(branchData) ? branchData : []);
+    } catch (e) {
+      console.error("Failed to load HRMS lookups:", e);
+    }
+  };
 
   useEffect(() => {
     loadEmployees();
+    loadUserAccounts();
+    loadLookups();
   }, []);
 
   const loadEmployees = async (query = "") => {
@@ -170,6 +216,9 @@ export default function HrmsEmployeesPage() {
         motherName: employee.motherName || "",
         sex: employee.sex || "MALE",
         dateOfBirth: employee.dateOfBirth || "",
+        departmentId: employee.department?.id ? String(employee.department.id) : "",
+        positionId: employee.position?.id ? String(employee.position.id) : "",
+        branchId: employee.branch?.id ? String(employee.branch.id) : "",
         tinNumber: employee.tinNumber || "",
         pensionNumber: employee.pensionNumber || "",
         faydaNationalId: employee.faydaNationalId || "",
@@ -201,11 +250,21 @@ export default function HrmsEmployeesPage() {
 
     setSaving(true);
     try {
+      const payload = {
+        ...form,
+        department: form.departmentId ? { id: Number(form.departmentId) } : null,
+        position: form.positionId ? { id: Number(form.positionId) } : null,
+        branch: form.branchId ? { id: Number(form.branchId) } : null,
+        departmentId: form.departmentId ? Number(form.departmentId) : null,
+        positionId: form.positionId ? Number(form.positionId) : null,
+        branchId: form.branchId ? Number(form.branchId) : null,
+      };
+
       if (editingId) {
-        await hrmsEmployeeService.updateEmployee(editingId, form);
+        await hrmsEmployeeService.updateEmployee(editingId, payload);
         toast.success("Employee updated successfully!");
       } else {
-        await hrmsEmployeeService.createEmployee(form);
+        await hrmsEmployeeService.createEmployee(payload);
         toast.success("Employee onboarded successfully!");
       }
       setModalOpen(false);
@@ -478,6 +537,7 @@ export default function HrmsEmployeesPage() {
             <TableRow>
               <TableCell sx={{ color: "white", fontWeight: "bold" }}>ID</TableCell>
               <TableCell sx={{ color: "white", fontWeight: "bold" }}>ሙሉ ስም (Full Name)</TableCell>
+              <TableCell sx={{ color: "white", fontWeight: "bold" }}>System User</TableCell>
               <TableCell sx={{ color: "white", fontWeight: "bold" }}>Duty Station</TableCell>
               <TableCell sx={{ color: "white", fontWeight: "bold" }}>Basic Salary</TableCell>
               <TableCell sx={{ color: "white", fontWeight: "bold" }}>Primary Bank (CBE)</TableCell>
@@ -491,13 +551,13 @@ export default function HrmsEmployeesPage() {
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={8} align="center" sx={{ py: 4 }}>
+                <TableCell colSpan={9} align="center" sx={{ py: 4 }}>
                   <CircularProgress size={32} />
                 </TableCell>
               </TableRow>
             ) : employees.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} align="center" sx={{ py: 4, color: "text.secondary" }}>
+                <TableCell colSpan={9} align="center" sx={{ py: 4, color: "text.secondary" }}>
                   No employee records found.
                 </TableCell>
               </TableRow>
@@ -512,8 +572,44 @@ export default function HrmsEmployeesPage() {
                     <Typography variant="caption" sx={{ fontFamily: "Nyala, serif", color: "text.secondary" }}>
                       {emp.fullNameAm}
                     </Typography>
+                    {(emp.department?.departmentName || emp.position?.positionTitle) && (
+                      <Typography
+                        variant="caption"
+                        sx={{ display: "block", color: "primary.main", fontWeight: 600, fontSize: "0.72rem", mt: 0.3 }}
+                      >
+                        {[emp.department?.departmentName, emp.position?.positionTitle].filter(Boolean).join(" • ")}
+                      </Typography>
+                    )}
                   </TableCell>
-                  <TableCell>{emp.dutyStation || "Head Office"}</TableCell>
+                  <TableCell>
+                    {userAccountMap.has(emp.id) ? (
+                      <Tooltip title={`Role: ${userAccountMap.get(emp.id).roleName || "N/A"} • Branch: ${userAccountMap.get(emp.id).branchName || "N/A"}`}>
+                        <Chip
+                          size="small"
+                          color="info"
+                          variant="outlined"
+                          label={`@${userAccountMap.get(emp.id).userName}`}
+                          sx={{ fontWeight: 600, fontSize: "0.72rem", height: 22 }}
+                        />
+                      </Tooltip>
+                    ) : (
+                      <Chip
+                        size="small"
+                        label="No Account"
+                        sx={{ bgcolor: "grey.100", color: "text.secondary", fontSize: "0.7rem", height: 20 }}
+                      />
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <Typography variant="body2" sx={{ fontSize: "0.85rem" }}>
+                      {emp.branch?.branchDescription || emp.dutyStation || "Head Office"}
+                    </Typography>
+                    {emp.employmentType && (
+                      <Typography variant="caption" color="text.secondary" sx={{ display: "block", fontSize: "0.7rem" }}>
+                        {emp.employmentType}
+                      </Typography>
+                    )}
+                  </TableCell>
                   <TableCell sx={{ fontWeight: "bold", color: "#1565c0" }}>
                     ETB {Number(emp.currentSalary || 0).toLocaleString()}
                   </TableCell>
@@ -596,9 +692,11 @@ export default function HrmsEmployeesPage() {
                     <Typography variant="h6" sx={{ fontWeight: "bold", lineHeight: 1.2 }}>
                       {selectedEmp.fullName} — {selectedEmp.fullNameAm}
                     </Typography>
-                    <Typography variant="caption" sx={{ color: "#bbdefb", display: "flex", gap: 2 }}>
+                    <Typography variant="caption" sx={{ color: "#bbdefb", display: "flex", gap: 2, flexWrap: "wrap", mt: 0.5 }}>
                       <span>ID: <strong>{selectedEmp.employeeId}</strong></span>
-                      <span>Duty Station: <strong>{selectedEmp.dutyStation || "Head Office"}</strong></span>
+                      <span>Department: <strong>{selectedEmp.department?.departmentName || "Unassigned"}</strong></span>
+                      <span>Position: <strong>{selectedEmp.position?.positionTitle || "Unassigned"}</strong></span>
+                      <span>Station: <strong>{selectedEmp.branch?.branchDescription || selectedEmp.dutyStation || "Head Office"}</strong></span>
                       <span>Biometric PIN: <strong>{selectedEmp.biometricPin || "N/A"}</strong></span>
                     </Typography>
                   </Box>
@@ -1313,6 +1411,56 @@ export default function HrmsEmployeesPage() {
                         </Grid>
                       </Paper>
                     </Grid>
+
+                    <Grid item xs={12}>
+                      <Paper
+                        variant="outlined"
+                        sx={{
+                          p: 2.5,
+                          borderRadius: 2,
+                          bgcolor: userAccountMap.has(selectedEmp.id) ? "rgba(25, 118, 210, 0.04)" : "grey.50",
+                          borderColor: userAccountMap.has(selectedEmp.id) ? "primary.light" : "grey.300",
+                        }}
+                      >
+                        <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 1 }}>
+                          <Typography variant="subtitle1" sx={{ fontWeight: "bold", color: "#0d47a1" }}>
+                            System User Account
+                          </Typography>
+                          <Chip
+                            label={userAccountMap.has(selectedEmp.id) ? "Account Connected" : "No User Account"}
+                            color={userAccountMap.has(selectedEmp.id) ? "primary" : "default"}
+                            size="small"
+                            sx={{ fontWeight: "bold" }}
+                          />
+                        </Box>
+                        {userAccountMap.has(selectedEmp.id) ? (
+                          <Grid container spacing={2}>
+                            <Grid item xs={12} sm={4}>
+                              <Typography variant="caption" color="text.secondary">Username</Typography>
+                              <Typography variant="body2" sx={{ fontWeight: "bold", color: "primary.main" }}>
+                                @{userAccountMap.get(selectedEmp.id).userName}
+                              </Typography>
+                            </Grid>
+                            <Grid item xs={12} sm={4}>
+                              <Typography variant="caption" color="text.secondary">Assigned Role</Typography>
+                              <Typography variant="body2" sx={{ fontWeight: "bold" }}>
+                                {userAccountMap.get(selectedEmp.id).roleName || "N/A"}
+                              </Typography>
+                            </Grid>
+                            <Grid item xs={12} sm={4}>
+                              <Typography variant="caption" color="text.secondary">Assigned Branch</Typography>
+                              <Typography variant="body2" sx={{ fontWeight: "bold" }}>
+                                {userAccountMap.get(selectedEmp.id).branchName || "N/A"}
+                              </Typography>
+                            </Grid>
+                          </Grid>
+                        ) : (
+                          <Typography variant="body2" color="text.secondary">
+                            This staff member does not have a login account yet. You can create one or link an existing account in User Management.
+                          </Typography>
+                        )}
+                      </Paper>
+                    </Grid>
                   </Grid>
                 </Box>
               )}
@@ -1426,16 +1574,98 @@ export default function HrmsEmployeesPage() {
               />
             </Grid>
 
-            <Grid item xs={12} sm={4}>
-              <TextField
-                fullWidth
-                size="small"
-                type="number"
-                label="Basic Salary (መሰረታዊ ደመወዝ ብር)*"
-                value={form.currentSalary}
-                onChange={(e) => setForm({ ...form, currentSalary: Number(e.target.value) })}
-              />
+            {/* Organizational Placement & Assignment */}
+            <Grid item xs={12}>
+              <Typography variant="subtitle2" sx={{ fontWeight: "bold", color: "#0d47a1", mt: 1 }}>
+                Organizational Placement & Role Assignment (የሥራ ክፍልና ኃላፊነት ምደባ)
+              </Typography>
             </Grid>
+
+            {/* Department Selection */}
+            <Grid item xs={12} sm={4}>
+              <FormControl fullWidth size="small">
+                <InputLabel>የሥራ ክፍል / መምሪያ (Department)</InputLabel>
+                <Select
+                  value={form.departmentId}
+                  label="የሥራ ክፍል / መምሪያ (Department)"
+                  onChange={(e) => {
+                    const newDeptId = e.target.value;
+                    setForm({ ...form, departmentId: newDeptId });
+                  }}
+                >
+                  <MenuItem value="">-- Select Department --</MenuItem>
+                  {departments.map((dept) => (
+                    <MenuItem key={dept.id} value={String(dept.id)}>
+                      {dept.departmentName} {dept.departmentNameAm ? `(${dept.departmentNameAm})` : ""}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
+
+            {/* Position Selection */}
+            <Grid item xs={12} sm={4}>
+              <FormControl fullWidth size="small">
+                <InputLabel>የሥራ መደብ (Position Title)</InputLabel>
+                <Select
+                  value={form.positionId}
+                  label="የሥራ መደብ (Position Title)"
+                  onChange={(e) => {
+                    const newPosId = e.target.value;
+                    const selectedPos = positions.find((p) => String(p.id) === String(newPosId));
+                    if (selectedPos?.department?.id && !form.departmentId) {
+                      setForm({ ...form, positionId: newPosId, departmentId: String(selectedPos.department.id) });
+                    } else {
+                      setForm({ ...form, positionId: newPosId });
+                    }
+                  }}
+                >
+                  <MenuItem value="">-- Select Position --</MenuItem>
+                  {positions
+                    .filter((pos) => !form.departmentId || !pos.department?.id || String(pos.department.id) === String(form.departmentId))
+                    .map((pos) => (
+                      <MenuItem key={pos.id} value={String(pos.id)}>
+                        {pos.positionTitle} {pos.positionTitleAm ? `(${pos.positionTitleAm})` : ""}
+                      </MenuItem>
+                    ))}
+                </Select>
+              </FormControl>
+            </Grid>
+
+            {/* Branch Selection */}
+            <Grid item xs={12} sm={4}>
+              <FormControl fullWidth size="small">
+                <InputLabel>ቅርንጫፍ / ጣቢያ (Branch)</InputLabel>
+                <Select
+                  value={form.branchId}
+                  label="ቅርንጫፍ / ጣቢያ (Branch)"
+                  onChange={(e) => setForm({ ...form, branchId: e.target.value })}
+                >
+                  <MenuItem value="">-- Select Branch --</MenuItem>
+                  {branches.map((b) => (
+                    <MenuItem key={b.id} value={String(b.id)}>
+                      {b.branchDescription || b.name} ({b.branchCode})
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
+
+            <Grid item xs={12} sm={4}>
+              <FormControl fullWidth size="small">
+                <InputLabel>የቅጥር ዓይነት (Employment Type)</InputLabel>
+                <Select
+                  value={form.employmentType}
+                  label="የቅጥር ዓይነት (Employment Type)"
+                  onChange={(e) => setForm({ ...form, employmentType: e.target.value })}
+                >
+                  <MenuItem value="PERMANENT">PERMANENT (ቋሚ)</MenuItem>
+                  <MenuItem value="CONTRACT">CONTRACT (ኮንትራት)</MenuItem>
+                  <MenuItem value="CASUAL_DAILY_LABOR">CASUAL / DAILY LABOR (የቀን ሠራተኛ)</MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
+
             <Grid item xs={12} sm={4}>
               <TextField
                 fullWidth
@@ -1445,6 +1675,7 @@ export default function HrmsEmployeesPage() {
                 onChange={(e) => setForm({ ...form, dutyStation: e.target.value })}
               />
             </Grid>
+
             <Grid item xs={12} sm={4}>
               <FormControl fullWidth size="small">
                 <InputLabel>Employment Status</InputLabel>
@@ -1459,6 +1690,17 @@ export default function HrmsEmployeesPage() {
                   <MenuItem value="SUSPENDED">SUSPENDED</MenuItem>
                 </Select>
               </FormControl>
+            </Grid>
+
+            <Grid item xs={12} sm={4}>
+              <TextField
+                fullWidth
+                size="small"
+                type="number"
+                label="Basic Salary (መሰረታዊ ደመወዝ ብር)*"
+                value={form.currentSalary}
+                onChange={(e) => setForm({ ...form, currentSalary: Number(e.target.value) })}
+              />
             </Grid>
 
             {/* Banking Section */}

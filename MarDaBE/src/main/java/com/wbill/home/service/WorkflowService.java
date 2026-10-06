@@ -9,8 +9,14 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+
+import com.wbill.home.model.hrms.HrmsDepartment;
+import com.wbill.home.model.hrms.HrmsEmployee;
+import com.wbill.home.repository.hrms.HrmsDepartmentRepository;
+import com.wbill.home.repository.hrms.HrmsEmployeeRepository;
 
 @Service
 public class WorkflowService {
@@ -20,6 +26,9 @@ public class WorkflowService {
     @Autowired private WfWorkflowInstanceRepository instanceRepo;
     @Autowired private WfWorkflowActionRepository actionRepo;
     @Autowired private UserAccountRoleRepository userAccountRoleRepo;
+    @Autowired(required = false) private UserAccountRepository userAccountRepo;
+    @Autowired(required = false) private HrmsEmployeeRepository employeeRepository;
+    @Autowired(required = false) private HrmsDepartmentRepository departmentRepository;
     @Autowired(required = false) private InvPurchaseRequisitionRepository prRepository;
     @Autowired(required = false) private InvPurchaseOrderRepository poRepository;
     @Autowired(required = false) private InvStockTransferRepository transferRepository;
@@ -121,7 +130,7 @@ public class WorkflowService {
                 step1.setStepOrder(1);
                 step1.setStepName("Dept. Manager Approval");
                 step1.setStepNameAm("የክፍል ኃላፊ ማረጋገጫ");
-                step1.setApproverRoleCode("M_TECHNICAL_MANAGER");
+                step1.setApproverRoleCode("DEPT_MANAGER");
                 step1.setIsRequired(true);
                 step1.setSlaHours(48);
                 step1.setCanReject(true);
@@ -340,8 +349,8 @@ public class WorkflowService {
             throw new IllegalArgumentException("No current step to approve");
         }
 
-        // Validate user has the required role
-        validateUserRole(username, currentStep.getApproverRoleCode());
+        // Validate user has the required role or is department manager
+        validateUserRole(username, currentStep.getApproverRoleCode(), instance);
 
         // Record the action
         WfWorkflowAction action = new WfWorkflowAction();
@@ -411,8 +420,8 @@ public class WorkflowService {
             throw new IllegalArgumentException("Current step does not allow rejection");
         }
 
-        // Validate user has the required role
-        validateUserRole(username, currentStep.getApproverRoleCode());
+        // Validate user has the required role or is department manager
+        validateUserRole(username, currentStep.getApproverRoleCode(), instance);
 
         // Record the rejection
         WfWorkflowAction action = new WfWorkflowAction();
@@ -496,41 +505,150 @@ public class WorkflowService {
         return true;
     }
 
-    @Autowired private UserAccountRepository userAccountRepo;
-
     /**
-     * Validates that the user has the required role (via primary role or additional roles).
+     * Validates that the user has the required role (via primary role or additional roles),
+     * or is the designated Department Manager if the step is dynamic DEPT_MANAGER.
      */
-    private void validateUserRole(String username, String requiredRoleCode) {
-        // Check additional roles from junction table
-        List<String> extraRoles = userAccountRoleRepo.findRoleCodesByUsername(username);
+    private void validateUserRole(String username, String requiredRoleCode, WfWorkflowInstance instance) {
+        if ("system".equalsIgnoreCase(username)) {
+            return;
+        }
 
-        // Also check primary role from user_account.role_id
+        List<String> extraRoles = userAccountRoleRepo != null ? userAccountRoleRepo.findRoleCodesByUsername(username) : Collections.emptyList();
         java.util.Set<String> allRoles = new java.util.HashSet<>(extraRoles);
-        userAccountRepo.findByUserNameAndStatusAndDeleted(username, "active", "active")
-            .ifPresent(ua -> {
-                if (ua.getUserRole() != null && ua.getUserRole().getRoleCode() != null) {
-                    allRoles.add(ua.getUserRole().getRoleCode());
-                }
-            });
+        if (userAccountRepo != null) {
+            userAccountRepo.findByUserNameAndStatusAndDeleted(username, "active", "active")
+                .ifPresent(ua -> {
+                    if (ua.getUserRole() != null && ua.getUserRole().getRoleCode() != null) {
+                        allRoles.add(ua.getUserRole().getRoleCode());
+                    }
+                });
+        }
 
         // Admin bypass
         boolean isAdmin = allRoles.stream().anyMatch(r ->
             r.equalsIgnoreCase("billzgjt") ||
             r.equalsIgnoreCase("systemadmin") ||
+            r.equalsIgnoreCase("admin") ||
             r.equalsIgnoreCase("ROLE_ADMIN")
         );
         if (isAdmin) {
             return; // authorized
         }
 
-        // Check if user has the required role (case-insensitive)
+        // Dynamic Department Manager step check
+        boolean isDeptStep = "DEPT_MANAGER".equalsIgnoreCase(requiredRoleCode) ||
+                             "DEPARTMENT_MANAGER".equalsIgnoreCase(requiredRoleCode) ||
+                             (instance != null && instance.getCurrentStep() != null &&
+                              instance.getCurrentStep().getStepName() != null &&
+                              instance.getCurrentStep().getStepName().toLowerCase().contains("dept"));
+
+        if (isDeptStep && instance != null && "PURCHASE_REQUISITION".equalsIgnoreCase(instance.getDocumentType())) {
+            if (prRepository != null) {
+                Optional<InvPurchaseRequisition> prOpt = prRepository.findById(instance.getDocumentId());
+                if (prOpt.isPresent()) {
+                    InvPurchaseRequisition pr = prOpt.get();
+                    if (pr.getDepartment() != null) {
+                        if (isUserDepartmentManager(username, pr.getDepartment())) {
+                            return; // authorized as department manager!
+                        }
+                        throw new IllegalArgumentException("Only the Department Manager for '" +
+                            pr.getDepartment().getDepartmentName() + "' can approve or reject this requisition.");
+                    }
+                }
+            }
+        }
+
+        // Standard role check (case-insensitive)
         boolean hasRole = allRoles.stream().anyMatch(r -> r.equalsIgnoreCase(requiredRoleCode));
         if (hasRole) {
             return; // authorized
         }
 
         throw new IllegalArgumentException("User '" + username + "' does not have role '" + requiredRoleCode + "' required for this step");
+    }
+
+    private boolean isUserDepartmentManager(String username, HrmsDepartment department) {
+        if (department == null) return false;
+
+        // 1. Direct manager check: department.managerEmployeeId
+        if (department.getManagerEmployeeId() != null && employeeRepository != null) {
+            Optional<HrmsEmployee> mgrOpt = employeeRepository.findById(department.getManagerEmployeeId());
+            if (mgrOpt.isPresent()) {
+                HrmsEmployee mgr = mgrOpt.get();
+                if (username.equalsIgnoreCase(mgr.getEmployeeId())) return true;
+                if (userAccountRepo != null) {
+                    Optional<UserAccount> uaOpt = userAccountRepo.findByUserName(username);
+                    if (uaOpt.isPresent()) {
+                        UserAccount ua = uaOpt.get();
+                        // Direct foreign key link from User Account to HRMS Employee
+                        if (ua.getEmployee() != null && ua.getEmployee().getId() == mgr.getId()) {
+                            return true;
+                        }
+                        String fullName = ((ua.getFirstName() != null ? ua.getFirstName() : "") + " " +
+                                          (ua.getLastName() != null ? ua.getLastName() : "")).trim();
+                        if (!fullName.isEmpty() && mgr.getFullName() != null &&
+                            mgr.getFullName().trim().equalsIgnoreCase(fullName)) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Check if the user is an employee in this department with a manager position
+        if (employeeRepository != null) {
+            Optional<HrmsEmployee> userEmpOpt = Optional.empty();
+            if (userAccountRepo != null) {
+                Optional<UserAccount> uaOpt = userAccountRepo.findByUserName(username);
+                if (uaOpt.isPresent() && uaOpt.get().getEmployee() != null) {
+                    userEmpOpt = Optional.of(uaOpt.get().getEmployee());
+                }
+            }
+            if (!userEmpOpt.isPresent()) {
+                userEmpOpt = employeeRepository.findByEmployeeIdAndDeletedFalse(username);
+            }
+            if (!userEmpOpt.isPresent() && userAccountRepo != null) {
+                Optional<UserAccount> uaOpt = userAccountRepo.findByUserName(username);
+                if (uaOpt.isPresent()) {
+                    UserAccount ua = uaOpt.get();
+                    String fullName = ((ua.getFirstName() != null ? ua.getFirstName() : "") + " " +
+                                      (ua.getLastName() != null ? ua.getLastName() : "")).trim();
+                    if (!fullName.isEmpty()) {
+                        List<HrmsEmployee> matchingEmps = employeeRepository.searchEmployees(fullName);
+                        if (!matchingEmps.isEmpty()) {
+                            userEmpOpt = Optional.of(matchingEmps.get(0));
+                        }
+                    }
+                }
+            }
+
+            if (userEmpOpt.isPresent()) {
+                HrmsEmployee emp = userEmpOpt.get();
+                if (emp.getDepartment() != null && emp.getDepartment().getId() == department.getId()) {
+                    if (emp.getPosition() != null && emp.getPosition().getPositionTitle() != null) {
+                        String title = emp.getPosition().getPositionTitle().toLowerCase();
+                        if (title.contains("manager") || title.contains("head") || title.contains("director") ||
+                            title.contains("chief") || title.contains("ኃላፊ") || title.contains("መሪ") || title.contains("አስተባባሪ")) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. Fallback: Role codes like M_TECHNICAL_MANAGER, M_BRANCH_MANAGER, DEPT_MANAGER
+        if (userAccountRoleRepo != null) {
+            List<String> roles = userAccountRoleRepo.findRoleCodesByUsername(username);
+            if (roles.stream().anyMatch(r -> {
+                String lr = r.toLowerCase();
+                return lr.contains("m_technical_manager") || lr.contains("m_branch_manager") || lr.contains("dept_manager");
+            })) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

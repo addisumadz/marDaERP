@@ -4,6 +4,7 @@ import java.io.Serializable;
 import java.util.Date;
 import jakarta.persistence.*;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.wbill.home.model.hrms.HrmsEmployee;
 
 @Entity
 @Table(name = "user_account")
@@ -58,6 +59,11 @@ public class UserAccount implements Serializable {
 	@ManyToOne
 	@JoinColumn(name = "role_id", nullable = false)
 	private UserRole userRole; // Assuming 'UserRole' is the entity for the 'user_role' table
+
+	@ManyToOne(fetch = FetchType.EAGER)
+	@JoinColumn(name = "employee_id")
+	@JsonIgnoreProperties({"hibernateLazyInitializer", "handler", "userAccount"})
+	private HrmsEmployee employee;
 
 	@Column(name = "has_boss", nullable = false)
 	private boolean hasBoss;
@@ -333,5 +339,13 @@ public class UserAccount implements Serializable {
 
 	public void setIsAllowPreviousReading(boolean isAllowPreviousReading) {
 		this.isAllowPreviousReading = isAllowPreviousReading;
+	}
+
+	public HrmsEmployee getEmployee() {
+		return this.employee;
+	}
+
+	public void setEmployee(HrmsEmployee employee) {
+		this.employee = employee;
 	}
 }

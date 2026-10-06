@@ -9,4 +9,5 @@ public class UserAccountUpdateDTO {
     public Integer roleId;
     public String status;   // active | deleted
     public String deleted;  // active | deleted (soft delete flag)
+    public Integer employeeId;
 }

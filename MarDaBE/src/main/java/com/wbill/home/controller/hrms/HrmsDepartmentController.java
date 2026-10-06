@@ -35,6 +35,20 @@ public class HrmsDepartmentController {
         return ResponseEntity.ok(departmentRepository.save(dept));
     }
 
+    @PutMapping("/{id}")
+    public ResponseEntity<HrmsDepartment> updateDepartment(@PathVariable int id, @RequestBody HrmsDepartment dept) {
+        return departmentRepository.findById(id).map(existing -> {
+            if (dept.getDepartmentCode() != null) existing.setDepartmentCode(dept.getDepartmentCode());
+            if (dept.getDepartmentName() != null) existing.setDepartmentName(dept.getDepartmentName());
+            if (dept.getDepartmentNameAm() != null) existing.setDepartmentNameAm(dept.getDepartmentNameAm());
+            if (dept.getCostCenterCode() != null) existing.setCostCenterCode(dept.getCostCenterCode());
+            existing.setManagerEmployeeId(dept.getManagerEmployeeId());
+            existing.setActive(dept.isActive());
+            existing.setUpdatedAt(java.time.LocalDateTime.now());
+            return ResponseEntity.ok(departmentRepository.save(existing));
+        }).orElse(ResponseEntity.notFound().build());
+    }
+
     @GetMapping("/positions")
     public ResponseEntity<List<HrmsPosition>> getAllPositions() {
         return ResponseEntity.ok(positionRepository.findByActiveTrueOrderByPositionTitleAsc());

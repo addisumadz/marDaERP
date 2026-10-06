@@ -9,4 +9,5 @@ public class UserAccountCreateDTO {
     public String sex;
     public Integer branchId;
     public Integer roleId;
+    public Integer employeeId;
 }

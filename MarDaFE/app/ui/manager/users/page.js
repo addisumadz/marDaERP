@@ -11,6 +11,12 @@ import {
   Tooltip,
   IconButton,
   TextField,
+  Chip,
+  Typography,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
 } from "@mui/material";
 import Autocomplete from "@mui/material/Autocomplete";
 import { QueryClient, QueryClientProvider, useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -19,6 +25,7 @@ import DeleteIcon from "@mui/icons-material/Delete";
 import AddIcon from "@mui/icons-material/Add";
 import VisibilityIcon from "@mui/icons-material/Visibility";
 import VpnKeyIcon from "@mui/icons-material/VpnKey";
+import LinkIcon from "@mui/icons-material/Link";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 
@@ -30,6 +37,7 @@ import ViewUserModal from "./ViewUserModal";
 import UserFormModal from "./UserFormModal";
 import UserStatusModal from "./UserStatusModal";
 import ChangePasswordModal from "./ChangePasswordModal";
+import LinkEmployeeModal from "./LinkEmployeeModal";
 
 const userService = new UserAccountService();
 const dropdownService = new DropdownService();
@@ -40,11 +48,13 @@ const UsersList = () => {
   const [rowSelection, setRowSelection] = useState({});
   const [roleFilter, setRoleFilter] = useState(null);
   const [branchFilter, setBranchFilter] = useState(null);
+  const [employeeFilter, setEmployeeFilter] = useState("ALL"); // ALL, LINKED, NOT_LINKED
 
   // Modals state
   const [viewId, setViewId] = useState(null);
   const [isCreateOpen, setCreateOpen] = useState(false);
   const [editId, setEditId] = useState(null);
+  const [linkUser, setLinkUser] = useState(null);
   const [statusModalOpen, setStatusModalOpen] = useState(false);
   const [statusModalMode, setStatusModalMode] = useState(null);
   const [statusUserId, setStatusUserId] = useState(null);
@@ -136,8 +146,13 @@ const UsersList = () => {
     if (branchFilter?.id) {
       arr = arr.filter((u) => String(u.branchId) === String(branchFilter.id));
     }
+    if (employeeFilter === "LINKED") {
+      arr = arr.filter((u) => !!u.employeeId);
+    } else if (employeeFilter === "NOT_LINKED") {
+      arr = arr.filter((u) => !u.employeeId);
+    }
     return arr;
-  }, [allUsers, activeTab, roleFilter, branchFilter]);
+  }, [allUsers, activeTab, roleFilter, branchFilter, employeeFilter]);
 
   const columns = useMemo(() => [
     { header: "#", size: 20, Cell: ({ row, table }) => {
@@ -146,6 +161,45 @@ const UsersList = () => {
     }},
     { accessorKey: "userName", header: "Username" },
     { accessorKey: "fullName", header: "Full Name" },
+    {
+      accessorKey: "employeeFullName",
+      header: "HRMS Employee",
+      Cell: ({ row }) => {
+        const u = row.original;
+        if (u.employeeId) {
+          return (
+            <Tooltip title={`Dept: ${u.departmentName || "None"} | Pos: ${u.positionTitle || "None"}`}>
+              <Box sx={{ display: "flex", alignItems: "center", gap: 0.8 }}>
+                <Chip
+                  size="small"
+                  color="primary"
+                  variant="outlined"
+                  label={u.employeeCode || `EMP #${u.employeeId}`}
+                  sx={{ fontWeight: 600, height: 22, fontSize: "0.75rem" }}
+                />
+                <Box>
+                  <Typography variant="body2" sx={{ fontWeight: 500, lineHeight: 1.2 }}>
+                    {u.employeeFullName}
+                  </Typography>
+                  {(u.departmentName || u.positionTitle) && (
+                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.7rem", display: "block" }}>
+                      {[u.departmentName, u.positionTitle].filter(Boolean).join(" • ")}
+                    </Typography>
+                  )}
+                </Box>
+              </Box>
+            </Tooltip>
+          );
+        }
+        return (
+          <Chip
+            size="small"
+            label="Standalone"
+            sx={{ bgcolor: "grey.100", color: "text.secondary", fontSize: "0.72rem", height: 20 }}
+          />
+        );
+      },
+    },
     { accessorKey: "roleName", header: "Role" },
     { accessorKey: "branchName", header: "Branch" },
     { 
@@ -180,6 +234,14 @@ const UsersList = () => {
             <EditIcon />
           </IconButton>
         </Tooltip>
+        <Tooltip title={row.original.employeeId ? "Change / Unlink HRMS Employee" : "Link HRMS Employee"}>
+          <IconButton
+            color={row.original.employeeId ? "primary" : "default"}
+            onClick={() => setLinkUser(row.original)}
+          >
+            <LinkIcon />
+          </IconButton>
+        </Tooltip>
         <Tooltip title="Change Password">
           <IconButton color="secondary" onClick={() => setPasswordUserId(row.original.id)}>
             <VpnKeyIcon />
@@ -203,7 +265,7 @@ const UsersList = () => {
     renderTopToolbarCustomActions: () => (
       <Box sx={{ display: "flex", gap: "1rem", p: "4px", alignItems: "center", flexWrap: "wrap" }}>
         <Autocomplete
-          sx={{ minWidth: 220 }}
+          sx={{ minWidth: 200 }}
           options={roles || []}
           getOptionLabel={(option) => option?.roleName || option?.name || String(option?.id || "")}
           isOptionEqualToValue={(opt, val) => opt?.id === val?.id}
@@ -216,7 +278,7 @@ const UsersList = () => {
           clearOnEscape
         />
         <Autocomplete
-          sx={{ minWidth: 220 }}
+          sx={{ minWidth: 200 }}
           options={branches || []}
           getOptionLabel={(option) => option?.branchDescription || option?.name || String(option?.id || "")}
           isOptionEqualToValue={(opt, val) => opt?.id === val?.id}
@@ -228,10 +290,30 @@ const UsersList = () => {
           renderInput={(params) => <TextField {...params} label="Filter by Branch" placeholder="Select branch" />}
           clearOnEscape
         />
+        <FormControl size="small" sx={{ minWidth: 170 }}>
+          <InputLabel>HRMS Link</InputLabel>
+          <Select
+            label="HRMS Link"
+            value={employeeFilter}
+            onChange={(e) => {
+              setEmployeeFilter(e.target.value);
+              setPagination((p) => ({ ...p, pageIndex: 0 }));
+            }}
+          >
+            <MenuItem value="ALL">All Accounts</MenuItem>
+            <MenuItem value="LINKED">Linked to HRMS</MenuItem>
+            <MenuItem value="NOT_LINKED">Standalone (No Link)</MenuItem>
+          </Select>
+        </FormControl>
         <Button
           variant="text"
-          onClick={() => { setRoleFilter(null); setBranchFilter(null); setPagination((p) => ({ ...p, pageIndex: 0 })); }}
-          disabled={!roleFilter && !branchFilter}
+          onClick={() => {
+            setRoleFilter(null);
+            setBranchFilter(null);
+            setEmployeeFilter("ALL");
+            setPagination((p) => ({ ...p, pageIndex: 0 }));
+          }}
+          disabled={!roleFilter && !branchFilter && employeeFilter === "ALL"}
         >
           Clear Filters
         </Button>
@@ -285,7 +367,17 @@ const UsersList = () => {
         userId={editId}
         branches={branches}
         roles={roles}
+        allUsers={allUsers}
         isSubmitting={isCreating || isUpdating}
+      />
+
+      {/* Quick Link Employee Modal */}
+      <LinkEmployeeModal
+        open={!!linkUser}
+        onClose={() => setLinkUser(null)}
+        user={linkUser}
+        allUsers={allUsers}
+        onSuccess={() => queryClient.invalidateQueries(["users-all"])}
       />
 
       {/* Status Modal */}

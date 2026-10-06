@@ -7,9 +7,11 @@ import com.wbill.home.dto.UserAccountUpdateDTO;
 import com.wbill.home.model.Branch;
 import com.wbill.home.model.UserAccount;
 import com.wbill.home.model.UserRole;
+import com.wbill.home.model.hrms.HrmsEmployee;
 import com.wbill.home.repository.BranchRepository;
 import com.wbill.home.repository.UserAccountRepository;
 import com.wbill.home.repository.UserRoleRepository;
+import com.wbill.home.repository.hrms.HrmsEmployeeRepository;
 
 import jakarta.persistence.EntityNotFoundException;
 import org.springframework.data.domain.Page;
@@ -30,15 +32,18 @@ public class UserAccountService {
   private final UserAccountRepository repo;
   private final BranchRepository branchRepository;
   private final UserRoleRepository userRoleRepository;
+  private final HrmsEmployeeRepository hrmsEmployeeRepository;
   private final PasswordEncoder passwordEncoder;
 
   public UserAccountService(UserAccountRepository repo,
                             BranchRepository branchRepository,
                             UserRoleRepository userRoleRepository,
+                            HrmsEmployeeRepository hrmsEmployeeRepository,
                             PasswordEncoder passwordEncoder) {
     this.repo = repo;
     this.branchRepository = branchRepository;
     this.userRoleRepository = userRoleRepository;
+    this.hrmsEmployeeRepository = hrmsEmployeeRepository;
     this.passwordEncoder = passwordEncoder;
   }
 
@@ -66,9 +71,23 @@ public class UserAccountService {
       throw new IllegalArgumentException("Username already exists: " + dto.userName);
     }
 
-    Branch branch = dto.branchId != null
-        ? branchRepository.findById(dto.branchId).orElseThrow(() -> new EntityNotFoundException("Branch not found: " + dto.branchId))
-        : null;
+    HrmsEmployee employee = null;
+    if (dto.employeeId != null && dto.employeeId > 0) {
+      if (repo.existsByEmployeeId(dto.employeeId)) {
+        throw new IllegalArgumentException("This employee is already linked to another user account");
+      }
+      employee = hrmsEmployeeRepository.findById(dto.employeeId)
+          .orElseThrow(() -> new EntityNotFoundException("Employee not found: " + dto.employeeId));
+    }
+
+    Branch branch = null;
+    if (dto.branchId != null) {
+      branch = branchRepository.findById(dto.branchId)
+          .orElseThrow(() -> new EntityNotFoundException("Branch not found: " + dto.branchId));
+    } else if (employee != null && employee.getBranch() != null) {
+      branch = employee.getBranch();
+    }
+
     UserRole role = dto.roleId != null
         ? userRoleRepository.findById(dto.roleId).orElseThrow(() -> new EntityNotFoundException("Role not found: " + dto.roleId))
         : null;
@@ -82,6 +101,7 @@ public class UserAccountService {
     u.setSex(dto.sex);
     u.setBranch(branch);
     u.setUserRole(role);
+    u.setEmployee(employee);
     // Defaults
     u.setStatus("active");
     u.setDeleted("active");
@@ -108,6 +128,20 @@ public class UserAccountService {
       u.setUserRole(role);
     }
 
+    if (dto.employeeId != null) {
+      if (dto.employeeId <= 0) {
+        // Unlink
+        u.setEmployee(null);
+      } else {
+        if (repo.existsByEmployeeIdAndIdNot(dto.employeeId, id)) {
+          throw new IllegalArgumentException("This employee is already linked to another user account");
+        }
+        HrmsEmployee emp = hrmsEmployeeRepository.findById(dto.employeeId)
+            .orElseThrow(() -> new EntityNotFoundException("Employee not found: " + dto.employeeId));
+        u.setEmployee(emp);
+      }
+    }
+
     if (dto.firstName != null) u.setFirstName(dto.firstName);
     if (dto.midleName != null) u.setMidleName(dto.midleName);
     if (dto.lastName != null) u.setLastName(dto.lastName);
@@ -119,6 +153,30 @@ public class UserAccountService {
 
     UserAccount saved = repo.save(u);
     return UserAccountDTO.from(saved);
+  }
+
+  // Quick Link / Unlink Employee
+  public UserAccountDTO linkEmployee(Integer userId, Integer employeeId) {
+    UserAccount u = repo.findById(userId)
+        .orElseThrow(() -> new EntityNotFoundException("UserAccount not found: " + userId));
+
+    if (employeeId == null || employeeId <= 0) {
+      u.setEmployee(null);
+    } else {
+      if (repo.existsByEmployeeIdAndIdNot(employeeId, userId)) {
+        throw new IllegalArgumentException("This employee is already linked to another user account");
+      }
+      HrmsEmployee emp = hrmsEmployeeRepository.findById(employeeId)
+          .orElseThrow(() -> new EntityNotFoundException("Employee not found: " + employeeId));
+      u.setEmployee(emp);
+    }
+
+    u.setModifiedDate(new Date());
+    return UserAccountDTO.from(repo.save(u));
+  }
+
+  public UserAccountDTO unlinkEmployee(Integer userId) {
+    return linkEmployee(userId, null);
   }
 
   // Activate / Deactivate (soft delete)

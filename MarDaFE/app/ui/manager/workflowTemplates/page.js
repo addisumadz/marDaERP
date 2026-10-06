@@ -197,7 +197,12 @@ export default function WorkflowTemplatesPage() {
                 <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Approver Role *</label>
                   <select value={sForm.approverRoleCode} onChange={e => setSForm({...sForm, approverRoleCode: e.target.value})} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
                     <option value="">Select Role</option>
-                    {roles.map(r => <option key={r.id} value={r.roleCode}>{r.roleName} ({r.roleCode})</option>)}
+                    <optgroup label="Dynamic Approver (HRMS)">
+                      <option value="DEPT_MANAGER">Department Manager (Dynamic per Requester Dept)</option>
+                    </optgroup>
+                    <optgroup label="System Roles">
+                      {roles.filter(r => r.roleCode !== "DEPT_MANAGER").map(r => <option key={r.id} value={r.roleCode}>{r.roleName} ({r.roleCode})</option>)}
+                    </optgroup>
                   </select></div>
               </div>
               <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Step Name *</label>

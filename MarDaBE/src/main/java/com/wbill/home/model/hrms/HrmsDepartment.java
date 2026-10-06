@@ -38,6 +38,11 @@ public class HrmsDepartment implements Serializable {
     @Column(name = "manager_employee_id")
     private Integer managerEmployeeId;
 
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "manager_employee_id", insertable = false, updatable = false)
+    @JsonIgnoreProperties({"department", "position", "jobGrade", "hibernateLazyInitializer", "handler"})
+    private HrmsEmployee managerEmployee;
+
     @Column(name = "cost_center_code", length = 50)
     private String costCenterCode;
 
@@ -73,6 +78,9 @@ public class HrmsDepartment implements Serializable {
 
     public Integer getManagerEmployeeId() { return managerEmployeeId; }
     public void setManagerEmployeeId(Integer managerEmployeeId) { this.managerEmployeeId = managerEmployeeId; }
+
+    public HrmsEmployee getManagerEmployee() { return managerEmployee; }
+    public void setManagerEmployee(HrmsEmployee managerEmployee) { this.managerEmployee = managerEmployee; }
 
     public String getCostCenterCode() { return costCenterCode; }
     public void setCostCenterCode(String costCenterCode) { this.costCenterCode = costCenterCode; }

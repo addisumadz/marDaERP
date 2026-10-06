@@ -26,6 +26,11 @@ public interface FncJournalEntryRepository extends JpaRepository<FncJournalEntry
     @Query("SELECT MAX(je.entryNumber) FROM FncJournalEntry je WHERE je.entryNumber LIKE :prefix")
     Optional<String> findMaxEntryNumber(@Param("prefix") String prefix);
 
+    @Query("SELECT je.entryNumber FROM FncJournalEntry je WHERE je.entryNumber LIKE :prefix")
+    List<String> findEntryNumbersByPrefix(@Param("prefix") String prefix);
+
+    boolean existsByEntryNumber(String entryNumber);
+
     @Query("SELECT je FROM FncJournalEntry je WHERE je.fiscalYear.id = :fyId AND je.status = 'POSTED' ORDER BY je.entryDate, je.entryNumber")
     List<FncJournalEntry> findPostedByFiscalYear(@Param("fyId") int fiscalYearId);
 

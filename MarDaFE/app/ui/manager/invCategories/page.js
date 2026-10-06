@@ -4,8 +4,14 @@ import { toast } from "react-toastify";
 import invCategoryService from "../../../lib/invCategoryService";
 import { Tag, Plus, X, Edit2, Trash2, ChevronDown } from "lucide-react";
 
-const ITEM_TYPES = ["CONSUMABLE", "NON_CONSUMABLE", "SERVICE"];
+const ITEM_TYPES = ["STOCK", "NON_STOCK", "SERVICE"];
 const TRACKING_TYPES = ["NONE", "BATCH", "EXPIRY", "SERIAL", "MOTOR"];
+
+const itemTypeLabels = {
+  STOCK: "Stock",
+  NON_STOCK: "Non-Stock",
+  SERVICE: "Service",
+};
 
 const trackingLabels = {
   NONE: "No Tracking",
@@ -22,7 +28,7 @@ export default function InvCategoriesPage() {
   const [editId, setEditId] = useState(null);
   const [form, setForm] = useState({
     categoryCode: "", categoryName: "", categoryNameAm: "",
-    description: "", itemType: "CONSUMABLE", trackingType: "NONE", isActive: true,
+    description: "", itemType: "STOCK", trackingType: "NONE", isActive: true,
   });
 
   useEffect(() => { loadData(); }, []);
@@ -37,7 +43,7 @@ export default function InvCategoriesPage() {
   };
 
   const resetForm = () => {
-    setForm({ categoryCode: "", categoryName: "", categoryNameAm: "", description: "", itemType: "CONSUMABLE", trackingType: "NONE", isActive: true });
+    setForm({ categoryCode: "", categoryName: "", categoryNameAm: "", description: "", itemType: "STOCK", trackingType: "NONE", isActive: true });
     setEditId(null);
   };
 
@@ -47,7 +53,7 @@ export default function InvCategoriesPage() {
     setForm({
       categoryCode: cat.categoryCode, categoryName: cat.categoryName,
       categoryNameAm: cat.categoryNameAm || "", description: cat.description || "",
-      itemType: cat.itemType, trackingType: cat.trackingType, isActive: cat.isActive,
+      itemType: cat.itemType || "STOCK", trackingType: cat.trackingType || "NONE", isActive: cat.isActive,
     });
     setEditId(cat.id);
     setModalOpen(true);
@@ -76,7 +82,11 @@ export default function InvCategoriesPage() {
   };
 
   const badgeColor = (type) => {
-    const colors = { CONSUMABLE: "bg-blue-100 text-blue-700", NON_CONSUMABLE: "bg-purple-100 text-purple-700", SERVICE: "bg-green-100 text-green-700" };
+    const colors = {
+      STOCK: "bg-blue-100 text-blue-700",
+      NON_STOCK: "bg-purple-100 text-purple-700",
+      SERVICE: "bg-green-100 text-green-700",
+    };
     return colors[type] || "bg-gray-100 text-gray-700";
   };
 
@@ -124,7 +134,7 @@ export default function InvCategoriesPage() {
                   <td className="px-6 py-4 font-mono font-semibold text-indigo-600 dark:text-indigo-400">{cat.categoryCode}</td>
                   <td className="px-6 py-4 font-medium text-gray-900 dark:text-white">{cat.categoryName}</td>
                   <td className="px-6 py-4 text-gray-600 dark:text-gray-400">{cat.categoryNameAm || "—"}</td>
-                  <td className="px-6 py-4"><span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${badgeColor(cat.itemType)}`}>{cat.itemType}</span></td>
+                  <td className="px-6 py-4"><span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${badgeColor(cat.itemType)}`}>{itemTypeLabels[cat.itemType] || cat.itemType}</span></td>
                   <td className="px-6 py-4"><span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${trackBadge(cat.trackingType)}`}>{trackingLabels[cat.trackingType]}</span></td>
                   <td className="px-6 py-4 text-center">
                     <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold ${cat.isActive ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
@@ -165,7 +175,7 @@ export default function InvCategoriesPage() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Item Type *</label>
                   <select value={form.itemType} onChange={(e) => setForm({ ...form, itemType: e.target.value })} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500">
-                    {ITEM_TYPES.map(t => <option key={t} value={t}>{t.replace("_", " ")}</option>)}
+                    {ITEM_TYPES.map(t => <option key={t} value={t}>{itemTypeLabels[t] || t.replace("_", " ")}</option>)}
                   </select>
                 </div>
               </div>

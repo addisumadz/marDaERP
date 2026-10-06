@@ -1,10 +1,11 @@
 "use client";
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useSession } from "next-auth/react";
 import { toast } from "react-toastify";
 import invTransferService from "../../../lib/invTransferService";
 import invStoreService from "../../../lib/invStoreService";
 import invItemService from "../../../lib/invItemService";
+import invCategoryService from "../../../lib/invCategoryService";
 import invStockQueryService from "../../../lib/invStockService";
 import workflowService from "../../../lib/workflowService";
 import invUserStoreService from "../../../lib/invUserStoreService";
@@ -40,6 +41,14 @@ import {
   RefreshCw,
   Layers,
   Sparkles,
+  Tag,
+  Package,
+  PackageSearch,
+  Lock,
+  ArrowDownLeft,
+  ArrowUpRight,
+  SlidersHorizontal,
+  ChevronDown,
 } from "lucide-react";
 
 /* ─── Status Badge Colors ────────────────────────────────────────── */
@@ -170,6 +179,350 @@ function TransferStepper({
   );
 }
 
+/* ─── Searchable Item Selection Dropdown Component ─────────── */
+function SearchableItemSelect({
+  items = [],
+  categories = [],
+  selectedItemId = "",
+  lineCategoryId = "",
+  onSelect,
+  onCategoryFilterChange,
+  hasError = false,
+  disabled = false,
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [internalCategoryFilter, setInternalCategoryFilter] = useState(lineCategoryId || "");
+  const containerRef = useRef(null);
+  const searchInputRef = useRef(null);
+
+  // Keep internal category filter aligned with line category if provided
+  useEffect(() => {
+    setInternalCategoryFilter(lineCategoryId || "");
+  }, [lineCategoryId]);
+
+  // Click outside to close
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleClickOutside = (e) => {
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [isOpen]);
+
+  // Auto-focus search input when opened
+  useEffect(() => {
+    if (isOpen) {
+      const timer = setTimeout(() => {
+        searchInputRef.current?.focus();
+      }, 50);
+      return () => clearTimeout(timer);
+    } else {
+      setSearchQuery("");
+    }
+  }, [isOpen]);
+
+  // Close on Escape key
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e) => {
+      if (e.key === "Escape") {
+        setIsOpen(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen]);
+
+  // Find currently selected item
+  const selectedItem = useMemo(() => {
+    if (!selectedItemId) return null;
+    return items.find((i) => String(i.id) === String(selectedItemId)) || null;
+  }, [items, selectedItemId]);
+
+  // Filter items by category & search query
+  const filteredItems = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return items.filter((item) => {
+      // Category filter check
+      if (internalCategoryFilter) {
+        const itemCatId = item.category?.id ?? item.categoryId;
+        if (String(itemCatId) !== String(internalCategoryFilter)) {
+          return false;
+        }
+      }
+      // Query filter check
+      if (!q) return true;
+      const code = (item.itemCode || "").toLowerCase();
+      const name = (item.itemName || "").toLowerCase();
+      const nameAm = (item.itemNameAm || "").toLowerCase();
+      const desc = (item.description || "").toLowerCase();
+      return code.includes(q) || name.includes(q) || nameAm.includes(q) || desc.includes(q);
+    });
+  }, [items, internalCategoryFilter, searchQuery]);
+
+  // Limit visible items to prevent DOM lag on very large catalogs
+  const visibleItems = useMemo(() => filteredItems.slice(0, 80), [filteredItems]);
+
+  const handleSelect = (item) => {
+    onSelect(item);
+    setIsOpen(false);
+  };
+
+  const handleClear = (e) => {
+    e.stopPropagation();
+    onSelect(null);
+  };
+
+  const handleCategoryPillClick = (e, catId) => {
+    e.stopPropagation();
+    setInternalCategoryFilter(catId);
+    if (onCategoryFilterChange) {
+      onCategoryFilterChange(catId);
+    }
+  };
+
+  return (
+    <div ref={containerRef} className="relative w-full">
+      {/* Trigger Button */}
+      {selectedItem ? (
+        <div
+          onClick={() => !disabled && setIsOpen((prev) => !prev)}
+          className={`w-full px-2.5 py-1.5 border rounded-lg flex items-center justify-between cursor-pointer transition-all shadow-xs ${
+            hasError
+              ? "border-red-500 ring-1 ring-red-500 bg-red-50/20"
+              : isOpen
+              ? "border-indigo-500 ring-2 ring-indigo-500/20 bg-white dark:bg-gray-700"
+              : "border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 hover:border-indigo-400"
+          } ${disabled ? "opacity-60 cursor-not-allowed" : ""}`}
+        >
+          <div className="flex items-center gap-1.5 min-w-0 flex-1">
+            <span className="font-mono text-xs font-bold px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 shrink-0">
+              {selectedItem.itemCode}
+            </span>
+            <span className="text-xs font-medium text-gray-900 dark:text-white truncate">
+              {selectedItem.itemName}
+              {selectedItem.itemNameAm && (
+                <span className="text-gray-500 text-[11px] font-normal ml-1">
+                  ({selectedItem.itemNameAm})
+                </span>
+              )}
+            </span>
+            {selectedItem.category?.categoryName && (
+              <span className="hidden sm:inline-block px-1.5 py-0.2 rounded text-[10px] bg-gray-100 dark:bg-gray-600 text-gray-600 dark:text-gray-300 shrink-0">
+                {selectedItem.category.categoryName}
+              </span>
+            )}
+            {(selectedItem.unitOfMeasure?.unitCode || selectedItem.unitOfMeasure?.unitName) && (
+              <span className="hidden md:inline-block text-[10px] text-gray-400 shrink-0">
+                • {selectedItem.unitOfMeasure?.unitCode || selectedItem.unitOfMeasure?.unitName}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-1 shrink-0 ml-1.5">
+            <button
+              type="button"
+              onClick={handleClear}
+              className="p-1 rounded-md text-gray-400 hover:text-red-500 hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
+              title="Clear selection"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+            <ChevronDown className={`w-3.5 h-3.5 text-gray-400 transition-transform ${isOpen ? "rotate-180 text-indigo-600" : ""}`} />
+          </div>
+        </div>
+      ) : (
+        <div
+          onClick={() => !disabled && setIsOpen(true)}
+          className={`w-full px-2.5 py-2 border rounded-lg flex items-center justify-between cursor-pointer transition-all shadow-xs ${
+            hasError
+              ? "border-red-500 ring-1 ring-red-500 bg-red-50/20"
+              : isOpen
+              ? "border-indigo-500 ring-2 ring-indigo-500/20 bg-white dark:bg-gray-700"
+              : "border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 hover:border-indigo-400"
+          } ${disabled ? "opacity-60 cursor-not-allowed" : ""}`}
+        >
+          <div className="flex items-center gap-2 min-w-0 text-gray-400">
+            <Search className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+            <span className="text-xs truncate">
+              {internalCategoryFilter
+                ? "Search item in category... (እቃ ይምረጡ)"
+                : "Search or select item... (እቃ ይምረጡ)"}
+            </span>
+          </div>
+          <ChevronDown className={`w-3.5 h-3.5 text-gray-400 transition-transform ${isOpen ? "rotate-180 text-indigo-600" : ""}`} />
+        </div>
+      )}
+
+      {/* Floating Popover Panel */}
+      {isOpen && (
+        <div className="absolute left-0 right-0 top-full mt-1 z-50 bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden animate-in fade-in zoom-in-95 duration-150 min-w-[300px]">
+          {/* Search & Category Filter Header */}
+          <div className="p-2.5 border-b border-gray-100 dark:border-gray-700 bg-gray-50/70 dark:bg-gray-700/50 space-y-2">
+            {/* Search Input */}
+            <div className="relative">
+              <Search className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-gray-400" />
+              <input
+                ref={searchInputRef}
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search by code (e.g. PIPE), name, or Amharic..."
+                className="w-full pl-8 pr-7 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-2 top-2 p-0.5 rounded text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            {/* Category Filter Pills inside Popover */}
+            {categories && categories.length > 0 && (
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 text-[11px] scrollbar-none">
+                <button
+                  type="button"
+                  onClick={(e) => handleCategoryPillClick(e, "")}
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-medium whitespace-nowrap transition-colors ${
+                    !internalCategoryFilter
+                      ? "bg-indigo-600 text-white shadow-xs"
+                      : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
+                  }`}
+                >
+                  All Categories ({items.length})
+                </button>
+                {categories.map((c) => {
+                  const catCount = items.filter((i) => (i.category?.id ?? i.categoryId) === c.id).length;
+                  const isCatActive = String(internalCategoryFilter) === String(c.id);
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={(e) => handleCategoryPillClick(e, String(c.id))}
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-medium whitespace-nowrap transition-colors ${
+                        isCatActive
+                          ? "bg-indigo-600 text-white shadow-xs"
+                          : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
+                      }`}
+                    >
+                      {c.categoryName} {catCount > 0 ? `(${catCount})` : ""}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Items List */}
+          <div className="max-h-56 overflow-y-auto divide-y divide-gray-100 dark:divide-gray-700/50">
+            {visibleItems.length > 0 ? (
+              visibleItems.map((item) => {
+                const isItemActive = String(selectedItemId) === String(item.id);
+                const itemCatName = item.category?.categoryName ||
+                  categories.find((c) => c.id === (item.category?.id ?? item.categoryId))?.categoryName;
+                const uom = item.unitOfMeasure?.unitCode || item.unitOfMeasure?.unitName;
+                return (
+                  <div
+                    key={item.id}
+                    onClick={() => handleSelect(item)}
+                    className={`p-2.5 cursor-pointer flex items-center justify-between transition-colors ${
+                      isItemActive
+                        ? "bg-indigo-50 dark:bg-indigo-900/40"
+                        : "hover:bg-indigo-50/60 dark:hover:bg-indigo-900/20"
+                    }`}
+                  >
+                    <div className="min-w-0 flex-1 pr-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-mono text-xs font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 px-1.5 py-0.5 rounded border border-indigo-200/50 dark:border-indigo-800/50">
+                          {item.itemCode}
+                        </span>
+                        <span className="text-xs font-semibold text-gray-900 dark:text-white truncate">
+                          {item.itemName}
+                        </span>
+                        {item.itemNameAm && (
+                          <span className="text-[11px] text-gray-500 dark:text-gray-400">
+                            ({item.itemNameAm})
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 text-[10px] text-gray-500 dark:text-gray-400 mt-1">
+                        {itemCatName && (
+                          <span className="px-1.5 py-0.2 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 font-medium">
+                            {itemCatName}
+                          </span>
+                        )}
+                        {uom && (
+                          <span>Unit: <strong className="text-gray-700 dark:text-gray-300">{uom}</strong></span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="shrink-0">
+                      {isItemActive && (
+                        <Check className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            ) : (
+              <div className="p-6 text-center text-xs text-gray-500 dark:text-gray-400 space-y-2">
+                <PackageSearch className="w-7 h-7 mx-auto text-gray-400 opacity-60" />
+                <p>
+                  No items found
+                  {searchQuery && (
+                    <span> matching <strong className="text-gray-700 dark:text-gray-300">"{searchQuery}"</strong></span>
+                  )}
+                  {internalCategoryFilter && (
+                    <span> in this category</span>
+                  )}
+                </p>
+                {(searchQuery || internalCategoryFilter) && (
+                  <div className="flex items-center justify-center gap-2 pt-1">
+                    {searchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => setSearchQuery("")}
+                        className="px-2 py-1 text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline font-medium"
+                      >
+                        Clear search
+                      </button>
+                    )}
+                    {internalCategoryFilter && (
+                      <button
+                        type="button"
+                        onClick={(e) => handleCategoryPillClick(e, "")}
+                        className="px-2 py-1 text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline font-medium"
+                      >
+                        Show all categories
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Footer Info */}
+          <div className="px-3 py-1.5 bg-gray-50 dark:bg-gray-700/40 border-t border-gray-100 dark:border-gray-700 text-[10px] text-gray-500 dark:text-gray-400 flex items-center justify-between">
+            <span>
+              Showing {visibleItems.length} of {filteredItems.length} items
+              {filteredItems.length > 80 ? " (type to narrow down)" : ""}
+            </span>
+            <span className="hidden sm:inline">Press Esc to close</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ─── Main Stock Transfer Page ───────────────────────────────────── */
 export default function InvTransfersPage() {
   const { data: session } = useSession();
@@ -195,10 +548,14 @@ export default function InvTransfersPage() {
   const [templateSteps, setTemplateSteps] = useState([]);
   const [stores, setStores] = useState([]);
   const [items, setItems] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [myStores, setMyStores] = useState([]);
   const [assignedStore, setAssignedStore] = useState(null);
   const [currentUserBranch, setCurrentUserBranch] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  // Transfer Direction state: "INWARD" (Request into my store) | "OUTWARD" (Dispatch out from my store)
+  const [transferDirection, setTransferDirection] = useState("INWARD");
 
   // Branch & Admin flags
   const isMainOffice = currentUserBranch?.branchCode?.toUpperCase() === "MO" ||
@@ -239,7 +596,7 @@ export default function InvTransfersPage() {
     fromStoreId: "",
     toStoreId: "",
     remarks: "",
-    lines: [{ itemId: "", quantity: "" }],
+    lines: [{ categoryId: "", itemId: "", quantity: "" }],
   });
   const [formErrors, setFormErrors] = useState({});
 
@@ -273,14 +630,16 @@ export default function InvTransfersPage() {
 
   const loadLookups = async () => {
     try {
-      const [sList, iList, mySt, userProfile] = await Promise.all([
+      const [sList, iList, cats, mySt, userProfile] = await Promise.all([
         invStoreService.getAllActive(),
         invItemService.getAllActive(),
+        invCategoryService.getAllActive().catch(() => []),
         invUserStoreService.getMyStores().catch(() => []),
         session?.user?.id ? userService.getUserById(session.user.id).catch(() => null) : null,
       ]);
       setStores(sList || []);
       setItems(iList || []);
+      setCategories(cats || []);
 
       const activeUserStores = (mySt || []).filter((s) => s.isActive !== false && s.store);
       setMyStores(activeUserStores);
@@ -468,11 +827,61 @@ export default function InvTransfersPage() {
     }
   };
 
+  // When toStoreId changes
+  const handleToStoreChange = (newStoreId) => {
+    setForm((prev) => ({ ...prev, toStoreId: newStoreId }));
+    if (formErrors.toStoreId) {
+      setFormErrors((prev) => ({ ...prev, toStoreId: "" }));
+    }
+  };
+
+  // Direction Switch Handler: "INWARD" vs "OUTWARD"
+  const handleDirectionChange = (newDir) => {
+    setTransferDirection(newDir);
+    let userStoreId = "";
+    if (assignedStore?.id) {
+      userStoreId = String(assignedStore.id);
+    } else if (myStores.length > 0 && myStores[0]?.store?.id) {
+      userStoreId = String(myStores[0].store.id);
+    } else if (currentUserBranch?.id) {
+      const bStores = stores.filter((s) => s.branch?.id === currentUserBranch.id);
+      if (bStores.length > 0) userStoreId = String(bStores[0].id);
+    }
+
+    if (newDir === "INWARD") {
+      // Goods coming INTO my store: Destination (toStoreId) is user's store
+      setForm((prev) => {
+        const nextFrom = String(prev.fromStoreId) === String(userStoreId) ? "" : prev.fromStoreId;
+        return {
+          ...prev,
+          toStoreId: userStoreId,
+          fromStoreId: nextFrom,
+        };
+      });
+    } else {
+      // Goods going OUT OF my store: Source (fromStoreId) is user's store
+      setForm((prev) => {
+        const nextTo = String(prev.toStoreId) === String(userStoreId) ? "" : prev.toStoreId;
+        return {
+          ...prev,
+          fromStoreId: userStoreId,
+          toStoreId: nextTo,
+        };
+      });
+      if (userStoreId) {
+        form.lines.forEach((l) => {
+          if (l.itemId) fetchItemStock(l.itemId, userStoreId);
+        });
+      }
+    }
+    setFormErrors({});
+  };
+
   /* ── Line item management ─────────────────────────────────────── */
   const addLine = () => {
     setForm((prev) => ({
       ...prev,
-      lines: [...prev.lines, { itemId: "", quantity: "" }],
+      lines: [...prev.lines, { categoryId: "", itemId: "", quantity: "" }],
     }));
   };
 
@@ -487,6 +896,51 @@ export default function InvTransfersPage() {
         lines: prev.lines.filter((_, i) => i !== idx),
       }));
     }
+  };
+
+  const handleItemSelect = (idx, selectedItem) => {
+    const lines = [...form.lines];
+    if (!selectedItem) {
+      lines[idx].itemId = "";
+      setForm({ ...form, lines });
+      return;
+    }
+    lines[idx].itemId = String(selectedItem.id);
+    const catId = selectedItem.category?.id ?? selectedItem.categoryId;
+    if (catId) {
+      lines[idx].categoryId = String(catId);
+    }
+    setForm({ ...form, lines });
+
+    if (form.fromStoreId) {
+      fetchItemStock(selectedItem.id, form.fromStoreId);
+    }
+
+    // Clear line error on select
+    if (formErrors.lines?.[idx]?.itemId) {
+      setFormErrors((prev) => {
+        const copy = { ...prev };
+        if (copy.lines?.[idx]) {
+          const lineCopy = { ...copy.lines[idx] };
+          delete lineCopy.itemId;
+          copy.lines[idx] = lineCopy;
+        }
+        return copy;
+      });
+    }
+  };
+
+  const handleLineCategoryChange = (idx, newCatId) => {
+    const lines = [...form.lines];
+    lines[idx].categoryId = newCatId;
+    if (newCatId && lines[idx].itemId) {
+      const currentItem = items.find((i) => String(i.id) === String(lines[idx].itemId));
+      const currentCatId = currentItem ? (currentItem.category?.id ?? currentItem.categoryId) : null;
+      if (currentItem && String(currentCatId) !== String(newCatId)) {
+        lines[idx].itemId = "";
+      }
+    }
+    setForm({ ...form, lines });
   };
 
   const updateLine = (idx, field, value) => {
@@ -591,7 +1045,7 @@ export default function InvTransfersPage() {
         fromStoreId: "",
         toStoreId: "",
         remarks: "",
-        lines: [{ itemId: "", quantity: "" }],
+        lines: [{ categoryId: "", itemId: "", quantity: "" }],
       });
       setFormErrors({});
       loadData();
@@ -947,21 +1401,25 @@ export default function InvTransfersPage() {
           <div className="flex items-center gap-3">
             <button
               onClick={() => {
-                let defaultFromStoreId = "";
+                let userStoreId = "";
                 if (assignedStore?.id) {
-                  defaultFromStoreId = String(assignedStore.id);
+                  userStoreId = String(assignedStore.id);
                 } else if (myStores.length > 0 && myStores[0]?.store?.id) {
-                  defaultFromStoreId = String(myStores[0].store.id);
+                  userStoreId = String(myStores[0].store.id);
                 } else if (currentUserBranch?.id) {
                   const bStores = stores.filter((s) => s.branch?.id === currentUserBranch.id);
-                  if (bStores.length > 0) defaultFromStoreId = String(bStores[0].id);
+                  if (bStores.length > 0) userStoreId = String(bStores[0].id);
                 }
 
+                // Default to INWARD (Request to My Store) as standard branch replenishment flow
+                const initialDir = userStoreId ? "INWARD" : "OUTWARD";
+                setTransferDirection(initialDir);
+
                 setForm({
-                  fromStoreId: defaultFromStoreId,
-                  toStoreId: "",
+                  fromStoreId: initialDir === "OUTWARD" ? userStoreId : "",
+                  toStoreId: initialDir === "INWARD" ? userStoreId : "",
                   remarks: "",
-                  lines: [{ itemId: "", quantity: "" }],
+                  lines: [{ categoryId: "", itemId: "", quantity: "" }],
                 });
                 setFormErrors({});
                 setCreateModalOpen(true);
@@ -1347,35 +1805,148 @@ export default function InvTransfersPage() {
 
             {/* Modal Body */}
             <div className="p-6 space-y-5 overflow-y-auto flex-1">
-              {/* Warehouse Selection Row */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-300 mb-1">
-                    Source Store (የመነሻ መጋዘን) <span className="text-red-500">*</span>
-                  </label>
-                  <select
-                    value={form.fromStoreId}
-                    onChange={(e) => handleFromStoreChange(e.target.value)}
-                    className={`w-full px-3.5 py-2.5 text-sm rounded-xl border bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-all ${
-                      formErrors.fromStoreId
-                        ? "border-red-500 bg-red-50/20 focus:ring-red-500"
-                        : "border-gray-200 dark:border-gray-600 focus:ring-indigo-500"
+              {/* Transfer Direction & Mode Selector */}
+              <div className="bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-900/50 rounded-2xl p-3.5 space-y-2">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <SlidersHorizontal className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                    <span className="text-xs font-bold text-gray-900 dark:text-white uppercase tracking-wider">
+                      Transfer Direction (የዝውውር አቅጣጫ)
+                    </span>
+                  </div>
+                  {isMainOfficeOrAdmin && (
+                    <span className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 bg-white dark:bg-gray-800 px-2.5 py-0.5 rounded-full border border-indigo-200 dark:border-indigo-800 shadow-xs">
+                      Admin Access (All Stores Unrestricted)
+                    </span>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                  {/* Option 1: Request In (Replenishment) */}
+                  <button
+                    type="button"
+                    onClick={() => handleDirectionChange("INWARD")}
+                    className={`p-3 rounded-xl border text-left transition-all flex items-start gap-3 ${
+                      transferDirection === "INWARD"
+                        ? "bg-white dark:bg-gray-800 border-indigo-500 ring-2 ring-indigo-500/20 shadow-sm"
+                        : "bg-white/60 dark:bg-gray-800/60 border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 text-gray-500"
                     }`}
                   >
-                    <option value="">Select Source Store...</option>
-                    {(isMainOfficeOrAdmin
-                      ? stores
-                      : myStores.length > 0
-                      ? myStores.map((ms) => ms.store).filter(Boolean)
-                      : currentUserBranch?.id
-                      ? stores.filter((s) => s.branch?.id === currentUserBranch.id)
-                      : stores
-                    ).map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.storeName} ({s.storeCode || `ID: ${s.id}`})
-                      </option>
-                    ))}
-                  </select>
+                    <div
+                      className={`p-2 rounded-lg shrink-0 ${
+                        transferDirection === "INWARD"
+                          ? "bg-indigo-100 dark:bg-indigo-900/60 text-indigo-600 dark:text-indigo-300"
+                          : "bg-gray-100 dark:bg-gray-700 text-gray-400"
+                      }`}
+                    >
+                      <ArrowDownLeft className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-xs font-bold text-gray-900 dark:text-white flex items-center justify-between">
+                        <span>Request Stock In (ወደ እኔ መጋዘን ማዘዝ)</span>
+                        {transferDirection === "INWARD" && (
+                          <Check className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                        )}
+                      </div>
+                      <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5 leading-snug">
+                        Pull stock from another warehouse into your store (Destination locked)
+                      </p>
+                    </div>
+                  </button>
+
+                  {/* Option 2: Dispatch Out (Push) */}
+                  <button
+                    type="button"
+                    onClick={() => handleDirectionChange("OUTWARD")}
+                    className={`p-3 rounded-xl border text-left transition-all flex items-start gap-3 ${
+                      transferDirection === "OUTWARD"
+                        ? "bg-white dark:bg-gray-800 border-indigo-500 ring-2 ring-indigo-500/20 shadow-sm"
+                        : "bg-white/60 dark:bg-gray-800/60 border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 text-gray-500"
+                    }`}
+                  >
+                    <div
+                      className={`p-2 rounded-lg shrink-0 ${
+                        transferDirection === "OUTWARD"
+                          ? "bg-indigo-100 dark:bg-indigo-900/60 text-indigo-600 dark:text-indigo-300"
+                          : "bg-gray-100 dark:bg-gray-700 text-gray-400"
+                      }`}
+                    >
+                      <ArrowUpRight className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-xs font-bold text-gray-900 dark:text-white flex items-center justify-between">
+                        <span>Dispatch Stock Out (ከእኔ መጋዘን መላክ)</span>
+                        {transferDirection === "OUTWARD" && (
+                          <Check className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                        )}
+                      </div>
+                      <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5 leading-snug">
+                        Send available stock from your store out to another store/branch (Source locked)
+                      </p>
+                    </div>
+                  </button>
+                </div>
+              </div>
+
+              {/* Warehouse Selection Row */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Source Store */}
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-300 mb-1 flex items-center justify-between">
+                    <span>Source Store (የመነሻ መጋዘን) <span className="text-red-500">*</span></span>
+                    {transferDirection === "OUTWARD" && !isMainOfficeOrAdmin && (
+                      <span className="flex items-center gap-1 text-[10px] font-medium text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/30 px-2 py-0.5 rounded-full border border-amber-200 dark:border-amber-800">
+                        <Lock className="w-2.5 h-2.5" /> Your Store
+                      </span>
+                    )}
+                  </label>
+
+                  {/* If Outward & Non-Admin with single store: Locked Card */}
+                  {transferDirection === "OUTWARD" && !isMainOfficeOrAdmin && myStores.length <= 1 ? (
+                    <div className="p-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/50 flex items-center justify-between shadow-xs">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-8 h-8 rounded-lg bg-indigo-100 dark:bg-indigo-900/60 text-indigo-600 dark:text-indigo-300 flex items-center justify-center shrink-0">
+                          <Store className="w-4 h-4" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-xs font-bold text-gray-900 dark:text-white truncate">
+                            {stores.find((s) => String(s.id) === String(form.fromStoreId))?.storeName ||
+                              assignedStore?.storeName ||
+                              "Your Assigned Store"}
+                          </div>
+                          <div className="text-[10px] text-gray-500 dark:text-gray-400">
+                            {stores.find((s) => String(s.id) === String(form.fromStoreId))?.storeCode
+                              ? `Code: ${stores.find((s) => String(s.id) === String(form.fromStoreId)).storeCode}`
+                              : "Originating Custody Store"}
+                          </div>
+                        </div>
+                      </div>
+                      <span className="flex items-center gap-1 text-[10px] font-semibold text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-800 px-2.5 py-1 rounded-lg border border-gray-200 dark:border-gray-600 shadow-xs">
+                        <Lock className="w-3 h-3 text-indigo-600 dark:text-indigo-400" /> Locked
+                      </span>
+                    </div>
+                  ) : (
+                    /* Selectable dropdown: All stores (except destination) or restricted to myStores if Outward */
+                    <select
+                      value={form.fromStoreId}
+                      onChange={(e) => handleFromStoreChange(e.target.value)}
+                      className={`w-full px-3.5 py-2.5 text-sm rounded-xl border bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-all shadow-xs ${
+                        formErrors.fromStoreId
+                          ? "border-red-500 bg-red-50/20 focus:ring-red-500"
+                          : "border-gray-200 dark:border-gray-600 focus:ring-indigo-500"
+                      }`}
+                    >
+                      <option value="">Select Source Store...</option>
+                      {(transferDirection === "OUTWARD" && !isMainOfficeOrAdmin && myStores.length > 1
+                        ? myStores.map((ms) => ms.store).filter(Boolean)
+                        : stores.filter((s) => String(s.id) !== String(form.toStoreId))
+                      ).map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.storeName} ({s.storeCode || `ID: ${s.id}`})
+                        </option>
+                      ))}
+                    </select>
+                  )}
                   {formErrors.fromStoreId && (
                     <p className="text-xs text-red-500 mt-1 flex items-center gap-1">
                       <AlertCircle className="w-3.5 h-3.5" />
@@ -1384,31 +1955,63 @@ export default function InvTransfersPage() {
                   )}
                 </div>
 
+                {/* Destination Store */}
                 <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-300 mb-1">
-                    Destination Store (የመዳረሻ መጋዘን) <span className="text-red-500">*</span>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-300 mb-1 flex items-center justify-between">
+                    <span>Destination Store (የመዳረሻ መጋዘን) <span className="text-red-500">*</span></span>
+                    {transferDirection === "INWARD" && !isMainOfficeOrAdmin && (
+                      <span className="flex items-center gap-1 text-[10px] font-medium text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 px-2 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800">
+                        <Lock className="w-2.5 h-2.5" /> Your Store
+                      </span>
+                    )}
                   </label>
-                  <select
-                    value={form.toStoreId}
-                    onChange={(e) => {
-                      setForm((prev) => ({ ...prev, toStoreId: e.target.value }));
-                      if (formErrors.toStoreId) setFormErrors((prev) => ({ ...prev, toStoreId: "" }));
-                    }}
-                    className={`w-full px-3.5 py-2.5 text-sm rounded-xl border bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-all ${
-                      formErrors.toStoreId
-                        ? "border-red-500 bg-red-50/20 focus:ring-red-500"
-                        : "border-gray-200 dark:border-gray-600 focus:ring-indigo-500"
-                    }`}
-                  >
-                    <option value="">Select Destination Store...</option>
-                    {stores
-                      .filter((s) => String(s.id) !== String(form.fromStoreId))
-                      .map((s) => (
+
+                  {/* If Inward & Non-Admin with single store: Locked Card */}
+                  {transferDirection === "INWARD" && !isMainOfficeOrAdmin && myStores.length <= 1 ? (
+                    <div className="p-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/50 flex items-center justify-between shadow-xs">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/60 text-emerald-600 dark:text-emerald-300 flex items-center justify-center shrink-0">
+                          <Store className="w-4 h-4" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-xs font-bold text-gray-900 dark:text-white truncate">
+                            {stores.find((s) => String(s.id) === String(form.toStoreId))?.storeName ||
+                              assignedStore?.storeName ||
+                              "Your Assigned Store"}
+                          </div>
+                          <div className="text-[10px] text-gray-500 dark:text-gray-400">
+                            {stores.find((s) => String(s.id) === String(form.toStoreId))?.storeCode
+                              ? `Code: ${stores.find((s) => String(s.id) === String(form.toStoreId)).storeCode}`
+                              : "Receiving Custody Store"}
+                          </div>
+                        </div>
+                      </div>
+                      <span className="flex items-center gap-1 text-[10px] font-semibold text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-800 px-2.5 py-1 rounded-lg border border-gray-200 dark:border-gray-600 shadow-xs">
+                        <Lock className="w-3 h-3 text-emerald-600 dark:text-emerald-400" /> Locked
+                      </span>
+                    </div>
+                  ) : (
+                    /* Selectable dropdown: All stores (except source) or restricted to myStores if Inward */
+                    <select
+                      value={form.toStoreId}
+                      onChange={(e) => handleToStoreChange(e.target.value)}
+                      className={`w-full px-3.5 py-2.5 text-sm rounded-xl border bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-all shadow-xs ${
+                        formErrors.toStoreId
+                          ? "border-red-500 bg-red-50/20 focus:ring-red-500"
+                          : "border-gray-200 dark:border-gray-600 focus:ring-indigo-500"
+                      }`}
+                    >
+                      <option value="">Select Destination Store...</option>
+                      {(transferDirection === "INWARD" && !isMainOfficeOrAdmin && myStores.length > 1
+                        ? myStores.map((ms) => ms.store).filter(Boolean)
+                        : stores.filter((s) => String(s.id) !== String(form.fromStoreId))
+                      ).map((s) => (
                         <option key={s.id} value={s.id}>
                           {s.storeName} ({s.storeCode || `ID: ${s.id}`})
                         </option>
                       ))}
-                  </select>
+                    </select>
+                  )}
                   {formErrors.toStoreId && (
                     <p className="text-xs text-red-500 mt-1 flex items-center gap-1">
                       <AlertCircle className="w-3.5 h-3.5" />
@@ -1425,7 +2028,7 @@ export default function InvTransfersPage() {
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. Replenishment of branch inventory, project allocation..."
+                  placeholder="e.g. Replenishment of branch inventory, project allocation, emergency repair..."
                   value={form.remarks}
                   onChange={(e) => setForm({ ...form, remarks: e.target.value })}
                   className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500"
@@ -1459,38 +2062,64 @@ export default function InvTransfersPage() {
                     return (
                       <div
                         key={idx}
-                        className="p-4 rounded-xl bg-gray-50 dark:bg-gray-700/40 border border-gray-200 dark:border-gray-700 space-y-2.5"
+                        className="p-4 rounded-xl bg-gray-50 dark:bg-gray-700/40 border border-gray-200 dark:border-gray-700 space-y-2.5 transition-all shadow-xs"
                       >
-                        <div className="grid grid-cols-12 gap-3 items-start">
-                          {/* Item Selector */}
-                          <div className="col-span-12 sm:col-span-7">
-                            <label className="block text-[11px] font-medium text-gray-500 mb-1">
-                              Select Item <span className="text-red-500">*</span>
+                        <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-start">
+                          {/* Item Category Filter */}
+                          <div className="md:col-span-3">
+                            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1 flex items-center gap-1">
+                              <Tag className="w-3 h-3 text-indigo-500" /> Category
                             </label>
                             <select
-                              value={line.itemId}
-                              onChange={(e) => updateLine(idx, "itemId", e.target.value)}
-                              className={`w-full px-3 py-2 text-sm rounded-lg border bg-white dark:bg-gray-700 text-gray-900 dark:text-white ${
-                                lineErr.itemId
-                                  ? "border-red-500 bg-red-50/20"
-                                  : "border-gray-200 dark:border-gray-600"
-                              }`}
+                              value={line.categoryId || ""}
+                              onChange={(e) => handleLineCategoryChange(idx, e.target.value)}
+                              className="w-full px-2.5 py-2 text-xs border rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-colors shadow-xs"
                             >
-                              <option value="">Choose item...</option>
-                              {items.map((i) => (
-                                <option key={i.id} value={i.id}>
-                                  {i.itemCode} — {i.itemName} {i.itemNameAm ? `(${i.itemNameAm})` : ""}
-                                </option>
-                              ))}
+                              <option value="">All Categories ({items.length})</option>
+                              {categories.map((c) => {
+                                const count = items.filter((i) => (i.category?.id ?? i.categoryId) === c.id).length;
+                                return (
+                                  <option key={c.id} value={c.id}>
+                                    {c.categoryName} {count > 0 ? `(${count})` : ""}
+                                  </option>
+                                );
+                              })}
                             </select>
+                          </div>
+
+                          {/* Searchable Item Selector */}
+                          <div className="md:col-span-5">
+                            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1 flex items-center justify-between">
+                              <span className="flex items-center gap-1">
+                                <Package className="w-3 h-3 text-indigo-500" /> Item <span className="text-red-500">*</span>
+                              </span>
+                              {line.itemId && selectedItem && (
+                                <span className="text-[10px] text-gray-500">
+                                  {selectedItem.unitOfMeasure?.unitCode || selectedItem.unitOfMeasure?.unitName
+                                    ? `Unit: ${selectedItem.unitOfMeasure?.unitCode || selectedItem.unitOfMeasure?.unitName}`
+                                    : ""}
+                                </span>
+                              )}
+                            </label>
+                            <SearchableItemSelect
+                              items={items}
+                              categories={categories}
+                              selectedItemId={line.itemId}
+                              lineCategoryId={line.categoryId}
+                              onSelect={(item) => handleItemSelect(idx, item)}
+                              onCategoryFilterChange={(catId) => handleLineCategoryChange(idx, catId)}
+                              hasError={Boolean(lineErr.itemId)}
+                            />
                             {lineErr.itemId && (
-                              <p className="text-[11px] text-red-500 mt-0.5">{lineErr.itemId}</p>
+                              <p className="text-[11px] text-red-500 mt-1 flex items-center gap-1">
+                                <AlertCircle className="w-3 h-3" /> {lineErr.itemId}
+                              </p>
                             )}
                           </div>
 
                           {/* Quantity Input */}
-                          <div className="col-span-10 sm:col-span-4">
-                            <label className="block text-[11px] font-medium text-gray-500 mb-1">
+                          <div className="col-span-10 md:col-span-3">
+                            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
                               Transfer Quantity <span className="text-red-500">*</span>
                             </label>
                             <input
@@ -1500,19 +2129,19 @@ export default function InvTransfersPage() {
                               placeholder="0"
                               value={line.quantity}
                               onChange={(e) => updateLine(idx, "quantity", e.target.value)}
-                              className={`w-full px-3 py-2 text-sm rounded-lg border bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono ${
+                              className={`w-full px-2.5 py-2 text-xs border rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono text-right shadow-xs transition-colors ${
                                 lineErr.quantity
-                                  ? "border-red-500 bg-red-50/20"
-                                  : "border-gray-200 dark:border-gray-600"
+                                  ? "border-red-500 ring-1 ring-red-500 bg-red-50/20"
+                                  : "border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                               }`}
                             />
                             {lineErr.quantity && (
-                              <p className="text-[11px] text-red-500 mt-0.5 font-medium">{lineErr.quantity}</p>
+                              <p className="text-[11px] text-red-500 mt-1 font-medium">{lineErr.quantity}</p>
                             )}
                           </div>
 
                           {/* Remove Line Button */}
-                          <div className="col-span-2 sm:col-span-1 flex justify-end pt-6">
+                          <div className="col-span-2 md:col-span-1 flex justify-end pt-5">
                             {form.lines.length > 1 && (
                               <button
                                 type="button"
@@ -1534,12 +2163,12 @@ export default function InvTransfersPage() {
                                 <Loader2 className="w-3 h-3 animate-spin" /> Checking warehouse balance...
                               </span>
                             ) : stock ? (
-                              <div className="flex items-center gap-3">
+                              <div className="flex items-center gap-3 flex-wrap">
                                 <span
                                   className={`px-2 py-0.5 rounded text-[11px] font-semibold flex items-center gap-1 ${
                                     stock.available > 0
-                                      ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 border border-emerald-200"
-                                      : "bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-300 border border-red-200"
+                                      ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800"
+                                      : "bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-300 border border-red-200 dark:border-red-800"
                                   }`}
                                 >
                                   {stock.available > 0 ? (
@@ -1548,7 +2177,7 @@ export default function InvTransfersPage() {
                                     <AlertTriangle className="w-3 h-3" />
                                   )}
                                   Available in Source Store: {stock.available.toLocaleString()}{" "}
-                                  {selectedItem?.unitOfMeasure?.unitCode || "Pcs"}
+                                  {selectedItem?.unitOfMeasure?.unitCode || selectedItem?.unitOfMeasure?.unitName || "Units"}
                                 </span>
 
                                 <span className="text-gray-400 text-[11px]">

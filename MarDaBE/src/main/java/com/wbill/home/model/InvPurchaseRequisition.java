@@ -8,6 +8,8 @@ import java.util.ArrayList;
 import java.util.List;
 import jakarta.persistence.*;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.wbill.home.model.hrms.HrmsDepartment;
+import com.wbill.home.model.hrms.HrmsEmployee;
 
 @Entity
 @Table(name = "inv_purchase_requisition")
@@ -23,9 +25,22 @@ public class InvPurchaseRequisition implements Serializable {
     private String requisitionNumber;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "store_id", nullable = false)
+    @JoinColumn(name = "store_id", nullable = true)
     @JsonIgnoreProperties({"hibernateLazyInitializer", "handler", "branch", "storeKeeper", "manager"})
     private InvStore store;
+
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "department_id")
+    @JsonIgnoreProperties({"subDepartments", "parentDepartment", "hibernateLazyInitializer", "handler"})
+    private HrmsDepartment department;
+
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "employee_id")
+    @JsonIgnoreProperties({"department", "position", "jobGrade", "hibernateLazyInitializer", "handler"})
+    private HrmsEmployee employee;
+
+    @Column(name = "position_title", length = 150)
+    private String positionTitle;
 
     @Column(name = "requested_by", nullable = false, length = 100)
     private String requestedBy;
@@ -161,4 +176,13 @@ public class InvPurchaseRequisition implements Serializable {
 
     public LocalDateTime getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
+
+    public HrmsDepartment getDepartment() { return department; }
+    public void setDepartment(HrmsDepartment department) { this.department = department; }
+
+    public HrmsEmployee getEmployee() { return employee; }
+    public void setEmployee(HrmsEmployee employee) { this.employee = employee; }
+
+    public String getPositionTitle() { return positionTitle; }
+    public void setPositionTitle(String positionTitle) { this.positionTitle = positionTitle; }
 }

@@ -220,7 +220,7 @@ public class HrmsJournalIntegrationService {
         lines.add(line);
     }
 
-    private String generateEntryNumber(int fiscalYearId) {
+    private synchronized String generateEntryNumber(int fiscalYearId) {
         String prefix = "JE-" + LocalDate.now().getYear() + "-";
         Optional<String> max = journalEntryRepository.findMaxEntryNumber(prefix + "%");
         int next = 1;
@@ -230,6 +230,11 @@ public class HrmsJournalIntegrationService {
                 next = Integer.parseInt(suffix) + 1;
             } catch (Exception ignored) {}
         }
-        return String.format("%s%05d", prefix, next);
+        String candidate = String.format("%s%05d", prefix, next);
+        while (journalEntryRepository.existsByEntryNumber(candidate)) {
+            next++;
+            candidate = String.format("%s%05d", prefix, next);
+        }
+        return candidate;
     }
 }

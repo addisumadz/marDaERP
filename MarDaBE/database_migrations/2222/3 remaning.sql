@@ -17,7 +17,7 @@ ALTER TABLE custom_maintenance_request
   ADD COLUMN rejected_date DATETIME NULL,
   ADD COLUMN cancellation_reason TEXT NULL;
 
-
+wbill_jwns9
 -- 1. Master Inventory Items Table
 ALTER TABLE inv_item 
   ADD COLUMN is_water_meter TINYINT(1) NOT NULL DEFAULT 0;
@@ -366,4 +366,40 @@ SET pol.vat_rate = po.vat_rate,
     pol.vat_amount = ROUND(pol.total_price * po.vat_rate / 100, 2);
 	
 	
---- =================================================================
+--- ======================v 5 diff ===========================================
+
+
+-- Add nullable employee_id to user_account
+ALTER TABLE user_account 
+    ADD COLUMN employee_id INT(11) NULL AFTER role_id;
+
+-- Add foreign key constraint (nullified if employee is removed)
+ALTER TABLE user_account 
+    ADD CONSTRAINT fk_user_account_employee 
+    FOREIGN KEY (employee_id) REFERENCES hrms_employee_info(id) 
+    ON DELETE SET NULL;
+
+-- Add index for fast user lookup by employee ID
+CREATE INDEX idx_user_account_employee ON user_account(employee_id);
+
+
+-- Allow store_id to be optional for office/departmental purchase requisitions
+ALTER TABLE inv_purchase_requisition 
+    MODIFY COLUMN store_id INT(11) NULL;
+
+-- Add department, employee, and position title columns
+ALTER TABLE inv_purchase_requisition 
+    ADD COLUMN department_id INT(11) NULL AFTER store_id,
+    ADD COLUMN employee_id INT(11) NULL AFTER department_id,
+    ADD COLUMN position_title VARCHAR(150) NULL AFTER employee_id;
+
+-- Add foreign keys for referential integrity
+ALTER TABLE inv_purchase_requisition 
+    ADD CONSTRAINT fk_pr_department 
+    FOREIGN KEY (department_id) REFERENCES hrms_departments(id) 
+    ON DELETE SET NULL;
+
+ALTER TABLE inv_purchase_requisition 
+    ADD CONSTRAINT fk_pr_employee 
+    FOREIGN KEY (employee_id) REFERENCES hrms_employee_info(id) 
+    ON DELETE SET NULL;

@@ -220,14 +220,20 @@ export async function generatePurchaseRequisitionPdf(
   doc.setFontSize(8.5);
   doc.setTextColor(100, 116, 139);
   doc.text("ጠያቂ / Requested By:", col1X, metaBoxY + 42);
-  doc.text("መጋዘን / Destination Store:", col2X, metaBoxY + 42);
+  doc.text("ክፍል / መጋዘን (Dept / Store):", col2X, metaBoxY + 42);
   doc.text("የጸደቀበት ደረጃ / Approval Status:", col3X, metaBoxY + 42);
 
   doc.setFont("nyala", "bold");
   doc.setFontSize(9.5);
   doc.setTextColor(30, 41, 59);
-  doc.text(pr.requestedBy || "—", col1X, metaBoxY + 53);
-  doc.text(pr.store ? `${pr.store.storeName} (${pr.store.storeCode || ""})` : "—", col2X, metaBoxY + 53);
+  const requesterDisplay = pr.employee
+    ? `${pr.employee.fullName}${pr.positionTitle ? ` (${pr.positionTitle})` : ""}`
+    : `${pr.requestedBy || "—"}${pr.positionTitle ? ` (${pr.positionTitle})` : ""}`;
+  const deptStoreDisplay = pr.department
+    ? `${pr.department.departmentName}${pr.store ? ` • ${pr.store.storeName}` : ""}`
+    : (pr.store ? `${pr.store.storeName} (${pr.store.storeCode || ""})` : "—");
+  doc.text(requesterDisplay, col1X, metaBoxY + 53);
+  doc.text(deptStoreDisplay, col2X, metaBoxY + 53);
   doc.setTextColor(16, 185, 129); // Green
   doc.text(pr.status?.replace(/_/g, " ") || "APPROVED", col3X, metaBoxY + 53);
 

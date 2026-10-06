@@ -10,6 +10,8 @@ import invItemService from "../../../lib/invItemService";
 import invCategoryService from "../../../lib/invCategoryService";
 import invUserStoreService from "../../../lib/invUserStoreService";
 import { UserAccountService } from "../../../lib/userAccountService";
+import hrmsDepartmentService from "../../../lib/hrmsDepartmentService";
+import hrmsEmployeeService from "../../../lib/hrmsEmployeeService";
 
 const userService = new UserAccountService();
 import {
@@ -30,7 +32,10 @@ import {
   MessageSquare,
   Sparkles,
   UserCheck,
+  Building,
   Building2,
+  Briefcase,
+  User,
   AlertCircle,
   Loader2,
   Printer,
@@ -515,6 +520,13 @@ export default function InvPurchaseRequisitionsPage() {
   const [currentUserBranch, setCurrentUserBranch] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  // HRMS Integration States
+  const [departments, setDepartments] = useState([]);
+  const [employees, setEmployees] = useState([]);
+  const [positions, setPositions] = useState([]);
+  const [currentEmployee, setCurrentEmployee] = useState(null);
+  const [currentUserProfile, setCurrentUserProfile] = useState(null);
+
   // Modals
   const [modalOpen, setModalOpen] = useState(false);
   const [detailModal, setDetailModal] = useState(null);
@@ -543,6 +555,9 @@ export default function InvPurchaseRequisitionsPage() {
   const [filterStatus, setFilterStatus] = useState("");
   const [filterStore, setFilterStore] = useState("");
   const [form, setForm] = useState({
+    departmentId: "",
+    employeeId: "",
+    positionTitle: "",
     storeId: "",
     remarks: "",
     lines: [{ categoryId: "", itemId: "", requestedQuantity: "", estimatedUnitCost: "", purpose: "" }]
@@ -555,9 +570,103 @@ export default function InvPurchaseRequisitionsPage() {
   const isMainOffice = currentUserBranch?.branchCode?.toUpperCase() === "MO" ||
     (currentUserBranch?.branchName && currentUserBranch.branchName.toLowerCase().includes("main"));
   const isMainOfficeOrAdmin = isSuperAdmin || isMainOffice;
-  const isRequester = isSuperAdmin || isMainOffice || normalizedRoles.some(r =>
-    ["m_branch_store", "m_gebi_officer", "inv_storekeeper", "inv_manager"].includes(r)
-  );
+  // All authenticated employees/users can create Purchase Requisitions
+  const isRequester = Boolean(session?.user);
+
+  /* ── Resolve Logged-in User Profile & Matching HRMS Employee ── */
+  const resolveCurrentEmployeeAndProfile = async (loadedEmployees = employees, loadedDepartments = departments, loadedStores = stores) => {
+    try {
+      const uId = session?.user?.id || session?.id;
+      const uName = (session?.user?.username || session?.username || session?.user?.name || session?.name || "").toLowerCase().trim();
+      const uEmail = (session?.user?.email || session?.email || "").toLowerCase().trim();
+
+      let profile = currentUserProfile;
+      if (!profile && uId) {
+        profile = await userService.getUserById(uId).catch(() => null);
+        if (profile) setCurrentUserProfile(profile);
+      }
+
+      const emps = Array.isArray(loadedEmployees) && loadedEmployees.length > 0 ? loadedEmployees : employees;
+      const depts = Array.isArray(loadedDepartments) && loadedDepartments.length > 0 ? loadedDepartments : departments;
+
+      let matched = null;
+      // 1. Direct FK: user_account.employee_id -> hrms_employee_info.id
+      if (profile?.employeeId && emps.length > 0) {
+        matched = emps.find(e => Number(e.id) === Number(profile.employeeId));
+      }
+
+      // 2. Reverse link: employee.userAccount.id or employee.userAccount.userName
+      if (!matched && emps.length > 0) {
+        matched = emps.find(e => {
+          if (!e.userAccount) return false;
+          if (uId && Number(e.userAccount.id) === Number(uId)) return true;
+          if (uName && e.userAccount.userName && e.userAccount.userName.toLowerCase().trim() === uName) return true;
+          return false;
+        });
+      }
+
+      // 3. Match employeeId code with username (e.g. EMP-001)
+      if (!matched && uName && emps.length > 0) {
+        matched = emps.find(e => (e.employeeId || "").toLowerCase().trim() === uName);
+      }
+
+      // 4. Match email
+      if (!matched && uEmail && emps.length > 0) {
+        matched = emps.find(e => (e.email || "").toLowerCase().trim() === uEmail);
+      }
+
+      // 5. Match full name
+      if (!matched && emps.length > 0) {
+        const profileFullName = profile ? `${profile.firstName || ""} ${profile.lastName || ""}`.toLowerCase().trim() : "";
+        matched = emps.find(e => {
+          const empName = (e.fullName || "").toLowerCase().trim();
+          if (uName && empName === uName) return true;
+          if (profileFullName && empName === profileFullName) return true;
+          return false;
+        });
+      }
+
+      if (matched) {
+        setCurrentEmployee(matched);
+      }
+
+      // Determine default department ID
+      let deptId = "";
+      if (matched?.department?.id) {
+        deptId = String(matched.department.id);
+      } else if (matched?.departmentId) {
+        deptId = String(matched.departmentId);
+      } else if (profile?.departmentName && depts.length > 0) {
+        const deptByName = depts.find(d => (d.departmentName || "").toLowerCase().trim() === profile.departmentName.toLowerCase().trim());
+        if (deptByName) deptId = String(deptByName.id);
+      }
+
+      // Determine default position title
+      const positionTitle = matched?.position?.positionTitle || profile?.positionTitle || matched?.dutyStation || "";
+
+      // Determine branch
+      const branchId = matched?.branch?.id || matched?.branchsId || profile?.branchId;
+      if (branchId && !currentUserBranch) {
+        const storeInBranch = (loadedStores || stores || []).find(s => s.branch?.id === branchId);
+        setCurrentUserBranch({
+          id: branchId,
+          branchCode: storeInBranch?.branch?.branchCode || "",
+          branchName: profile?.branchName || storeInBranch?.branch?.branchDescription || ""
+        });
+      }
+
+      return {
+        matchedEmployee: matched,
+        userProfile: profile,
+        departmentId: deptId,
+        employeeId: matched ? String(matched.id) : (profile?.employeeId ? String(profile.employeeId) : ""),
+        positionTitle
+      };
+    } catch (e) {
+      console.warn("Could not resolve current employee/user profile:", e);
+      return null;
+    }
+  };
 
   // Initial load
   useEffect(() => {
@@ -565,20 +674,13 @@ export default function InvPurchaseRequisitionsPage() {
     loadWorkflowTemplate();
   }, []);
 
+  // Re-resolve employee & user profile whenever session or lookups arrive
   useEffect(() => {
-    if (session?.user?.id && !currentUserBranch) {
-      userService.getUserById(session.user.id).then(userProfile => {
-        if (userProfile && userProfile.branchId) {
-          const storeInBranch = stores.find(s => s.branch?.id === userProfile.branchId);
-          setCurrentUserBranch({
-            id: userProfile.branchId,
-            branchCode: storeInBranch?.branch?.branchCode || "",
-            branchName: userProfile.branchName || storeInBranch?.branch?.branchDescription || ""
-          });
-        }
-      }).catch(() => {});
+    const uId = session?.user?.id || session?.id;
+    if (uId && employees.length > 0) {
+      resolveCurrentEmployeeAndProfile(employees, departments, stores);
     }
-  }, [session?.user?.id, stores, currentUserBranch]);
+  }, [session?.user?.id, session?.id, employees, departments, stores]);
 
   useEffect(() => {
     loadData();
@@ -586,16 +688,31 @@ export default function InvPurchaseRequisitionsPage() {
 
   const loadLookups = async () => {
     try {
-      const [st, it, cats, mySt, userProfile] = await Promise.all([
-        invStoreService.getAllActive(),
-        invItemService.getAllActive(),
+      const uId = session?.user?.id || session?.id;
+      const [st, it, cats, mySt, userProfile, depts, emps, pos] = await Promise.all([
+        invStoreService.getAllActive().catch(() => []),
+        invItemService.getAllActive().catch(() => []),
         invCategoryService.getAllActive().catch(() => []),
         invUserStoreService.getMyStores().catch(() => []),
-        session?.user?.id ? userService.getUserById(session.user.id).catch(() => null) : null
+        uId ? userService.getUserById(uId).catch(() => null) : null,
+        hrmsDepartmentService.getAllDepartments().catch(() => []),
+        hrmsEmployeeService.getAllEmployees().catch(() => []),
+        hrmsDepartmentService.getAllPositions().catch(() => [])
       ]);
       setStores(st || []);
       setItems(it || []);
       setCategories(cats || []);
+      setDepartments(Array.isArray(depts) ? depts : []);
+      setEmployees(Array.isArray(emps) ? emps : []);
+      setPositions(Array.isArray(pos) ? pos : []);
+      if (userProfile) {
+        setCurrentUserProfile(userProfile);
+      }
+
+      // Auto-detect current logged-in employee and department
+      if (Array.isArray(emps) && emps.length > 0) {
+        await resolveCurrentEmployeeAndProfile(emps, depts, st);
+      }
 
       const activeUserStores = (mySt || []).filter(s => s.isActive !== false && s.store);
       setMyStores(activeUserStores);
@@ -611,7 +728,9 @@ export default function InvPurchaseRequisitionsPage() {
           branchName: userProfile.branchName || storeInBranch?.branch?.branchDescription || ""
         });
       }
-    } catch {}
+    } catch (e) {
+      console.error("Failed to load PR lookups:", e);
+    }
   };
 
   const loadWorkflowTemplate = async () => {
@@ -733,9 +852,8 @@ export default function InvPurchaseRequisitionsPage() {
   /* ── Validation ── */
   const validateForm = () => {
     const errs = {};
-    const effectiveStoreId = form.storeId || (assignedStore ? String(assignedStore.id) : "");
-    if (!effectiveStoreId) {
-      errs.storeId = "Please select a target receiving store";
+    if (!form.departmentId) {
+      errs.departmentId = "Please select the requesting Department";
     }
     if (!form.lines || form.lines.length === 0) {
       errs.general = "At least one item line is required";
@@ -767,19 +885,50 @@ export default function InvPurchaseRequisitionsPage() {
   };
 
   /* ── Creation & Edit ── */
-  const openCreateModal = () => {
+  const openCreateModal = async () => {
+    // Dynamically resolve current user profile & employee immediately
+    let resolved = null;
+    try {
+      resolved = await resolveCurrentEmployeeAndProfile(employees, departments, stores);
+    } catch (_) {}
+
+    const emp = resolved?.matchedEmployee || currentEmployee;
+    const profile = resolved?.userProfile || currentUserProfile;
+
+    let defaultDeptId = resolved?.departmentId || "";
+    if (!defaultDeptId && emp) {
+      defaultDeptId = emp.department?.id ? String(emp.department.id) : (emp.departmentId ? String(emp.departmentId) : "");
+    }
+    if (!defaultDeptId && profile?.departmentName && departments.length > 0) {
+      const d = departments.find(dept => (dept.departmentName || "").toLowerCase().trim() === profile.departmentName.toLowerCase().trim());
+      if (d) defaultDeptId = String(d.id);
+    }
+    if (!defaultDeptId && departments.length > 0) {
+      defaultDeptId = String(departments[0].id);
+    }
+
+    const defaultEmpId = resolved?.employeeId || (emp?.id ? String(emp.id) : (profile?.employeeId ? String(profile.employeeId) : ""));
+    const defaultPosition = resolved?.positionTitle || emp?.position?.positionTitle || profile?.positionTitle || emp?.dutyStation || "";
+
     let defaultStoreId = "";
     if (assignedStore) {
       defaultStoreId = String(assignedStore.id);
-    } else if (currentUserBranch?.id) {
-      const branchStores = stores.filter(s => s.branch?.id === currentUserBranch.id);
-      if (branchStores.length > 0) {
-        defaultStoreId = String(branchStores[0].id);
+    } else {
+      const branchId = emp?.branch?.id || emp?.branchsId || profile?.branchId || currentUserBranch?.id;
+      if (branchId) {
+        const branchStores = stores.filter(s => s.branch?.id === branchId);
+        if (branchStores.length > 0) defaultStoreId = String(branchStores[0].id);
+      }
+      if (!defaultStoreId && stores.length > 0) {
+        defaultStoreId = String(stores[0].id);
       }
     }
 
     setEditingPr(null);
     setForm({
+      departmentId: defaultDeptId,
+      employeeId: defaultEmpId,
+      positionTitle: defaultPosition,
       storeId: defaultStoreId,
       remarks: "",
       lines: [{ categoryId: "", itemId: "", requestedQuantity: "", estimatedUnitCost: "", purpose: "" }]
@@ -788,11 +937,28 @@ export default function InvPurchaseRequisitionsPage() {
     setModalOpen(true);
   };
 
+  // If creation modal is currently open and employee profile just resolved, auto-select if fields are still empty
+  useEffect(() => {
+    if (modalOpen && !editingPr) {
+      if (!form.employeeId && currentEmployee?.id) {
+        setForm(f => ({
+          ...f,
+          employeeId: String(currentEmployee.id),
+          departmentId: f.departmentId || (currentEmployee.department?.id ? String(currentEmployee.department.id) : ""),
+          positionTitle: f.positionTitle || currentEmployee.position?.positionTitle || currentEmployee.dutyStation || ""
+        }));
+      }
+    }
+  }, [modalOpen, editingPr, currentEmployee]);
+
   const openEditModal = async (pr) => {
     try {
       const fullPr = await invPurchaseRequisitionService.getById(pr.id);
       setEditingPr(fullPr);
       setForm({
+        departmentId: String(fullPr.department?.id || ""),
+        employeeId: String(fullPr.employee?.id || ""),
+        positionTitle: fullPr.positionTitle || "",
         storeId: String(fullPr.store?.id || ""),
         remarks: fullPr.remarks || "",
         lines: (fullPr.lines || []).map(l => ({
@@ -814,21 +980,20 @@ export default function InvPurchaseRequisitionsPage() {
     const errs = validateForm();
     if (Object.keys(errs).length > 0) {
       const missing = [];
-      if (errs.storeId) missing.push("Store");
+      if (errs.departmentId) missing.push("Department");
       if (errs.general) missing.push("At least one line item");
       if (errs.lines) missing.push("Item selection, quantity > 0, and unit cost on lines");
       toast.error(`Please complete all mandatory fields: ${missing.join(", ")}`);
       return;
     }
 
-    if (!isSuperAdmin && !assignedStore && !form.storeId) {
-      toast.error("No store assigned to your account. Please configure at /ui/manager/invUserStore");
-      return;
-    }
-
     const validLines = form.lines.filter(l => l.itemId && l.requestedQuantity && Number(l.requestedQuantity) > 0);
+    const fallbackStoreId = form.storeId ? Number(form.storeId) : (assignedStore?.id || (stores[0]?.id || null));
     const payload = {
-      storeId: Number(form.storeId || assignedStore?.id),
+      departmentId: form.departmentId ? Number(form.departmentId) : null,
+      employeeId: form.employeeId ? Number(form.employeeId) : (currentEmployee?.id || null),
+      positionTitle: form.positionTitle || currentEmployee?.position?.positionTitle || null,
+      storeId: fallbackStoreId,
       remarks: form.remarks,
       lines: validLines.map(l => ({
         itemId: Number(l.itemId),
@@ -853,7 +1018,7 @@ export default function InvPurchaseRequisitionsPage() {
       }
       setModalOpen(false);
       setEditingPr(null);
-      setForm({ storeId: "", remarks: "", lines: [{ categoryId: "", itemId: "", requestedQuantity: "", estimatedUnitCost: "", purpose: "" }] });
+      setForm({ departmentId: "", employeeId: "", positionTitle: "", storeId: "", remarks: "", lines: [{ categoryId: "", itemId: "", requestedQuantity: "", estimatedUnitCost: "", purpose: "" }] });
       setFormErrors({});
       loadData();
     } catch (e) {
@@ -982,16 +1147,56 @@ export default function InvPurchaseRequisitionsPage() {
 
   /* ── Check if user can approve the current step ── */
   const canUserApprove = (prId) => {
-    const inst = wfInstances[prId];
     if (isSuperAdmin) return true;
+    const inst = wfInstances[prId];
+    const pr = prs.find(p => p.id === prId) || (detailModal?.id === prId ? detailModal : null);
+
     if (inst && inst.status === "IN_PROGRESS" && inst.currentStep) {
-      const reqRole = (inst.currentStep.approverRoleCode || "").toLowerCase();
-      return normalizedRoles.includes(reqRole);
+      const reqRole = (inst.currentStep.approverRoleCode || "").toUpperCase();
+
+      if (reqRole === "DEPT_MANAGER") {
+        // 1. Direct Department Manager match
+        const prDeptId = pr?.department?.id;
+        const deptObj = departments.find(d => d.id === prDeptId) || pr?.department;
+        const deptManagerId = deptObj?.managerEmployee?.id || deptObj?.managerEmployeeId;
+
+        if (currentEmployee?.id && deptManagerId && Number(deptManagerId) === Number(currentEmployee.id)) {
+          return true;
+        }
+
+        // 2. Department managerial position check
+        if (currentEmployee?.department?.id && prDeptId && Number(currentEmployee.department.id) === Number(prDeptId)) {
+          const posTitle = (currentEmployee.position?.positionTitle || "").toLowerCase();
+          if (
+            posTitle.includes("manager") ||
+            posTitle.includes("head") ||
+            posTitle.includes("director") ||
+            posTitle.includes("ኃላፊ") ||
+            posTitle.includes("ተቆጣጣሪ") ||
+            posTitle.includes("መሪ")
+          ) {
+            return true;
+          }
+        }
+
+        // 3. Fallback managerial or executive system roles
+        if (normalizedRoles.some(r => [
+          "m_technical_manager", "m_branch_manager", "inv_manager", "general_manager", "dept_manager", "admin", "systemadmin", "billzgjt"
+        ].includes(r))) {
+          return true;
+        }
+
+        return false;
+      }
+
+      return normalizedRoles.includes(reqRole.toLowerCase());
     }
-    // Fallback: if no instance, check status
-    const pr = prs.find(p => p.id === prId);
+
+    // Fallback: if no workflow instance, check status
     if (pr?.status === "SUBMITTED") {
-      return normalizedRoles.some(r => ["m_technical_manager", "m_branch_manager", "inv_manager"].includes(r));
+      return normalizedRoles.some(r => [
+        "m_technical_manager", "m_branch_manager", "inv_manager", "dept_manager"
+      ].includes(r));
     }
     if (pr?.status === "APPROVED_L1") {
       return normalizedRoles.some(r => ["m_finance_head", "fnc"].includes(r));
@@ -1003,10 +1208,14 @@ export default function InvPurchaseRequisitionsPage() {
   const getPendingLabel = (pr) => {
     const inst = wfInstances[pr.id];
     if (inst && inst.status === "IN_PROGRESS" && inst.currentStep) {
+      if (inst.currentStep.approverRoleCode === "DEPT_MANAGER") {
+        const deptName = pr.department?.departmentName || "Dept.";
+        return `${deptName} Manager`;
+      }
       return `${inst.currentStep.stepName} (${inst.currentStep.approverRoleCode})`;
     }
     if (pr.status === "DRAFT") return "Requester (Draft)";
-    if (pr.status === "SUBMITTED") return "Dept. Manager";
+    if (pr.status === "SUBMITTED") return `${pr.department?.departmentName || "Dept."} Manager`;
     if (pr.status === "APPROVED_L1") return "Finance Manager";
     if (pr.status === "APPROVED_L2" || pr.status === "APPROVED") return "Purchase Officer (PO Ready)";
     if (pr.status === "CONVERTED_TO_PO") return "PO Created";
@@ -1086,7 +1295,7 @@ export default function InvPurchaseRequisitionsPage() {
             <thead className="bg-gray-50 dark:bg-gray-700/50 text-gray-600 dark:text-gray-300 uppercase text-xs tracking-wider">
               <tr>
                 <th className="px-5 py-3 text-left">PR Number</th>
-                <th className="px-5 py-3 text-left">Store</th>
+                <th className="px-5 py-3 text-left">Department / Store</th>
                 <th className="px-5 py-3 text-left">Requested By</th>
                 <th className="px-5 py-3 text-left">Date</th>
                 <th className="px-5 py-3 text-right">Est. Amount</th>
@@ -1103,6 +1312,9 @@ export default function InvPurchaseRequisitionsPage() {
                       return (
                         (pr.requisitionNumber || "").toLowerCase().includes(q) ||
                         (pr.requestedBy || "").toLowerCase().includes(q) ||
+                        (pr.department?.departmentName || "").toLowerCase().includes(q) ||
+                        (pr.employee?.fullName || "").toLowerCase().includes(q) ||
+                        (pr.positionTitle || "").toLowerCase().includes(q) ||
                         (pr.store?.storeName || "").toLowerCase().includes(q) ||
                         (pr.remarks || "").toLowerCase().includes(q)
                       );
@@ -1119,8 +1331,32 @@ export default function InvPurchaseRequisitionsPage() {
                   return (
                     <tr key={pr.id} className={`hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors ${pr.status === "CANCELLED" ? "opacity-50" : ""}`}>
                       <td className="px-5 py-3 font-mono font-semibold text-indigo-600">{pr.requisitionNumber}</td>
-                      <td className="px-5 py-3 text-gray-700 dark:text-gray-300">{pr.store?.storeName || "—"}</td>
-                      <td className="px-5 py-3 text-gray-600 dark:text-gray-400">{pr.requestedBy}</td>
+                      <td className="px-5 py-3">
+                        <div className="font-semibold text-gray-900 dark:text-white">
+                          {pr.department?.departmentName || pr.store?.storeName || "—"}
+                        </div>
+                        {pr.department && (
+                          <div className="text-[11px] text-gray-500 dark:text-gray-400">
+                            {pr.store?.storeName ? `Store: ${pr.store.storeName}` : "General Requisition"}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-5 py-3">
+                        <div className="text-gray-800 dark:text-gray-200 font-medium">
+                          {pr.employee ? pr.employee.fullName : pr.requestedBy}
+                        </div>
+                        {pr.positionTitle ? (
+                          <div className="text-[11px] text-indigo-600 dark:text-indigo-400 font-normal">
+                            {pr.positionTitle}
+                          </div>
+                        ) : (
+                          pr.employee?.position?.positionTitle && (
+                            <div className="text-[11px] text-indigo-600 dark:text-indigo-400 font-normal">
+                              {pr.employee.position.positionTitle}
+                            </div>
+                          )
+                        )}
+                      </td>
                       <td className="px-5 py-3 text-gray-600 dark:text-gray-400">{pr.requestedDate}</td>
                       <td className="px-5 py-3 text-right font-mono font-medium">
                         ETB {Number(pr.totalEstimatedAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
@@ -1285,53 +1521,211 @@ export default function InvPurchaseRequisitionsPage() {
               </button>
             </div>
             <div className="p-6 space-y-5">
+              {/* HRMS Department & Requester Employee Profile */}
+              <div className="bg-indigo-50/50 dark:bg-indigo-950/20 p-4 rounded-xl border border-indigo-100 dark:border-indigo-900/40 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-xs font-bold text-indigo-700 dark:text-indigo-300 uppercase tracking-wider flex items-center gap-1.5">
+                    <Building className="w-4 h-4" /> Requesting Department & Employee Profile
+                  </span>
+                  {currentEmployee ? (
+                    <span className="text-[11px] font-medium text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-950/60 px-2.5 py-0.5 rounded-full flex items-center gap-1.5 border border-emerald-200 dark:border-emerald-800">
+                      <UserCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                      Auto-Selected: <strong>{currentEmployee.fullName}</strong>
+                      {currentEmployee.department?.departmentName && (
+                        <span className="opacity-80"> • {currentEmployee.department.departmentName}</span>
+                      )}
+                    </span>
+                  ) : currentUserProfile?.employeeFullName ? (
+                    <span className="text-[11px] font-medium text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-950/60 px-2.5 py-0.5 rounded-full flex items-center gap-1.5 border border-emerald-200 dark:border-emerald-800">
+                      <UserCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                      Linked User: <strong>{currentUserProfile.employeeFullName}</strong>
+                    </span>
+                  ) : (
+                    <span className="text-[11px] text-gray-500 dark:text-gray-400 flex items-center gap-1">
+                      <User className="w-3.5 h-3.5" /> Standalone User ({session?.user?.name || session?.user?.username || "Admin"})
+                    </span>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {/* Department Selection */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300">
+                        Department <span className="text-red-500">*</span>
+                      </label>
+                      {currentEmployee?.department?.id && String(form.departmentId) === String(currentEmployee.department.id) && (
+                        <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">
+                          (Your Dept)
+                        </span>
+                      )}
+                    </div>
+                    <select
+                      value={form.departmentId}
+                      onChange={(e) => {
+                        const dId = e.target.value;
+                        setForm(f => {
+                          const updated = { ...f, departmentId: dId };
+                          // If current logged-in employee belongs to this department, auto-select them
+                          if (currentEmployee && String(currentEmployee.department?.id || currentEmployee.departmentId) === String(dId)) {
+                            updated.employeeId = String(currentEmployee.id);
+                            updated.positionTitle = currentEmployee.position?.positionTitle || currentEmployee.dutyStation || f.positionTitle || "";
+                          }
+                          return updated;
+                        });
+                        if (formErrors.departmentId) setFormErrors(fe => ({ ...fe, departmentId: null }));
+                      }}
+                      className={`w-full px-3 py-2 text-xs border rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-xs transition-colors ${
+                        formErrors.departmentId ? "border-red-500 ring-1 ring-red-500 bg-red-50/20" : "border-gray-300 dark:border-gray-600"
+                      }`}
+                    >
+                      <option value="">Select Department</option>
+                      {departments.map(d => (
+                        <option key={d.id} value={d.id}>
+                          {d.departmentName} {d.departmentNameAm ? `(${d.departmentNameAm})` : ""}
+                        </option>
+                      ))}
+                    </select>
+                    {formErrors.departmentId && (
+                      <p className="text-[11px] text-red-600 dark:text-red-400 mt-1 flex items-center gap-1">
+                        <AlertCircle className="w-3 h-3" /> {formErrors.departmentId}
+                      </p>
+                    )}
+                    {(() => {
+                      const selDept = departments.find(d => String(d.id) === String(form.departmentId));
+                      const mgr = selDept?.managerEmployee;
+                      return mgr ? (
+                        <p className="text-[10px] text-indigo-600 dark:text-indigo-400 mt-1 flex items-center gap-1">
+                          <ShieldCheck className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                          1st Stage Approver: <strong>{mgr.fullName}</strong> {mgr.position?.positionTitle ? `(${mgr.position.positionTitle})` : ""}
+                        </p>
+                      ) : (
+                        form.departmentId ? (
+                          <p className="text-[10px] text-amber-600 dark:text-amber-400 mt-1">
+                            No designated manager assigned (routed to departmental management role)
+                          </p>
+                        ) : null
+                      );
+                    })()}
+                  </div>
+
+                  {/* Requester Employee */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300">
+                        Requester Staff / Employee
+                      </label>
+                      {currentEmployee && String(form.employeeId) !== String(currentEmployee.id) && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setForm(f => ({
+                              ...f,
+                              employeeId: String(currentEmployee.id),
+                              departmentId: currentEmployee.department?.id ? String(currentEmployee.department.id) : (currentEmployee.departmentId ? String(currentEmployee.departmentId) : f.departmentId),
+                              positionTitle: currentEmployee.position?.positionTitle || currentEmployee.dutyStation || f.positionTitle || ""
+                            }));
+                            if (formErrors.departmentId) setFormErrors(fe => ({ ...fe, departmentId: null }));
+                          }}
+                          className="text-[10px] text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-0.5 font-medium"
+                          title="Auto-select your own employee profile"
+                        >
+                          <UserCheck className="w-3 h-3" /> Use My Profile
+                        </button>
+                      )}
+                    </div>
+                    <select
+                      value={form.employeeId}
+                      onChange={(e) => {
+                        const empId = e.target.value;
+                        const selEmp = employees.find(emp => String(emp.id) === String(empId));
+                        setForm(f => ({
+                          ...f,
+                          employeeId: empId,
+                          departmentId: selEmp?.department?.id ? String(selEmp.department.id) : (selEmp?.departmentId ? String(selEmp.departmentId) : f.departmentId),
+                          positionTitle: selEmp?.position?.positionTitle || selEmp?.dutyStation || f.positionTitle || ""
+                        }));
+                        if (formErrors.departmentId) setFormErrors(fe => ({ ...fe, departmentId: null }));
+                      }}
+                      className="w-full px-3 py-2 text-xs border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-xs"
+                    >
+                      <option value="">(Select Employee Record)</option>
+                      {form.departmentId ? (
+                        <>
+                          <optgroup label="Staff in Selected Department">
+                            {employees.filter(emp => String(emp.department?.id || emp.departmentId) === String(form.departmentId)).map(emp => (
+                              <option key={emp.id} value={emp.id}>
+                                {emp.fullName} ({emp.employeeId}) {emp.position?.positionTitle ? `— ${emp.position.positionTitle}` : ""}
+                              </option>
+                            ))}
+                          </optgroup>
+                          <optgroup label="Other Staff Members">
+                            {employees.filter(emp => String(emp.department?.id || emp.departmentId) !== String(form.departmentId)).map(emp => (
+                              <option key={emp.id} value={emp.id}>
+                                {emp.fullName} ({emp.employeeId}) {emp.position?.positionTitle ? `— ${emp.position.positionTitle}` : ""}
+                              </option>
+                            ))}
+                          </optgroup>
+                        </>
+                      ) : (
+                        employees.map(emp => (
+                          <option key={emp.id} value={emp.id}>
+                            {emp.fullName} ({emp.employeeId}) {emp.position?.positionTitle ? `— ${emp.position.positionTitle}` : ""}
+                          </option>
+                        ))
+                      )}
+                    </select>
+                    {currentEmployee && String(form.employeeId) === String(currentEmployee.id) && (
+                      <p className="text-[10px] text-emerald-600 dark:text-emerald-400 mt-1 flex items-center gap-1">
+                        <Check className="w-3 h-3" /> Connected to your active account
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Position Title */}
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                      Designation / Position Title
+                    </label>
+                    <input
+                      type="text"
+                      value={form.positionTitle}
+                      onChange={(e) => setForm(f => ({ ...f, positionTitle: e.target.value }))}
+                      placeholder="e.g. Senior Officer / Engineer"
+                      className="w-full px-3 py-2 text-xs border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-xs"
+                    />
+                    <p className="text-[10px] text-gray-400 mt-1">
+                      Auto-populated from employee position profile.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Receiving Store & Remarks */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Store <span className="text-red-500">*</span>
-                    {assignedStore && !isSuperAdmin && (
+                    Destination Store (Optional)
+                    {assignedStore && (
                       <span className="text-xs text-indigo-600 dark:text-indigo-400 ml-2 font-normal">
-                        (Assigned Store)
+                        (Assigned: {assignedStore.storeName})
                       </span>
                     )}
                   </label>
                   <select
                     value={form.storeId}
-                    disabled={!isSuperAdmin && Boolean(assignedStore)}
-                    onChange={(e) => {
-                      setForm({ ...form, storeId: e.target.value });
-                      if (formErrors.storeId) {
-                        setFormErrors({ ...formErrors, storeId: null });
-                      }
-                    }}
-                    className={`w-full px-3 py-2 border rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-xs transition-colors ${
-                      !isSuperAdmin && Boolean(assignedStore) ? "opacity-75 cursor-not-allowed bg-gray-100 dark:bg-gray-800" : ""
-                    } ${
-                      formErrors.storeId ? "border-red-500 ring-1 ring-red-500 bg-red-50/20" : "border-gray-300 dark:border-gray-600"
-                    }`}
+                    onChange={(e) => setForm({ ...form, storeId: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-xs transition-colors"
                   >
-                    <option value="">Select Store</option>
-                    {(isMainOfficeOrAdmin
-                      ? stores
-                      : (currentUserBranch?.id
-                          ? stores.filter(s => s.branch?.id === currentUserBranch.id)
-                          : (myStores.length > 0 ? myStores.map(ms => ms.store) : stores)
-                        )
-                    ).filter(Boolean).map(s => <option key={s.id} value={s.id}>{s.storeName}</option>)}
+                    <option value="">Default Warehouse / Main Store</option>
+                    {stores.map(s => <option key={s.id} value={s.id}>{s.storeName} ({s.storeCode || "Store"})</option>)}
                   </select>
-                  {!isSuperAdmin && !assignedStore && !currentUserBranch?.id && (
-                    <p className="text-xs text-amber-600 dark:text-amber-400 mt-1 flex items-center gap-1">
-                      <AlertCircle className="w-3.5 h-3.5" /> No store or branch assigned to your account.
-                    </p>
-                  )}
-                  {formErrors.storeId && (
-                    <p className="text-xs text-red-600 dark:text-red-400 mt-1 flex items-center gap-1">
-                      <AlertCircle className="w-3.5 h-3.5" /> {formErrors.storeId}
-                    </p>
-                  )}
+                  <p className="text-[11px] text-gray-400 mt-1">
+                    Receiving store when items are procured.
+                  </p>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Remarks</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Remarks & Purpose</label>
                   <input
                     value={form.remarks}
                     onChange={(e) => setForm({ ...form, remarks: e.target.value })}
@@ -1589,22 +1983,38 @@ export default function InvPurchaseRequisitionsPage() {
               />
 
               {/* Meta Grid */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm bg-gray-50 dark:bg-gray-700/20 p-4 rounded-xl">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 text-xs bg-gray-50 dark:bg-gray-700/20 p-4 rounded-xl border border-gray-100 dark:border-gray-700/50">
                 <div>
-                  <span className="text-gray-500 text-xs block">Store</span>
-                  <span className="font-semibold text-gray-800 dark:text-gray-200">{detailModal.store?.storeName || "—"}</span>
+                  <span className="text-gray-500 text-[11px] block">Department</span>
+                  <span className="font-semibold text-indigo-600 dark:text-indigo-400">
+                    {detailModal.department?.departmentName || "—"}
+                  </span>
                 </div>
                 <div>
-                  <span className="text-gray-500 text-xs block">Requested By</span>
-                  <span className="font-semibold text-gray-800 dark:text-gray-200">{detailModal.requestedBy}</span>
+                  <span className="text-gray-500 text-[11px] block">Requested By</span>
+                  <span className="font-semibold text-gray-800 dark:text-gray-200">
+                    {detailModal.employee ? detailModal.employee.fullName : detailModal.requestedBy}
+                  </span>
                 </div>
                 <div>
-                  <span className="text-gray-500 text-xs block">Date</span>
+                  <span className="text-gray-500 text-[11px] block">Designation</span>
+                  <span className="font-semibold text-gray-800 dark:text-gray-200">
+                    {detailModal.positionTitle || detailModal.employee?.position?.positionTitle || "—"}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-gray-500 text-[11px] block">Receiving Store</span>
+                  <span className="font-semibold text-gray-800 dark:text-gray-200">
+                    {detailModal.store?.storeName || "—"}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-gray-500 text-[11px] block">Date</span>
                   <span className="font-semibold text-gray-800 dark:text-gray-200">{detailModal.requestedDate}</span>
                 </div>
                 <div>
-                  <span className="text-gray-500 text-xs block">Total Amount</span>
-                  <span className="font-semibold text-indigo-600 dark:text-indigo-400 font-mono">
+                  <span className="text-gray-500 text-[11px] block">Total Estimated</span>
+                  <span className="font-bold text-emerald-600 dark:text-emerald-400 font-mono">
                     ETB {Number(detailModal.totalEstimatedAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                   </span>
                 </div>

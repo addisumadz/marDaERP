@@ -13,10 +13,15 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.Year;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
+import com.wbill.home.model.hrms.HrmsDepartment;
+import com.wbill.home.model.hrms.HrmsEmployee;
+import com.wbill.home.repository.hrms.HrmsDepartmentRepository;
+import com.wbill.home.repository.hrms.HrmsEmployeeRepository;
 
 @Service
 public class InvPurchaseRequisitionService {
@@ -41,6 +46,12 @@ public class InvPurchaseRequisitionService {
 
     @Autowired(required = false)
     private InvStoreUserRepository storeUserRepo;
+
+    @Autowired(required = false)
+    private HrmsDepartmentRepository departmentRepository;
+
+    @Autowired(required = false)
+    private HrmsEmployeeRepository employeeRepository;
 
     public boolean isAdmin(String username) {
         if (username == null || username.trim().isEmpty()) {
@@ -107,6 +118,42 @@ public class InvPurchaseRequisitionService {
         return null;
     }
 
+    public List<Integer> getManagedDepartmentIds(String username) {
+        List<Integer> deptIds = new ArrayList<>();
+        if (departmentRepository == null || username == null) return deptIds;
+
+        // 1. By employeeId
+        if (employeeRepository != null) {
+            employeeRepository.findByEmployeeIdAndDeletedFalse(username).ifPresent(emp -> {
+                List<HrmsDepartment> allDepts = departmentRepository.findByActiveTrueOrderByDepartmentNameAsc();
+                for (HrmsDepartment d : allDepts) {
+                    if (d.getManagerEmployeeId() != null && d.getManagerEmployeeId() == emp.getId()) {
+                        deptIds.add(d.getId());
+                    }
+                }
+            });
+        }
+        // 2. By UserAccount matching full name
+        if (deptIds.isEmpty() && userAccountRepo != null && employeeRepository != null) {
+            userAccountRepo.findByUserName(username).ifPresent(ua -> {
+                String fullName = ((ua.getFirstName() != null ? ua.getFirstName() : "") + " " +
+                                  (ua.getLastName() != null ? ua.getLastName() : "")).trim();
+                if (!fullName.isEmpty()) {
+                    List<HrmsEmployee> matching = employeeRepository.searchEmployees(fullName);
+                    if (!matching.isEmpty()) {
+                        int empId = matching.get(0).getId();
+                        for (HrmsDepartment d : departmentRepository.findByActiveTrueOrderByDepartmentNameAsc()) {
+                            if (d.getManagerEmployeeId() != null && d.getManagerEmployeeId() == empId) {
+                                deptIds.add(d.getId());
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        return deptIds;
+    }
+
     public Page<InvPurchaseRequisition> getAllFiltered(Integer storeId, String statusStr, String username, int page, int size) {
         PRStatus status = null;
         if (statusStr != null && !statusStr.trim().isEmpty() && !"ALL".equalsIgnoreCase(statusStr)) {
@@ -127,17 +174,25 @@ public class InvPurchaseRequisitionService {
             return getAll(page, size);
         }
 
-        // Branch-scoped user (Branch Manager, Store Keeper, etc. belonging to a specific branch)
-        Integer userBranchId = getUserBranchId(username);
-        if (userBranchId == null) {
-            return new org.springframework.data.domain.PageImpl<>(
-                    Collections.emptyList(),
-                    PageRequest.of(page, size),
-                    0
-            );
+        // Department Manager view
+        List<Integer> managedDeptIds = getManagedDepartmentIds(username);
+        if (!managedDeptIds.isEmpty()) {
+            if (status != null) {
+                return repository.findByDepartmentIdAndStatusOrderByCreatedAtDesc(managedDeptIds.get(0), status, PageRequest.of(page, size));
+            }
+            return repository.findByDepartmentIdInOrderByCreatedAtDesc(managedDeptIds, PageRequest.of(page, size));
         }
 
-        // If a specific store is requested, ensure that the store belongs to the user's branch
+        // Branch-scoped user or individual requester
+        Integer userBranchId = getUserBranchId(username);
+        if (userBranchId == null) {
+            if (status != null) {
+                return repository.findByRequestedByAndStatusOrderByCreatedAtDesc(username, status, PageRequest.of(page, size));
+            }
+            return repository.findByRequestedByOrderByCreatedAtDesc(username, PageRequest.of(page, size));
+        }
+
+        // If a specific store is requested
         if (storeId != null) {
             Optional<InvStore> storeOpt = storeRepository.findById(storeId);
             if (storeOpt.isPresent() && storeOpt.get().getBranch() != null && storeOpt.get().getBranch().getId() == userBranchId) {
@@ -145,20 +200,14 @@ public class InvPurchaseRequisitionService {
                     return getByStoreAndStatus(storeId, status, page, size);
                 }
                 return getByStore(storeId, page, size);
-            } else {
-                return new org.springframework.data.domain.PageImpl<>(
-                        Collections.emptyList(),
-                        PageRequest.of(page, size),
-                        0
-                );
             }
         }
 
-        // No specific store requested: return all PRs for stores in user's branch
+        // No specific store requested: return all PRs for branch or created by this user
         if (status != null) {
-            return repository.findByBranchIdAndStatusOrderByCreatedAtDesc(userBranchId, status, PageRequest.of(page, size));
+            return repository.findByBranchOrRequesterAndStatus(userBranchId, username, status, PageRequest.of(page, size));
         }
-        return repository.findByBranchIdOrderByCreatedAtDesc(userBranchId, PageRequest.of(page, size));
+        return repository.findByBranchOrRequester(userBranchId, username, PageRequest.of(page, size));
     }
 
     public Page<InvPurchaseRequisition> getAll(int page, int size) {
@@ -182,10 +231,71 @@ public class InvPurchaseRequisitionService {
     }
 
     @Transactional
-    public InvPurchaseRequisition create(InvPurchaseRequisition pr, int storeId, List<InvPurchaseRequisitionLine> lines, String username) {
-        InvStore store = storeRepository.findById(storeId)
-                .orElseThrow(() -> new IllegalArgumentException("Store not found"));
-        pr.setStore(store);
+    public InvPurchaseRequisition create(InvPurchaseRequisition pr, Integer storeId, Integer departmentId, Integer employeeId, String positionTitle, List<InvPurchaseRequisitionLine> lines, String username) {
+        if (storeId != null && storeId > 0) {
+            storeRepository.findById(storeId).ifPresent(pr::setStore);
+        }
+
+        // Link Employee
+        if (employeeId != null && employeeId > 0 && employeeRepository != null) {
+            employeeRepository.findById(employeeId).ifPresent(emp -> {
+                pr.setEmployee(emp);
+                if (pr.getDepartment() == null && emp.getDepartment() != null) {
+                    pr.setDepartment(emp.getDepartment());
+                }
+                if (pr.getPositionTitle() == null && emp.getPosition() != null) {
+                    pr.setPositionTitle(emp.getPosition().getPositionTitle());
+                }
+            });
+        } else if (employeeRepository != null && username != null) {
+            // Auto-detect employee by username
+            employeeRepository.findByEmployeeIdAndDeletedFalse(username).ifPresent(emp -> {
+                pr.setEmployee(emp);
+                if (pr.getDepartment() == null && emp.getDepartment() != null) {
+                    pr.setDepartment(emp.getDepartment());
+                }
+                if (pr.getPositionTitle() == null && emp.getPosition() != null) {
+                    pr.setPositionTitle(emp.getPosition().getPositionTitle());
+                }
+            });
+        }
+
+        // Explicit Department if provided
+        if (departmentId != null && departmentId > 0 && departmentRepository != null) {
+            departmentRepository.findById(departmentId).ifPresent(pr::setDepartment);
+        }
+
+        if (positionTitle != null && !positionTitle.trim().isEmpty()) {
+            pr.setPositionTitle(positionTitle);
+        }
+
+        // If store is still null, default to store in branch
+        if (pr.getStore() == null) {
+            Integer branchId = null;
+            if (pr.getEmployee() != null && pr.getEmployee().getBranch() != null) {
+                branchId = pr.getEmployee().getBranch().getId();
+            } else {
+                branchId = getUserBranchId(username);
+            }
+            if (branchId != null) {
+                Optional<InvStore> branchStoreOpt = storeRepository.findByBranchId(branchId);
+                if (branchStoreOpt.isPresent()) {
+                    pr.setStore(branchStoreOpt.get());
+                }
+            }
+            if (pr.getStore() == null) {
+                Optional<InvStore> mainStoreOpt = storeRepository.findByIsMainStoreTrue();
+                if (mainStoreOpt.isPresent()) {
+                    pr.setStore(mainStoreOpt.get());
+                } else {
+                    List<InvStore> allStores = storeRepository.findByDeletedAndIsActiveOrderByStoreCodeAsc("active", true);
+                    if (!allStores.isEmpty()) {
+                        pr.setStore(allStores.get(0));
+                    }
+                }
+            }
+        }
+
         pr.setRequisitionNumber(generateNumber());
         pr.setRequestedBy(username);
         pr.setRequestedDate(LocalDate.now());
@@ -208,6 +318,11 @@ public class InvPurchaseRequisitionService {
     }
 
     @Transactional
+    public InvPurchaseRequisition create(InvPurchaseRequisition pr, int storeId, List<InvPurchaseRequisitionLine> lines, String username) {
+        return create(pr, storeId, null, null, null, lines, username);
+    }
+
+    @Transactional
     public InvPurchaseRequisition submit(long id, String username) {
         InvPurchaseRequisition pr = repository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("PR not found"));
@@ -220,6 +335,10 @@ public class InvPurchaseRequisitionService {
         Integer branchId = null;
         if (pr.getStore() != null && pr.getStore().getBranch() != null) {
             branchId = pr.getStore().getBranch().getId();
+        } else if (pr.getEmployee() != null && pr.getEmployee().getBranch() != null) {
+            branchId = pr.getEmployee().getBranch().getId();
+        } else {
+            branchId = getUserBranchId(username);
         }
 
         if (workflowService != null) {
@@ -321,7 +440,7 @@ public class InvPurchaseRequisitionService {
     }
 
     @Transactional
-    public InvPurchaseRequisition update(long id, int storeId, String remarks, List<InvPurchaseRequisitionLine> newLines, String username) {
+    public InvPurchaseRequisition update(long id, Integer storeId, Integer departmentId, Integer employeeId, String positionTitle, String remarks, List<InvPurchaseRequisitionLine> newLines, String username) {
         InvPurchaseRequisition pr = repository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("PR not found"));
 
@@ -343,9 +462,18 @@ public class InvPurchaseRequisitionService {
         }
 
         // Update store
-        InvStore store = storeRepository.findById(storeId)
-                .orElseThrow(() -> new IllegalArgumentException("Store not found"));
-        pr.setStore(store);
+        if (storeId != null && storeId > 0) {
+            storeRepository.findById(storeId).ifPresent(pr::setStore);
+        }
+        if (departmentId != null && departmentId > 0 && departmentRepository != null) {
+            departmentRepository.findById(departmentId).ifPresent(pr::setDepartment);
+        }
+        if (employeeId != null && employeeId > 0 && employeeRepository != null) {
+            employeeRepository.findById(employeeId).ifPresent(pr::setEmployee);
+        }
+        if (positionTitle != null) {
+            pr.setPositionTitle(positionTitle);
+        }
         pr.setRemarks(remarks);
 
         // Replace lines
@@ -364,6 +492,11 @@ public class InvPurchaseRequisitionService {
         pr.setTotalEstimatedAmount(total);
 
         return repository.save(pr);
+    }
+
+    @Transactional
+    public InvPurchaseRequisition update(long id, int storeId, String remarks, List<InvPurchaseRequisitionLine> newLines, String username) {
+        return update(id, storeId, null, null, null, remarks, newLines, username);
     }
 
     @Transactional

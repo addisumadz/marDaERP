@@ -237,7 +237,7 @@ export default function LoginScreen({ onLoginSuccess }) {
                         0935981944 Addisu Z
                     </Text>
                     <Text style={styles.footerText}>
-                        V 4.0.0
+                        V 5.0.0
                     </Text>
                 </View>
             </ScrollView>

@@ -21,6 +21,12 @@ public class UserAccountDTO {
   public Date registeredDate;
   public Date modifiedDate;
   public String previousMonthCsvFileName;
+  public Integer employeeId;
+  public String employeeCode;
+  public String employeeFullName;
+  public String employeeFullNameAm;
+  public String departmentName;
+  public String positionTitle;
 
   public static UserAccountDTO from(UserAccount u) {
     UserAccountDTO dto = new UserAccountDTO();
@@ -44,6 +50,19 @@ public class UserAccountDTO {
     dto.registeredDate = u.getRegisteredDate();
     dto.modifiedDate = u.getModifiedDate();
     dto.previousMonthCsvFileName = u.getPreviousMonthCsvFileName();
+
+    if (u.getEmployee() != null) {
+      dto.employeeId = u.getEmployee().getId();
+      dto.employeeCode = u.getEmployee().getEmployeeId();
+      dto.employeeFullName = u.getEmployee().getFullName();
+      dto.employeeFullNameAm = u.getEmployee().getFullNameAm();
+      if (u.getEmployee().getDepartment() != null) {
+        dto.departmentName = u.getEmployee().getDepartment().getDepartmentName();
+      }
+      if (u.getEmployee().getPosition() != null) {
+        dto.positionTitle = u.getEmployee().getPosition().getPositionTitle();
+      }
+    }
     return dto;
   }
 }

@@ -481,19 +481,31 @@ public class InvFinanceIntegrationService {
                 });
     }
 
-    private String generateEntryNumber() {
+    private synchronized String generateEntryNumber() {
         String prefix = "JE-INV-";
-        Optional<String> maxOpt = journalEntryRepository.findMaxEntryNumber(prefix + "%");
-        int next = 1;
-        if (maxOpt.isPresent()) {
-            try {
-                String max = maxOpt.get();
-                String numPart = max.substring(prefix.length());
-                next = Integer.parseInt(numPart) + 1;
-            } catch (Exception ignored) {
-                // fallback to 1 if parsing fails
+        List<String> existingNumbers = journalEntryRepository.findEntryNumbersByPrefix(prefix + "%");
+        int maxSeq = 0;
+        for (String num : existingNumbers) {
+            if (num != null && num.startsWith(prefix)) {
+                String suffix = num.substring(prefix.length());
+                // Only consider purely numeric sequential suffixes (e.g., "0001", "0002")
+                // Ignore legacy timestamp formats like "2026-1788870998893"
+                if (suffix.matches("^\\d+$")) {
+                    try {
+                        int val = Integer.parseInt(suffix);
+                        if (val > maxSeq) {
+                            maxSeq = val;
+                        }
+                    } catch (NumberFormatException ignored) {}
+                }
             }
         }
-        return prefix + String.format("%04d", next);
+        int next = maxSeq + 1;
+        String candidate = prefix + String.format("%04d", next);
+        while (journalEntryRepository.existsByEntryNumber(candidate)) {
+            next++;
+            candidate = prefix + String.format("%04d", next);
+        }
+        return candidate;
     }
 }

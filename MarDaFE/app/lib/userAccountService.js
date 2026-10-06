@@ -61,4 +61,16 @@ export class UserAccountService {
     const token = getAccesToken();
     await axios.put(`${commonUrl}users/${id}/change-password`, payload, { headers: authHeader(token) });
   }
+
+  async linkEmployee(id, employeeId) {
+    const token = getAccesToken();
+    const res = await axios.put(`${commonUrl}users/${id}/link-employee/${employeeId}`, {}, { headers: authHeader(token) });
+    return res.data;
+  }
+
+  async unlinkEmployee(id) {
+    const token = getAccesToken();
+    const res = await axios.put(`${commonUrl}users/${id}/unlink-employee`, {}, { headers: authHeader(token) });
+    return res.data;
+  }
 }

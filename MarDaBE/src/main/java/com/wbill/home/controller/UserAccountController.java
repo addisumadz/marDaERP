@@ -114,4 +114,27 @@ public class UserAccountController {
       return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error changing password: " + e.getMessage());
     }
   }
+
+  // Link / Unlink Employee
+  @PutMapping("/{id}/link-employee/{employeeId}")
+  public ResponseEntity<?> linkEmployee(@PathVariable Integer id, @PathVariable Integer employeeId) {
+    try {
+      UserAccountDTO updated = service.linkEmployee(id, employeeId);
+      return ResponseEntity.ok(updated);
+    } catch (IllegalArgumentException e) {
+      return ResponseEntity.badRequest().body(e.getMessage());
+    } catch (Exception e) {
+      return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error linking employee: " + e.getMessage());
+    }
+  }
+
+  @PutMapping("/{id}/unlink-employee")
+  public ResponseEntity<?> unlinkEmployee(@PathVariable Integer id) {
+    try {
+      UserAccountDTO updated = service.unlinkEmployee(id);
+      return ResponseEntity.ok(updated);
+    } catch (Exception e) {
+      return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error unlinking employee: " + e.getMessage());
+    }
+  }
 }

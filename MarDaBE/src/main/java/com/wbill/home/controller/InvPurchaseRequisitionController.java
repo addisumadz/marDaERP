@@ -48,7 +48,28 @@ public class InvPurchaseRequisitionController {
             String username = principal != null ? principal.getName() : "system";
             InvPurchaseRequisition pr = new InvPurchaseRequisition();
             pr.setRemarks((String) body.get("remarks"));
-            int storeId = Integer.parseInt(body.get("storeId").toString());
+            Integer storeId = null;
+            if (body.get("storeId") != null && !body.get("storeId").toString().trim().isEmpty()) {
+                try {
+                    storeId = Integer.parseInt(body.get("storeId").toString());
+                } catch (Exception ignored) {}
+            }
+
+            Integer departmentId = null;
+            if (body.get("departmentId") != null && !body.get("departmentId").toString().trim().isEmpty()) {
+                try {
+                    departmentId = Integer.parseInt(body.get("departmentId").toString());
+                } catch (Exception ignored) {}
+            }
+
+            Integer employeeId = null;
+            if (body.get("employeeId") != null && !body.get("employeeId").toString().trim().isEmpty()) {
+                try {
+                    employeeId = Integer.parseInt(body.get("employeeId").toString());
+                } catch (Exception ignored) {}
+            }
+
+            String positionTitle = body.get("positionTitle") != null ? body.get("positionTitle").toString() : null;
 
             List<Map<String, Object>> lineData = (List<Map<String, Object>>) body.get("lines");
             List<InvPurchaseRequisitionLine> lines = new ArrayList<>();
@@ -62,7 +83,7 @@ public class InvPurchaseRequisitionController {
                 line.setPurpose((String) ld.get("purpose"));
                 lines.add(line);
             }
-            return ResponseEntity.status(HttpStatus.CREATED).body(service.create(pr, storeId, lines, username));
+            return ResponseEntity.status(HttpStatus.CREATED).body(service.create(pr, storeId, departmentId, employeeId, positionTitle, lines, username));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(java.util.Collections.singletonMap("message", e.getMessage() != null ? e.getMessage() : e.toString()));
         }
@@ -112,7 +133,28 @@ public class InvPurchaseRequisitionController {
     public ResponseEntity<?> update(@PathVariable long id, @RequestBody Map<String, Object> body, Principal principal) {
         try {
             String username = principal != null ? principal.getName() : "system";
-            int storeId = Integer.parseInt(body.get("storeId").toString());
+            Integer storeId = null;
+            if (body.get("storeId") != null && !body.get("storeId").toString().trim().isEmpty()) {
+                try {
+                    storeId = Integer.parseInt(body.get("storeId").toString());
+                } catch (Exception ignored) {}
+            }
+
+            Integer departmentId = null;
+            if (body.get("departmentId") != null && !body.get("departmentId").toString().trim().isEmpty()) {
+                try {
+                    departmentId = Integer.parseInt(body.get("departmentId").toString());
+                } catch (Exception ignored) {}
+            }
+
+            Integer employeeId = null;
+            if (body.get("employeeId") != null && !body.get("employeeId").toString().trim().isEmpty()) {
+                try {
+                    employeeId = Integer.parseInt(body.get("employeeId").toString());
+                } catch (Exception ignored) {}
+            }
+
+            String positionTitle = body.get("positionTitle") != null ? body.get("positionTitle").toString() : null;
             String remarks = body.get("remarks") != null ? (String) body.get("remarks") : "";
 
             List<Map<String, Object>> lineData = (List<Map<String, Object>>) body.get("lines");
@@ -127,7 +169,7 @@ public class InvPurchaseRequisitionController {
                 line.setPurpose((String) ld.get("purpose"));
                 lines.add(line);
             }
-            return ResponseEntity.ok(service.update(id, storeId, remarks, lines, username));
+            return ResponseEntity.ok(service.update(id, storeId, departmentId, employeeId, positionTitle, remarks, lines, username));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(java.util.Collections.singletonMap("message", e.getMessage() != null ? e.getMessage() : e.toString()));
         }

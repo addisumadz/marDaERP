@@ -24,6 +24,24 @@ public interface InvPurchaseRequisitionRepository extends JpaRepository<InvPurch
     Page<InvPurchaseRequisition> findAllByOrderByCreatedAtDesc(Pageable pageable);
     java.util.List<InvPurchaseRequisition> findByStatusInOrderByCreatedAtDesc(java.util.Collection<PRStatus> statuses);
 
+    Page<InvPurchaseRequisition> findByRequestedByOrderByCreatedAtDesc(String requestedBy, Pageable pageable);
+    Page<InvPurchaseRequisition> findByRequestedByAndStatusOrderByCreatedAtDesc(String requestedBy, PRStatus status, Pageable pageable);
+
+    @Query("SELECT r FROM InvPurchaseRequisition r WHERE r.department.id = :departmentId ORDER BY r.createdAt DESC")
+    Page<InvPurchaseRequisition> findByDepartmentIdOrderByCreatedAtDesc(@Param("departmentId") int departmentId, Pageable pageable);
+
+    @Query("SELECT r FROM InvPurchaseRequisition r WHERE r.department.id = :departmentId AND r.status = :status ORDER BY r.createdAt DESC")
+    Page<InvPurchaseRequisition> findByDepartmentIdAndStatusOrderByCreatedAtDesc(@Param("departmentId") int departmentId, @Param("status") PRStatus status, Pageable pageable);
+
+    @Query("SELECT r FROM InvPurchaseRequisition r WHERE r.department.id IN :departmentIds ORDER BY r.createdAt DESC")
+    Page<InvPurchaseRequisition> findByDepartmentIdInOrderByCreatedAtDesc(@Param("departmentIds") java.util.Collection<Integer> departmentIds, Pageable pageable);
+
+    @Query("SELECT r FROM InvPurchaseRequisition r WHERE (r.store.branch.id = :branchId OR (r.employee.branch.id = :branchId) OR r.requestedBy = :username) ORDER BY r.createdAt DESC")
+    Page<InvPurchaseRequisition> findByBranchOrRequester(@Param("branchId") int branchId, @Param("username") String username, Pageable pageable);
+
+    @Query("SELECT r FROM InvPurchaseRequisition r WHERE (r.store.branch.id = :branchId OR (r.employee.branch.id = :branchId) OR r.requestedBy = :username) AND r.status = :status ORDER BY r.createdAt DESC")
+    Page<InvPurchaseRequisition> findByBranchOrRequesterAndStatus(@Param("branchId") int branchId, @Param("username") String username, @Param("status") PRStatus status, Pageable pageable);
+
     @Query("SELECT MAX(CAST(SUBSTRING(r.requisitionNumber, 4) AS long)) FROM InvPurchaseRequisition r WHERE r.requisitionNumber LIKE CONCAT(:prefix, '%')")
     Long findMaxSequence(String prefix);
 }

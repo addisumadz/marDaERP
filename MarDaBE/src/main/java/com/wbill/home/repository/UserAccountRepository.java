@@ -58,4 +58,9 @@ public interface UserAccountRepository extends JpaRepository<UserAccount, Intege
     // Active cashier users by role_id = 49
     @Query("SELECT u FROM UserAccount u WHERE u.userRole.id = 49 AND u.status = 'active' AND u.deleted = 'active'")
     List<UserAccount> findActiveCashierUsers();
+
+    // Employee linkage queries
+    Optional<UserAccount> findByEmployeeId(Integer employeeId);
+    boolean existsByEmployeeId(Integer employeeId);
+    boolean existsByEmployeeIdAndIdNot(Integer employeeId, Integer id);
 }

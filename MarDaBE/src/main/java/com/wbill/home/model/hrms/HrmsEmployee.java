@@ -9,10 +9,11 @@ import com.wbill.home.model.Branch;
 import com.wbill.home.model.AddressCity;
 import com.wbill.home.model.AddressKetena;
 import com.wbill.home.model.AddressStreets;
+import com.wbill.home.model.UserAccount;
 
 @Entity
 @Table(name = "hrms_employee_info")
-@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
+@JsonIgnoreProperties(value = {"hibernateLazyInitializer", "handler"}, ignoreUnknown = true)
 public class HrmsEmployee implements Serializable {
     private static final long serialVersionUID = 1L;
 
@@ -138,6 +139,10 @@ public class HrmsEmployee implements Serializable {
 
     @Column(name = "rfid_card_number", length = 50)
     private String rfidCardNumber;
+
+    @OneToOne(mappedBy = "employee", fetch = FetchType.LAZY)
+    @JsonIgnoreProperties({"employee", "password", "loggedDevices", "hibernateLazyInitializer", "handler"})
+    private UserAccount userAccount;
 
     // Dual Banking Architecture (Primary CBE, Secondary Abay Bank)
     @Column(name = "primary_bank_name", length = 100)
@@ -339,4 +344,7 @@ public class HrmsEmployee implements Serializable {
 
     public boolean isSalaryDefaultsModified() { return salaryDefaultsModified; }
     public void setSalaryDefaultsModified(boolean salaryDefaultsModified) { this.salaryDefaultsModified = salaryDefaultsModified; }
+
+    public UserAccount getUserAccount() { return this.userAccount; }
+    public void setUserAccount(UserAccount userAccount) { this.userAccount = userAccount; }
 }

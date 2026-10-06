@@ -285,7 +285,7 @@ export default function SignInPage() {
             <div className="text-blue-200 text-xs mt-auto pt-6 z-10 flex items-center justify-center gap-3">
               <span>&copy; {new Date().getFullYear()} All Rights Reserved</span>
               <span className="px-2 py-0.5 bg-blue-500/40 rounded-full text-[10px] font-semibold tracking-wider text-blue-100 border border-blue-400/30">
-                V 4.0.0
+                V 5.0.0
               </span>
             </div>
           </div>

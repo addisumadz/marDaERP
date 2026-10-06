@@ -13,7 +13,11 @@ public interface HrmsEmployeeRepository extends JpaRepository<HrmsEmployee, Inte
     Optional<HrmsEmployee> findByEmployeeIdAndDeletedFalse(String employeeId);
     Optional<HrmsEmployee> findByBiometricPinAndDeletedFalse(String biometricPin);
     List<HrmsEmployee> findByDeletedFalseOrderByFullNameAsc();
-    List<HrmsEmployee> findByDepartmentIdAndDeletedFalse(int departmentId);
+
+    @Query("SELECT e FROM HrmsEmployee e WHERE e.department.id = :departmentId AND e.deleted = false")
+    List<HrmsEmployee> findByDepartmentIdAndDeletedFalse(@Param("departmentId") int departmentId);
+
+    List<HrmsEmployee> findByDepartment_IdAndDeletedFalse(int departmentId);
     List<HrmsEmployee> findByEmploymentStatusAndDeletedFalse(String employmentStatus);
 
     @Query("SELECT e FROM HrmsEmployee e WHERE e.deleted = false AND " +

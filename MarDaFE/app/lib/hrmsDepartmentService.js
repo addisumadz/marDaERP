@@ -20,6 +20,12 @@ class HrmsDepartmentService {
     return res.data;
   }
 
+  async updateDepartment(id, data) {
+    const token = getAccesToken();
+    const res = await axios.put(`${commonUrl}hrms/departments/${id}`, data, { headers: authHeader(token) });
+    return res.data;
+  }
+
   async getAllPositions() {
     const token = getAccesToken();
     const res = await axios.get(`${commonUrl}hrms/departments/positions`, { headers: authHeader(token) });
@@ -29,6 +35,12 @@ class HrmsDepartmentService {
   async createPosition(data) {
     const token = getAccesToken();
     const res = await axios.post(`${commonUrl}hrms/departments/positions`, data, { headers: authHeader(token) });
+    return res.data;
+  }
+
+  async updatePosition(id, data) {
+    const token = getAccesToken();
+    const res = await axios.put(`${commonUrl}hrms/departments/positions/${id}`, data, { headers: authHeader(token) });
     return res.data;
   }
 

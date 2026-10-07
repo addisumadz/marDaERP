@@ -168,14 +168,27 @@ public class CustomNewLineDTOs {
 
     // 8. Installation Completion DTO (Technical Department)
     public static class InstallationCompletionDTO {
+        private String meterNumber;
+        private Integer meterSizeId;
+        private Double initialReading;
+        private String locationCoordination;
         private String notes;
 
+        public String getMeterNumber() { return meterNumber; }
+        public void setMeterNumber(String meterNumber) { this.meterNumber = meterNumber; }
+        public Integer getMeterSizeId() { return meterSizeId; }
+        public void setMeterSizeId(Integer meterSizeId) { this.meterSizeId = meterSizeId; }
+        public Double getInitialReading() { return initialReading; }
+        public void setInitialReading(Double initialReading) { this.initialReading = initialReading; }
+        public String getLocationCoordination() { return locationCoordination; }
+        public void setLocationCoordination(String locationCoordination) { this.locationCoordination = locationCoordination; }
         public String getNotes() { return notes; }
         public void setNotes(String notes) { this.notes = notes; }
     }
 
     // 9. Final Activation DTO (Customer Service Department)
     public static class FinalActivationDTO {
+        private String accountNumber;
         private String meterNumber;
         private Integer meterSizeId;
         private Double initialReading;
@@ -184,6 +197,8 @@ public class CustomNewLineDTOs {
         private Integer billingTariffId;
         private String customerFullNameEng;
 
+        public String getAccountNumber() { return accountNumber; }
+        public void setAccountNumber(String accountNumber) { this.accountNumber = accountNumber; }
         public String getMeterNumber() { return meterNumber; }
         public void setMeterNumber(String meterNumber) { this.meterNumber = meterNumber; }
         public Integer getMeterSizeId() { return meterSizeId; }

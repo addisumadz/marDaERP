@@ -31,6 +31,7 @@ public class CustomNewLineConnectionService {
     @Autowired private CustomAdditionalFeeTypeRepository feeTypeRepo;
 
     @Autowired private BillingCustomerInfoRepository customerRepo;
+    @Autowired private BillingCustomerInfoService billingCustomerInfoService;
     @Autowired(required = false) private BillingCustomerInfoMeterRepository customerMeterRepo;
     @Autowired private UserAccountRepository userAccountRepo;
     @Autowired(required = false) private UserAccountRoleRepository userAccountRoleRepo;
@@ -792,15 +793,33 @@ public class CustomNewLineConnectionService {
         validateStatusTransition(req, "INSTALLATION_IN_PROGRESS", "የዝርጋታ ማጠናቀቂያ ማረጋገጥ");
 
         String oldStatus = req.getStatus();
+
+        String meterNum = cleanString(dto.getMeterNumber());
+        if (meterNum == null || meterNum.isEmpty()) {
+            throw new IllegalArgumentException("የውሃ ቆጣሪ ቁጥር (Meter Number) በቴክኒክ ክፍል መሞላት አለበት!");
+        }
+
+        if (customerRepo.existsByMeterNumber(meterNum)) {
+            throw new IllegalArgumentException("የቆጣሪ ቁጥር '" + meterNum + "' በሌላ ነባር ደንበኛ ላይ አስቀድሞ ተመዝግቧል! እባክዎ ትክክለኛውን የቆጣሪ ቁጥር ያረጋግጡ።");
+        }
+
+        req.setMeterNumber(meterNum);
+        req.setMeterSizeId(dto.getMeterSizeId());
+        req.setInitialReading(dto.getInitialReading() != null ? dto.getInitialReading() : 0.0);
+        req.setLocationCoordination(cleanString(dto.getLocationCoordination()));
+        req.setInstallationNotes(cleanString(dto.getNotes()));
         req.setInstallationCompletedDate(LocalDateTime.now());
-        req.setInstallationNotes(dto.getNotes());
         req.setInstallationApprovedBy(username != null ? username : "technical");
         req.setStatus("INSTALLATION_COMPLETED");
 
         CustomNewLineConnectionRequest updated = requestRepo.save(req);
 
         logAction(updated, "INSTALLATION_COMPLETED", oldStatus, "INSTALLATION_COMPLETED", username, "TECHNICAL",
-                  "Physical line connection completed and approved by Technical Officer. Ready for customer activation.");
+                  String.format("Physical line installation completed and verified by Technical Department. Meter: %s, Initial Reading: %.1f, Meter Size ID: %s. %s",
+                                meterNum,
+                                dto.getInitialReading() != null ? dto.getInitialReading() : 0.0,
+                                dto.getMeterSizeId() != null ? String.valueOf(dto.getMeterSizeId()) : "Standard",
+                                dto.getNotes() != null ? dto.getNotes() : ""));
 
         return updated;
     }
@@ -814,12 +833,31 @@ public class CustomNewLineConnectionService {
         validateStatusTransition(req, "INSTALLATION_COMPLETED", "የደንበኛ ማግበሪያ ማጠናቀቅ");
 
         String oldStatus = req.getStatus();
+
+        // Meter number: prefer DTO if provided/edited, else fallback to technical department recorded meterNumber
         String meterNum = cleanString(dto.getMeterNumber());
-        if (meterNum != null && customerRepo.existsByMeterNumber(meterNum)) {
-            throw new IllegalArgumentException("የቆጣሪ ቁጥር '" + meterNum + "' በሌላ ነባር ደንበኛ ላይ አስቀድሞ ተመዝግቧል! እባክዎ ትክክለኛውን የቆጣሪ ቁጥር ያረጋግጡ።");
+        if (meterNum == null) {
+            meterNum = cleanString(req.getMeterNumber());
+        }
+        if (meterNum == null || meterNum.isEmpty()) {
+            throw new IllegalArgumentException("የቆጣሪ ቁጥር አልተገኘም! እባክዎ ትክክለኛ የቆጣሪ ቁጥር ያስገቡ።");
         }
 
+        // Uniqueness check for meter number against existing customers (excluding self if already linked)
+        if (customerRepo.existsByMeterNumber(meterNum)) {
+            BillingCustomerInfo existing = req.getCustomer();
+            if (existing == null || !meterNum.equalsIgnoreCase(existing.getMeterNumber())) {
+                throw new IllegalArgumentException("የቆጣሪ ቁጥር '" + meterNum + "' በሌላ ነባር ደንበኛ ላይ አስቀድሞ ተመዝግቧል! እባክዎ ትክክለኛውን የቆጣሪ ቁጥር ያረጋግጡ።");
+            }
+        }
+
+        Integer meterSizeId = dto.getMeterSizeId() != null ? dto.getMeterSizeId() : req.getMeterSizeId();
+        double initialReading = dto.getInitialReading() != null ? dto.getInitialReading() : req.getInitialReading();
         String locCoord = cleanString(dto.getLocationCoordination());
+        if (locCoord == null) {
+            locCoord = cleanString(req.getLocationCoordination());
+        }
+
         String engName = cleanString(dto.getCustomerFullNameEng());
         if (engName == null) {
             engName = cleanString(req.getCustomerFullNameEng());
@@ -828,8 +866,8 @@ public class CustomNewLineConnectionService {
         }
 
         req.setMeterNumber(meterNum);
-        req.setMeterSizeId(dto.getMeterSizeId());
-        req.setInitialReading(dto.getInitialReading() != null ? dto.getInitialReading() : 0.0);
+        req.setMeterSizeId(meterSizeId);
+        req.setInitialReading(initialReading);
         req.setLocationCoordination(locCoord);
         req.setActivatedBy(username != null ? username : "customer_service");
         req.setActivatedDate(LocalDateTime.now());
@@ -854,23 +892,43 @@ public class CustomNewLineConnectionService {
             customer.setBranch(req.getBranch());
             customer.setBillingCustomerType(req.getCustomerType());
 
-            // Generate unique account number: kebele id prefix + sequential digits
-            String kebelePrefix = req.getKebele() != null ? String.valueOf(req.getKebele().getId()) : "1";
-            long count = customerRepo.count() + 1;
-            String accNum = kebelePrefix + String.format("%05d", count % 100000);
-            while (customerRepo.existsByAccountNumber(accNum)) {
-                count++;
-                accNum = kebelePrefix + String.format("%05d", count % 100000);
+            // Account number: auto-increment per Kebele, matching BillingCustomerInfoService & CustomerFormModal
+            String accNum = cleanString(dto.getAccountNumber());
+            if (accNum != null && !accNum.isEmpty()) {
+                if (customerRepo.existsByAccountNumber(accNum)) {
+                    throw new IllegalArgumentException("የሂሳብ ቁጥር '" + accNum + "' አስቀድሞ በስራ ላይ ውሏል! እባክዎ ሌላ ሂሳብ ቁጥር ይጠቀሙ።");
+                }
+            } else {
+                Integer kebeleId = req.getKebele() != null ? req.getKebele().getId() : null;
+                accNum = billingCustomerInfoService.generateNextAccountNumber(kebeleId);
+                // Safe increment loop in case of race condition
+                while (customerRepo.existsByAccountNumber(accNum)) {
+                    try {
+                        long nextVal = Long.parseLong(accNum) + 1;
+                        accNum = String.valueOf(nextVal);
+                    } catch (Exception ex) {
+                        accNum = accNum + "-1";
+                    }
+                }
             }
             customer.setAccountNumber(accNum);
         } else {
             if (customer.getFullNameEng() == null && engName != null) {
                 customer.setFullNameEng(engName);
             }
+            String accNum = cleanString(dto.getAccountNumber());
+            if (accNum != null && !accNum.isEmpty() && !accNum.equalsIgnoreCase(customer.getAccountNumber())) {
+                if (customerRepo.existsByAccountNumber(accNum)) {
+                    throw new IllegalArgumentException("የሂሳብ ቁጥር '" + accNum + "' አስቀድሞ በስራ ላይ ውሏል!");
+                }
+                customer.setAccountNumber(accNum);
+            }
         }
 
         customer.setMeterNumber(meterNum);
-        customer.setInitialReading(dto.getInitialReading() != null ? dto.getInitialReading() : 0.0);
+        customer.setInitialReading(initialReading);
+        customer.setInitialConsumption(5);
+        customer.setMaxReference(99999);
         customer.setLocationCoordination(locCoord);
         customer.setStatus("active");
         customer.setIsInitialized(true);
@@ -883,8 +941,8 @@ public class CustomNewLineConnectionService {
         if (dto.getAssignedReaderId() != null) {
             userAccountRepo.findById(dto.getAssignedReaderId()).ifPresent(customer::setUserAccount);
         }
-        if (dto.getMeterSizeId() != null) {
-            meterSizeRepo.findById(dto.getMeterSizeId()).ifPresent(customer::setBillingMeterSize);
+        if (meterSizeId != null) {
+            meterSizeRepo.findById(meterSizeId).ifPresent(customer::setBillingMeterSize);
         }
 
         BillingCustomerInfo savedCustomer = customerRepo.save(customer);
@@ -895,14 +953,14 @@ public class CustomNewLineConnectionService {
             try {
                 BillingCustomerInfoMeter meter = new BillingCustomerInfoMeter();
                 meter.setBillingCustomerInfo(savedCustomer);
-                meter.setMeterNumber(dto.getMeterNumber());
+                meter.setMeterNumber(meterNum);
                 meter.setActiveMeter(true);
-                meter.setInitialReading(dto.getInitialReading() != null ? dto.getInitialReading().intValue() : 0);
+                meter.setInitialReading((int) initialReading);
                 meter.setMaxReference(99999);
                 meter.setRegisteredDate(new Date());
                 meter.setDeleted("active");
-                if (dto.getMeterSizeId() != null) {
-                    meterSizeRepo.findById(dto.getMeterSizeId()).ifPresent(meter::setBillingMeterSize);
+                if (meterSizeId != null) {
+                    meterSizeRepo.findById(meterSizeId).ifPresent(meter::setBillingMeterSize);
                 }
                 if (dto.getAssignedReaderId() != null) {
                     userAccountRepo.findById(dto.getAssignedReaderId()).ifPresent(meter::setUserAccount);
@@ -917,7 +975,7 @@ public class CustomNewLineConnectionService {
 
         logAction(updated, "CUSTOMER_ACTIVATED", oldStatus, "FINAL_ACTIVATION_COMPLETED", username, "CUSTOMER_SERVICE",
                   String.format("Customer fully activated into billing system. Account: %s, Meter: %s, Initial Reading: %.1f, Coordinates: %s",
-                                savedCustomer.getAccountNumber(), dto.getMeterNumber(), dto.getInitialReading(), dto.getLocationCoordination()));
+                                savedCustomer.getAccountNumber(), meterNum, initialReading, locCoord != null ? locCoord : "N/A"));
 
         return updated;
     }

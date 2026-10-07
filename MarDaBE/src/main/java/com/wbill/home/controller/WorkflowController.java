@@ -8,11 +8,13 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
 import java.security.Principal;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/mardaerp/workflows")
@@ -380,6 +382,7 @@ public class WorkflowController {
     }
 
     @SuppressWarnings("unchecked")
+    @Transactional
     @PostMapping("/menu-permissions/{roleId}")
     public ResponseEntity<?> saveMenuPermissions(@PathVariable int roleId, @RequestBody Map<String, Object> body) {
         try {
@@ -389,22 +392,28 @@ public class WorkflowController {
             UserRole role = userRoleRepo.findById(roleId)
                 .orElseThrow(() -> new IllegalArgumentException("Role not found"));
 
-            // Get existing active records for this role
-            List<UserRecord> existing = userRecordRepo.findByUserRole_IdAndDeletedIgnoreCase(roleId, "active");
-            Set<String> existingCodes = existing.stream().map(UserRecord::getPageCode).collect(java.util.stream.Collectors.toSet());
+            // Get ALL existing records for this role (both active and deleted) to prevent duplicate key constraint violations
+            List<UserRecord> allExisting = userRecordRepo.findByUserRole_Id(roleId);
+            Map<String, UserRecord> existingMap = allExisting.stream()
+                .collect(Collectors.toMap(UserRecord::getPageCode, r -> r, (r1, r2) -> r1));
             Set<String> newCodes = new HashSet<>(newPageCodes);
 
-            // Delete removed pages (soft delete)
-            for (UserRecord rec : existing) {
-                if (!newCodes.contains(rec.getPageCode())) {
+            // Update existing records: activate if in newCodes, soft-delete if removed
+            for (UserRecord rec : allExisting) {
+                if (newCodes.contains(rec.getPageCode())) {
+                    rec.setDeleted("active");
+                    rec.setPermissionCreate(true);
+                    rec.setPermissionEdit(true);
+                    userRecordRepo.save(rec);
+                } else if ("active".equalsIgnoreCase(rec.getDeleted())) {
                     rec.setDeleted("deleted");
                     userRecordRepo.save(rec);
                 }
             }
 
-            // Add new pages
+            // Add completely new pages that never existed in the database for this role
             for (String pageCode : newCodes) {
-                if (!existingCodes.contains(pageCode)) {
+                if (!existingMap.containsKey(pageCode)) {
                     UserRecord rec = new UserRecord();
                     rec.setPageCode(pageCode);
                     rec.setPageName(pageCode); // page name same as code, admin can rename later

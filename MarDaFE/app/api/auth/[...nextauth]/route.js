@@ -1,18 +1,70 @@
 import NextAuth from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 
+async function refreshAccessToken(token) {
+  try {
+    const backendUrl = process.env.BACKEND_URL || "http://localhost:9092";
+    const apiUrl = typeof window !== "undefined" ? "/backend" : backendUrl;
+
+    const res = await fetch(`${apiUrl}/api/auth/refreshtoken`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        refreshToken: token.refreshToken,
+      }),
+    });
+
+    const refreshedTokens = await res.json();
+
+    if (!res.ok) {
+      throw refreshedTokens;
+    }
+
+    const newAccessToken = refreshedTokens.accessToken || refreshedTokens.token;
+    let newExpires = Date.now() + 2 * 60 * 60 * 1000;
+    try {
+      const payload = newAccessToken?.split?.(".")?.[1];
+      if (payload) {
+        const base64 = payload.replace(/-/g, "+").replace(/_/g, "/");
+        const pad = base64.length % 4;
+        const paddedBase64 = pad ? base64 + "=".repeat(4 - pad) : base64;
+        const decoded = JSON.parse(Buffer.from(paddedBase64, "base64").toString("utf8"));
+        if (decoded.exp) newExpires = decoded.exp * 1000;
+      }
+    } catch (_) {}
+
+    return {
+      ...token,
+      accessToken: newAccessToken,
+      refreshToken: refreshedTokens.refreshToken || token.refreshToken,
+      accessTokenExpires: newExpires,
+      isTokenExpired: 0,
+      isTokenExpierd: 0,
+      error: null,
+    };
+  } catch (error) {
+    console.error("[NextAuth][jwt] RefreshAccessToken error:", error);
+    return {
+      ...token,
+      isTokenExpired: 1,
+      isTokenExpierd: 1,
+      error: "RefreshAccessTokenError",
+    };
+  }
+}
+
 const authOptions = {
   providers: [
     CredentialsProvider({
       name: "creds",
       credentials: {},
       async authorize(credentials) {
-        const backendUrl = process.env.BACKEND_URL || 'http://localhost:8082';
+        const backendUrl = process.env.BACKEND_URL || 'http://localhost:9092';
         // Use absolute URL on the server (Node fetch requires absolute URLs).
         // Use Next proxy path only on the client.
         const apiUrl = typeof window !== 'undefined' ? '/backend' : backendUrl;
-        // console.log('NextAuth attempting to authenticate with backend:', backendUrl);
-        // console.log('Credentials received:', { username: credentials?.username, hasPassword: !!credentials?.password });
         
         try {
           const res = await fetch(`${apiUrl}/api/auth/signin`, {
@@ -25,8 +77,6 @@ const authOptions = {
               password: credentials?.password,
             }),
           });
-
-          // console.log('Backend response status:', res.status);
           
           if (!res.ok) {
             let errorMessage = 'Authentication failed';
@@ -34,15 +84,12 @@ const authOptions = {
               const errorData = await res.json();
               errorMessage = errorData.message || errorData.error || errorMessage;
             } catch (e) {
-              // If response is not JSON, use status text
               errorMessage = res.statusText || errorMessage;
             }
-            // console.error('Backend authentication failed:', res.status, errorMessage);
             throw new Error(errorMessage);
           }
 
           const user = await res.json();
-          // console.log('Backend authentication successful:', { userId: user.id, username: user.username });
 
           if (user.error === "Unauthorized") {
             throw new Error("Invalid username or password");
@@ -52,7 +99,6 @@ const authOptions = {
             throw new Error("Invalid response from authentication server");
           }
         } catch (error) {
-          // console.error('NextAuth authorization error:', error);
           throw new Error(`Authentication failed: ${error.message}`);
         }
       },
@@ -61,24 +107,54 @@ const authOptions = {
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
-        // Backend returns: { token, id, username, name, roles, permittedPages }
-        // Store the JWT token as accessToken and preserve all user data including roles
+        // Backend returns: { token, refreshToken, id, username, name, roles, permittedPages }
         const roles = Array.isArray(user?.roles) ? user.roles : [];
         const permittedPages = Array.isArray(user?.permittedPages) ? user.permittedPages : [];
-        const merged = { 
+        const accessToken = user.token || user.accessToken;
+        let accessTokenExpires = Date.now() + 2 * 60 * 60 * 1000;
+        try {
+          const payload = accessToken?.split?.(".")?.[1];
+          if (payload) {
+            const base64 = payload.replace(/-/g, "+").replace(/_/g, "/");
+            const pad = base64.length % 4;
+            const paddedBase64 = pad ? base64 + "=".repeat(4 - pad) : base64;
+            const decoded = JSON.parse(Buffer.from(paddedBase64, "base64").toString("utf8"));
+            if (decoded.exp) accessTokenExpires = decoded.exp * 1000;
+          }
+        } catch (_) {}
+
+        return { 
           ...token, 
-          accessToken: user.token || user.accessToken,
+          accessToken,
+          refreshToken: user.refreshToken,
+          accessTokenExpires,
           id: user.id,
           username: user.username,
           name: user.name,
           roles,
-          permittedPages
+          permittedPages,
+          isTokenExpired: 0,
+          isTokenExpierd: 0,
+          error: null,
         };
-      //  console.log('[NextAuth][jwt] merged token for user', user?.username, 'roles:', roles, 'permittedPages:', permittedPages);
-      //  console.log('[NextAuth][jwt] full user object:', user);
-        return merged;
       }
-      return token;
+
+      // Return existing token if it has more than 2 minutes of validity remaining
+      if (Date.now() < (token.accessTokenExpires || 0) - 2 * 60 * 1000) {
+        return token;
+      }
+
+      // Token is nearing expiration or expired — trigger sliding refresh
+      if (token.refreshToken) {
+        return await refreshAccessToken(token);
+      }
+
+      return {
+        ...token,
+        isTokenExpired: 1,
+        isTokenExpierd: 1,
+        error: "AccessTokenExpired",
+      };
     },
     async session({ session, token }) {
       // Safely decode and check if JWT token is expired
@@ -95,15 +171,18 @@ const authOptions = {
         console.error("[NextAuth][session] Error decoding JWT token payload:", e.message);
       }
 
-      const isExpired = !decodedJwt?.exp || (decodedJwt.exp * 1000 <= Date.now());
+      const isExpired =
+        token.error === "RefreshAccessTokenError" ||
+        token.error === "AccessTokenExpired" ||
+        token.isTokenExpired === 1 ||
+        (!decodedJwt?.exp ? false : decodedJwt.exp * 1000 <= Date.now());
 
+      session = { ...token };
       if (!isExpired) {
-        // Token is valid - copy token data to session
-        session = { ...token };
         session.isTokenExpired = 0;
         session.isTokenExpierd = 0; // backward compatibility
+        session.error = null;
       } else {
-        session = { ...token };
         session.isTokenExpired = 1;
         session.isTokenExpierd = 1; // backward compatibility
         session.error = "AccessTokenExpired";
@@ -118,14 +197,7 @@ const authOptions = {
       session.roles = roles; // For middleware access
       session.permittedPages = permittedPages; // For middleware access
       session.user.role = roles[0] ?? undefined;
-
-      // console.log('[NextAuth][session] session for user:', {
-      //   username: session?.username,
-      //   id: session?.id,
-      //   roles,
-      //   permittedPages,
-      //   isTokenExpierd: session?.isTokenExpierd,
-      // });
+      session.refreshToken = token.refreshToken;
 
       return session;
     },

@@ -199,11 +199,26 @@ public class CustomMaintenanceDTOs {
     public static class MaintenanceCompletionDTO {
         private String notes;
         private Double finalMeterReading;
+        private Boolean isMeterChanged;
+        private String newMeterNumber;
+        private Integer newMeterSizeId;
+        private Double newMeterInitialReading;
+        private Double previousMeterFinalReading;
 
         public String getNotes() { return notes; }
         public void setNotes(String notes) { this.notes = notes; }
         public Double getFinalMeterReading() { return finalMeterReading; }
         public void setFinalMeterReading(Double finalMeterReading) { this.finalMeterReading = finalMeterReading; }
+        public Boolean getIsMeterChanged() { return isMeterChanged; }
+        public void setIsMeterChanged(Boolean isMeterChanged) { this.isMeterChanged = isMeterChanged; }
+        public String getNewMeterNumber() { return newMeterNumber; }
+        public void setNewMeterNumber(String newMeterNumber) { this.newMeterNumber = newMeterNumber; }
+        public Integer getNewMeterSizeId() { return newMeterSizeId; }
+        public void setNewMeterSizeId(Integer newMeterSizeId) { this.newMeterSizeId = newMeterSizeId; }
+        public Double getNewMeterInitialReading() { return newMeterInitialReading; }
+        public void setNewMeterInitialReading(Double newMeterInitialReading) { this.newMeterInitialReading = newMeterInitialReading; }
+        public Double getPreviousMeterFinalReading() { return previousMeterFinalReading; }
+        public void setPreviousMeterFinalReading(Double previousMeterFinalReading) { this.previousMeterFinalReading = previousMeterFinalReading; }
     }
 
     // 9. Reassign Plumber DTO (Supervisory / Technical Lead)

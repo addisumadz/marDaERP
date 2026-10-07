@@ -4,6 +4,7 @@ import java.util.List;
 
 public class JwtResponse {
     private String token;
+    private String refreshToken;
     private String type = "Bearer";
     private Integer id; // Changed from Long to Integer
     private String username;
@@ -21,6 +22,16 @@ public class JwtResponse {
 
     public JwtResponse(String accessToken, Integer id, String username, String name, List<String> roles, List<String> permittedPages) {
         this.token = accessToken;
+        this.id = id;
+        this.username = username;
+        this.name = name;
+        this.roles = roles;
+        this.permittedPages = permittedPages;
+    }
+
+    public JwtResponse(String accessToken, String refreshToken, Integer id, String username, String name, List<String> roles, List<String> permittedPages) {
+        this.token = accessToken;
+        this.refreshToken = refreshToken;
         this.id = id;
         this.username = username;
         this.name = name;
@@ -82,6 +93,14 @@ public class JwtResponse {
 
     public void setPermittedPages(List<String> permittedPages) {
         this.permittedPages = permittedPages;
+    }
+
+    public String getRefreshToken() {
+        return refreshToken;
+    }
+
+    public void setRefreshToken(String refreshToken) {
+        this.refreshToken = refreshToken;
     }
 }
 

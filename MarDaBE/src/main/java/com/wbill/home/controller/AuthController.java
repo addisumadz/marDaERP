@@ -1,7 +1,9 @@
 package com.wbill.home.controller;
 
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 import jakarta.validation.Valid;
@@ -22,6 +24,7 @@ import com.wbill.home.repository.RoleRepository;
 import com.wbill.home.repository.UserRepository;
 import com.wbill.home.repository.UserRecordRepository;
 import com.wbill.home.service.Security.UserDetailsImpl;
+import com.wbill.home.service.Security.UserDetailsServiceImpl;
 import com.wbill.home.service.jwt.JwtUtils;
 import com.wbill.home.springjwt.payload.response.JwtResponse;
 import com.wbill.home.springjwt.payload.response.MessageResponse;
@@ -60,6 +63,9 @@ public class AuthController {
     @Autowired
     UserRecordRepository userRecordRepository;
 
+    @Autowired
+    UserDetailsServiceImpl userDetailsService;
+
     @PostMapping("/signin")
     public ResponseEntity<?> authenticateUser(@Valid @RequestBody LoginRequest loginRequest,
             jakarta.servlet.http.HttpServletRequest request) {
@@ -89,6 +95,7 @@ public class AuthController {
 
             SecurityContextHolder.getContext().setAuthentication(authentication);
             String jwt = jwtUtils.generateJwtToken(authentication);
+            String refreshToken = jwtUtils.generateRefreshToken(username);
             UserDetailsImpl userDetails = (UserDetailsImpl) authentication.getPrincipal();
             List<String> roles = userDetails.getAuthorities().stream()
                     .map(item -> item.getAuthority())
@@ -112,6 +119,7 @@ public class AuthController {
             }
 
             return ResponseEntity.ok(new JwtResponse(jwt,
+                    refreshToken,
                     userDetails.getId(),
                     userDetails.getUsername(),
                     userDetails.getName(),
@@ -139,6 +147,29 @@ public class AuthController {
             log.error("[AUTH] Authentication error for username={}, IP={}: {}", username, ipAddress, e.getMessage());
             return ResponseEntity.status(500).body(new ErrorResponse("Authentication failed"));
         }
+    }
+
+    @PostMapping("/refreshtoken")
+    public ResponseEntity<?> refreshToken(@RequestBody Map<String, String> request) {
+        String requestRefreshToken = request != null ? request.get("refreshToken") : null;
+        if (requestRefreshToken != null && jwtUtils.validateJwtToken(requestRefreshToken)) {
+            String username = jwtUtils.getUserNameFromJwtToken(requestRefreshToken);
+            try {
+                userDetailsService.loadUserByUsername(username); // verify user exists and is active
+                String newAccessToken = jwtUtils.generateTokenFromUsername(username, jwtUtils.getJwtExpirationMs());
+                String newRefreshToken = jwtUtils.generateRefreshToken(username); // sliding rolling refresh
+
+                Map<String, Object> response = new HashMap<>();
+                response.put("accessToken", newAccessToken);
+                response.put("token", newAccessToken);
+                response.put("refreshToken", newRefreshToken);
+                response.put("tokenType", "Bearer");
+                return ResponseEntity.ok(response);
+            } catch (Exception e) {
+                log.warn("[AUTH] Refresh token rejected for user={}: {}", username, e.getMessage());
+            }
+        }
+        return ResponseEntity.status(401).body(new ErrorResponse("Refresh token is invalid or expired. Please sign in again."));
     }
 
     @PostMapping("/signout")

@@ -110,10 +110,10 @@ class CustomNewLineConnectionService {
     return res.data;
   }
 
-  async completeInstallation(id, { notes }) {
+  async completeInstallation(id, data) {
     const res = await axios.put(
       `${commonUrl}custom-new-line/applications/${id}/complete-installation`,
-      { notes },
+      data,
       { headers: this.getHeaders() }
     );
     return res.data;

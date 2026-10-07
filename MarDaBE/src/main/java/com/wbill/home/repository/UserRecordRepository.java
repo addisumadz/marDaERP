@@ -19,6 +19,8 @@ public interface UserRecordRepository extends JpaRepository<UserRecord, Integer>
 
     List<UserRecord> findByUserRole_IdAndDeletedIgnoreCase(Integer roleId, String deleted);
 
+    List<UserRecord> findByUserRole_Id(Integer roleId);
+
     // Dynamic menu mapping: get all page codes accessible by any of the given role codes
     @Query("SELECT DISTINCT ur.pageCode FROM UserRecord ur WHERE ur.userRole.roleCode IN :roleCodes AND ur.deleted = 'active'")
     List<String> findPageCodesByRoleCodes(@Param("roleCodes") List<String> roleCodes);

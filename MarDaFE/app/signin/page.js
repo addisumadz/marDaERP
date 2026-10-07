@@ -63,6 +63,9 @@ export default function SignInPage() {
         if (directToken) {
           localStorage.setItem("token", String(directToken));
         }
+        if (session?.refreshToken) {
+          localStorage.setItem("refreshToken", String(session.refreshToken));
+        }
       }
 
       const raw = session?.user?.roles || session?.roles || [];

@@ -38,6 +38,7 @@ public class CustomMaintenanceService {
     @Autowired private AddressStreetsRepository kebeleRepo;
     @Autowired private AddressKetenaRepository ketenaRepo;
     @Autowired private BillingCustomerTypeRepository customerTypeRepo;
+    @Autowired(required = false) private BillingMeterSizeRepository meterSizeRepo;
     @Autowired(required = false) private InvStoreRepository storeRepo;
     @Autowired(required = false) private InvIssueVoucherRepository voucherRepo;
     @Autowired(required = false) private InvItemRepository invItemRepo;
@@ -789,26 +790,107 @@ public class CustomMaintenanceService {
         CustomMaintenanceRequest req = requestRepo.findById(requestId)
             .orElseThrow(() -> new IllegalArgumentException("Maintenance request not found: " + requestId));
 
+        validateBranchAccess(req, username);
+        validateStatusTransition(req, "MAINTENANCE_IN_PROGRESS", "የጥገና ማጠናቀቂያ ማረጋገጥ");
+
         String oldStatus = req.getStatus();
         req.setMaintenanceCompletedDate(LocalDateTime.now());
         req.setMaintenanceNotes(cleanString(dto.getNotes()));
-        req.setFinalMeterReading(dto.getFinalMeterReading());
         req.setMaintenanceApprovedBy(username != null ? username : "technical");
         req.setStatus("MAINTENANCE_COMPLETED");
 
-        // If a new meter reading is recorded during maintenance (e.g. meter replacement or test)
-        if (dto.getFinalMeterReading() != null && req.getCustomer() != null) {
-            BillingCustomerInfo customer = req.getCustomer();
-            customer.setInitialReading(dto.getFinalMeterReading());
+        boolean meterChanged = Boolean.TRUE.equals(dto.getIsMeterChanged()) ||
+                               (cleanString(dto.getNewMeterNumber()) != null && !cleanString(dto.getNewMeterNumber()).isEmpty());
+
+        BillingCustomerInfo customer = req.getCustomer();
+
+        if (meterChanged && customer != null) {
+            String newMeterNum = cleanString(dto.getNewMeterNumber());
+            if (newMeterNum == null || newMeterNum.isEmpty()) {
+                throw new IllegalArgumentException("የቆጣሪ ቅየራ ሲመረጥ አዲሱ የቆጣሪ ቁጥር (New Meter Number) መሞላት አለበት!");
+            }
+
+            // Check if new meter number is already in use by another customer
+            if (customerRepo.existsByMeterNumber(newMeterNum)) {
+                if (!newMeterNum.equalsIgnoreCase(customer.getMeterNumber())) {
+                    throw new IllegalArgumentException("አዲሱ የቆጣሪ ቁጥር '" + newMeterNum + "' በሌላ ደንበኛ ላይ አስቀድሞ ተመዝግቧል! እባክዎ ትክክለኛውን ቆጣሪ ያረጋግጡ።");
+                }
+            }
+
+            String oldMeterNum = customer.getMeterNumber();
+            Double newInitial = dto.getNewMeterInitialReading() != null ? dto.getNewMeterInitialReading() : 0.0;
+
+            // 1. Update customer profile in billing_customer_info
+            customer.setMeterNumber(newMeterNum);
+            customer.setInitialReading(newInitial);
+            customer.setIsInitializedSecondTime(true); // Flag: customer replaced meter
+
+            if (dto.getNewMeterSizeId() != null && meterSizeRepo != null) {
+                meterSizeRepo.findById(dto.getNewMeterSizeId()).ifPresent(customer::setBillingMeterSize);
+            }
             customerRepo.save(customer);
+
+            // 2. Sync to billing_customer_info_meter table
+            if (customerMeterRepo != null) {
+                try {
+                    List<BillingCustomerInfoMeter> activeMeters = customerMeterRepo.findByBillingCustomerInfoAndActiveMeterTrue(customer);
+                    for (BillingCustomerInfoMeter m : activeMeters) {
+                        m.setActiveMeter(false);
+                    }
+                    customerMeterRepo.saveAll(activeMeters);
+
+                    BillingCustomerInfoMeter newMeterRecord = new BillingCustomerInfoMeter();
+                    newMeterRecord.setBillingCustomerInfo(customer);
+                    newMeterRecord.setMeterNumber(newMeterNum);
+                    newMeterRecord.setActiveMeter(true);
+                    newMeterRecord.setDeleted("active");
+                    newMeterRecord.setInitialReading(newInitial.intValue());
+                    newMeterRecord.setMaxReference(99999);
+                    newMeterRecord.setRegisteredDate(new Date());
+                    if (dto.getNewMeterSizeId() != null && meterSizeRepo != null) {
+                        meterSizeRepo.findById(dto.getNewMeterSizeId()).ifPresent(newMeterRecord::setBillingMeterSize);
+                    }
+                    if (customer.getUserAccount() != null) {
+                        newMeterRecord.setUserAccount(customer.getUserAccount());
+                    }
+                    customerMeterRepo.save(newMeterRecord);
+                } catch (Exception ex) {
+                    System.err.println("Notice: Meter table sync in maintenance: " + ex.getMessage());
+                }
+            }
+
+            // 3. Update request entity
+            req.setMeterNumber(newMeterNum);
+            req.setFinalMeterReading(newInitial);
+
+            CustomMaintenanceRequest updated = requestRepo.save(req);
+
+            logAction(updated, "MAINTENANCE_COMPLETED", oldStatus, "MAINTENANCE_COMPLETED", username, "TECHNICAL",
+                      String.format("Maintenance completed with WATER METER REPLACEMENT. Previous Meter: %s (Final Reading: %.1f) replaced with New Meter: %s (Initial Reading: %.1f). Customer profile updated in customer management. %s",
+                                    oldMeterNum != null ? oldMeterNum : "N/A",
+                                    dto.getPreviousMeterFinalReading() != null ? dto.getPreviousMeterFinalReading() : 0.0,
+                                    newMeterNum,
+                                    newInitial,
+                                    dto.getNotes() != null ? dto.getNotes() : ""));
+
+            return updated;
+        } else {
+            // Standard maintenance without meter replacement
+            if (dto.getFinalMeterReading() != null) {
+                req.setFinalMeterReading(dto.getFinalMeterReading());
+                if (customer != null) {
+                    customer.setInitialReading(dto.getFinalMeterReading());
+                    customerRepo.save(customer);
+                }
+            }
+
+            CustomMaintenanceRequest updated = requestRepo.save(req);
+
+            logAction(updated, "MAINTENANCE_COMPLETED", oldStatus, "MAINTENANCE_COMPLETED", username, "TECHNICAL",
+                      "Customer maintenance physical work completed and verified. " + (dto.getNotes() != null ? dto.getNotes() : ""));
+
+            return updated;
         }
-
-        CustomMaintenanceRequest updated = requestRepo.save(req);
-
-        logAction(updated, "MAINTENANCE_COMPLETED", oldStatus, "MAINTENANCE_COMPLETED", username, "TECHNICAL",
-                  "Customer maintenance physical work completed and verified. " + (dto.getNotes() != null ? dto.getNotes() : ""));
-
-        return updated;
     }
 
     // ─── 9. Reference Catalogs & Stocks ─────────────────────────────────────

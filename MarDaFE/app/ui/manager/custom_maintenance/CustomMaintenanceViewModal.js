@@ -695,6 +695,35 @@ export default function CustomMaintenanceViewModal({
                     </div>
                   </div>
                 </div>
+
+                {/* Meter status and customer profile sync info */}
+                {req.status === "MAINTENANCE_COMPLETED" && (
+                  <div className="p-3.5 bg-emerald-50/70 dark:bg-emerald-950/30 rounded-xl border border-emerald-200 dark:border-emerald-800 flex items-start gap-3">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                    <div className="flex-1 text-xs">
+                      <div className="font-bold text-emerald-900 dark:text-emerald-200 flex flex-wrap items-center justify-between gap-2">
+                        <span>የጥገና ማጠቃለያ እና የቆጣሪ ሁኔታ (Maintenance Completion & Meter Status)</span>
+                        <span className="text-[10px] bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300 px-2 py-0.5 rounded-full font-semibold">
+                          ✓ በደንበኛ ዋና መዝገብ ላይ ወቅታዊ ሆኗል (Synced to Customer Profile)
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-2 text-gray-700 dark:text-gray-300">
+                        <div>
+                          <span className="text-gray-500 block text-[10px]">ወቅታዊ/ተረካቢ ቆጣሪ ቁጥር:</span>
+                          <strong className="font-mono text-emerald-800 dark:text-emerald-300">{req.meterNumber || "—"}</strong>
+                        </div>
+                        <div>
+                          <span className="text-gray-500 block text-[10px]">የተመዘገበ ንባብ (Reading):</span>
+                          <strong className="font-mono">{req.finalMeterReading != null ? req.finalMeterReading : "—"}</strong>
+                        </div>
+                        <div>
+                          <span className="text-gray-500 block text-[10px]">ያጠናቀቀው / ያረጋገጠው:</span>
+                          <strong className="text-gray-800 dark:text-gray-200">{req.maintenanceApprovedBy || "ቴክኒክ መምሪያ"}</strong>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}

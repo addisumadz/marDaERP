@@ -1308,9 +1308,15 @@ export default function CustomNewLineConnectionPage() {
 
                     <div className="bg-white dark:bg-gray-800 p-3 rounded-lg border border-gray-200 dark:border-gray-700">
                       <div className="font-bold text-gray-700 dark:text-gray-300 border-b pb-1 mb-2">የቆጣሪ እና ማግበሪያ መረጃ</div>
-                      <div>ቆጣሪ ቁጥር: <strong className="font-mono">{expReq.meterNumber || "ያልገባ"}</strong></div>
-                      <div>መነሻ ንባብ: <strong>{expReq.initialReading || 0.0}</strong></div>
+                      <div>ቆጣሪ ቁጥር: <strong className="font-mono text-emerald-600">{expReq.meterNumber || "ያልገባ"}</strong></div>
+                      <div>መነሻ ንባብ: <strong className="font-mono">{expReq.initialReading || 0.0}</strong></div>
                       <div>GPS መጋጠሚያ: <span className="font-mono text-[10px]">{expReq.locationCoordination || "—"}</span></div>
+                      {expReq.customer?.accountNumber && (
+                        <div>የሂሳብ ቁጥር (Account): <strong className="font-mono text-blue-600">#{expReq.customer.accountNumber}</strong></div>
+                      )}
+                      {expReq.assignedReader && (
+                        <div>ተመደበ አንባቢ: <strong>{expReq.assignedReader.name || expReq.assignedReader.firstName || expReq.assignedReader.userName || "—"}</strong></div>
+                      )}
                     </div>
                   </div>
 

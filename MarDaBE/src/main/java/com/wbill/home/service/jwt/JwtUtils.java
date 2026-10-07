@@ -25,16 +25,33 @@ public class JwtUtils {
   @Value("${school.app.jwtExpirationMs}")
   private int jwtExpirationMs;
 
+  @Value("${school.app.jwtRefreshExpirationMs:86400000}")
+  private int jwtRefreshExpirationMs;
+
   public String generateJwtToken(Authentication authentication) {
-
     UserDetailsImpl userPrincipal = (UserDetailsImpl) authentication.getPrincipal();
+    return generateTokenFromUsername(userPrincipal.getUsername(), jwtExpirationMs);
+  }
 
+  public String generateRefreshToken(String username) {
+    return generateTokenFromUsername(username, jwtRefreshExpirationMs);
+  }
+
+  public String generateTokenFromUsername(String username, int expirationMs) {
     return Jwts.builder()
-        .setSubject((userPrincipal.getUsername()))
+        .setSubject(username)
         .setIssuedAt(new Date())
-        .setExpiration(new Date((new Date()).getTime() + jwtExpirationMs))
+        .setExpiration(new Date((new Date()).getTime() + expirationMs))
         .signWith(key(), SignatureAlgorithm.HS256)
         .compact();
+  }
+
+  public int getJwtExpirationMs() {
+    return jwtExpirationMs;
+  }
+
+  public int getJwtRefreshExpirationMs() {
+    return jwtRefreshExpirationMs;
   }
   
   private Key key() {

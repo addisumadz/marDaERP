@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
+import { useSession } from "next-auth/react";
 import { toast } from "react-toastify";
 import workflowService from "../../../lib/workflowService";
 import { menuGroups } from "../../components/Sidebar/sidebarConfig";
@@ -26,6 +27,7 @@ import {
 } from "lucide-react";
 
 export default function RoleAssignmentPage() {
+  const { data: session } = useSession();
   const [assignments, setAssignments] = useState([]);
   const [users, setUsers] = useState([]);
   const [roles, setRoles] = useState([]);
@@ -255,12 +257,28 @@ export default function RoleAssignmentPage() {
 
   const handleSaveMenu = async () => {
     if (!menuRoleId) { toast.error("Select a role first"); return; }
+    // Ensure token is synced to localStorage if available from NextAuth session
+    if (session && typeof window !== "undefined") {
+      try {
+        const directToken = session?.accessToken || session?.token || session?.access_token;
+        if (directToken) {
+          localStorage.setItem("user_token", JSON.stringify(session));
+          localStorage.setItem("token", String(directToken));
+        }
+      } catch (_) {}
+    }
+
     setMenuSaving(true);
     try {
       await workflowService.saveMenuPermissions(menuRoleId, Array.from(checkedPages));
       toast.success("Menu permissions saved successfully!");
-    } catch (e) { toast.error(e.response?.data?.message || "Error saving permissions"); }
-    setMenuSaving(false);
+    } catch (e) {
+      console.error("Save menu permissions error:", e);
+      const errMsg = e.response?.data?.message || e.message || "Error saving permissions";
+      toast.error(errMsg);
+    } finally {
+      setMenuSaving(false);
+    }
   };
 
   return (

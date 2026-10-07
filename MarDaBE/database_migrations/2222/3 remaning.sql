@@ -344,7 +344,7 @@ CREATE INDEX IF NOT EXISTS idx_inv_sc_store ON inv_stock_count(store_id);
 CREATE INDEX IF NOT EXISTS idx_inv_dsp_status ON inv_disposal(status);
 CREATE INDEX IF NOT EXISTS idx_inv_dsp_store ON inv_disposal(store_id);
 
-
+56132921@Kobo
 ----======================================================
 
 

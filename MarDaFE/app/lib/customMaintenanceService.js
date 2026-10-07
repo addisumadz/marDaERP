@@ -113,10 +113,10 @@ class CustomMaintenanceService {
   }
 
   // 7. Maintenance Completion & Verification (Step 7)
-  async completeMaintenance(id, { notes, finalMeterReading }) {
+  async completeMaintenance(id, data) {
     const res = await axios.put(
       `${commonUrl}custom-maintenance/requests/${id}/complete-maintenance`,
-      { notes, finalMeterReading },
+      data,
       { headers: this.getHeaders() }
     );
     return res.data;

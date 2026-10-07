@@ -4,9 +4,31 @@ import Sidebar from "../ui/components/Sidebar";
 import Header from "../ui/components/Header";
 import IdleTimer from "./components/common/IdleTimer";
 import { useState, useEffect } from "react";
+import { useSession } from "next-auth/react";
 
 export default function Layout({ children }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { data: session, status } = useSession();
+
+  // Keep localStorage user_token and token synchronized with NextAuth session.
+  // This guarantees that direct page visits, page reloads (F5), or cross-tab navigation
+  // on remote/public IP deployments never result in missing Bearer tokens for legacy services.
+  useEffect(() => {
+    if (status === "authenticated" && session) {
+      if (typeof window !== "undefined") {
+        try {
+          const directToken = session?.accessToken || session?.token || session?.access_token;
+          if (directToken) {
+            localStorage.setItem("user_token", JSON.stringify(session));
+            localStorage.setItem("token", String(directToken));
+            if (session?.refreshToken) {
+              localStorage.setItem("refreshToken", String(session.refreshToken));
+            }
+          }
+        } catch (_) {}
+      }
+    }
+  }, [status, session]);
 
   return (
     <div className="dark:bg-boxdark-2 dark:text-bodydark">

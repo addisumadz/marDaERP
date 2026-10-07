@@ -34,6 +34,10 @@ import {
   Stack,
   Divider,
   LinearProgress,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
 } from "@mui/material";
 
 import VisibilityIcon from "@mui/icons-material/Visibility";
@@ -44,6 +48,8 @@ import AssignmentLateIcon from "@mui/icons-material/AssignmentLate";
 import WaterDropIcon from "@mui/icons-material/WaterDrop";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import FilterAltIcon from "@mui/icons-material/FilterAlt";
+import CloseIcon from "@mui/icons-material/Close";
+import DownloadIcon from "@mui/icons-material/Download";
 import {
   QueryClient,
   QueryClientProvider,
@@ -168,6 +174,45 @@ const BillList = () => {
   const [viewReadingId, setViewReadingId] = useState(null);
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [unicashImportModalOpen, setUnicashImportModalOpen] = useState(false);
+
+  // PDF Preview Modal State
+  const [pdfPreviewModal, setPdfPreviewModal] = useState({
+    open: false,
+    url: null,
+    title: "",
+    fileName: "",
+    doc: null,
+  });
+
+  const openPdfPreviewModal = (doc, fileName, title) => {
+    try {
+      const blob = doc.output("blob");
+      const url = URL.createObjectURL(blob);
+      setPdfPreviewModal({
+        open: true,
+        url,
+        title: title || "PDF Report Preview",
+        fileName: fileName || "report.pdf",
+        doc,
+      });
+    } catch (err) {
+      console.error("Failed to generate PDF preview blob:", err);
+      doc.save(fileName);
+    }
+  };
+
+  const handleClosePdfPreviewModal = () => {
+    if (pdfPreviewModal.url) {
+      URL.revokeObjectURL(pdfPreviewModal.url);
+    }
+    setPdfPreviewModal({
+      open: false,
+      url: null,
+      title: "",
+      fileName: "",
+      doc: null,
+    });
+  };
 
   // >>> ADDED: State for new client-side filters
   //const [filteredData, setFilteredData] = useState([]);
@@ -306,12 +351,18 @@ const BillList = () => {
   });
 
   const lookupBankName = (agentName) => {
-    if (!agentName || !Array.isArray(banks) || banks.length === 0) return agentName;
-    let bank =
-      banks.find((b) => b.bankCode === agentName) ||
-      banks.find((b) => b.gatewayCode === agentName) ||
-      banks.find((b) => (b.bankName || "").toLowerCase().includes(String(agentName).toLowerCase()));
-    return bank ? bank.bankName : agentName;
+    if (!agentName) return agentName;
+    const strAgent = String(agentName).trim();
+    if (Array.isArray(banks) && banks.length > 0) {
+      let bank =
+        banks.find((b) => String(b.bankCode ?? "").trim() === strAgent) ||
+        banks.find((b) => String(b.gatewayCode ?? "").trim() === strAgent) ||
+        banks.find((b) => String(b.id ?? "").trim() === strAgent) ||
+        banks.find((b) => (b.bankName || "").toLowerCase() === strAgent.toLowerCase()) ||
+        banks.find((b) => (b.bankName || "").toLowerCase().includes(strAgent.toLowerCase()));
+      if (bank?.bankName) return bank.bankName;
+    }
+    return agentName;
   };
 
   // Helper: extract kebele id from bill DTO and map to kebele name
@@ -529,8 +580,11 @@ const BillList = () => {
   // Unified helper to get bank name from bill code using dynamic lookup
   const getBankName = (code) => {
     if (code === undefined || code === null || code === "") return null;
-    const key = String(code);
-    return bankLookup[key] || "Unknown Bank";
+    const key = String(code).trim();
+    if (bankLookup[key]) return bankLookup[key];
+    const fromLookup = lookupBankName(code);
+    if (fromLookup && fromLookup !== code) return fromLookup;
+    return "Unknown Bank";
   };
 
   const {
@@ -786,9 +840,7 @@ const BillList = () => {
       const now = new Date();
       const fileName = `VoidChanged_Comparison_${selectedKifyaWerMonth || ""}_${selectedKifyaWerYear || ""}_${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}.pdf`;
       if (preview) {
-        const blob = doc.output("blob");
-        const url = URL.createObjectURL(blob);
-        window.open(url, "_blank");
+        openPdfPreviewModal(doc, fileName, `Void / Changed Bills Comparison - ${selectedKifyaWerMonth || ""} ${selectedKifyaWerYear || ""}`);
       } else {
         doc.save(fileName);
       }
@@ -1839,9 +1891,9 @@ const BillList = () => {
       doc.setTextColor(0, 0, 0);
       doc.text(reportTitle, pageWidth / 2, MARGIN + 57, { align: "center" });
 
-      // ─── 2. SUMMARY OVERVIEW (Y: 96 to 196, Height = 100 pt) ───────
-      const summaryY = MARGIN + 68; // 96
-      const summaryH = 100;
+      // ─── 2. SUMMARY OVERVIEW (Y: 94 to 212, Height = 118 pt) ───────
+      const summaryY = MARGIN + 66; // 94 pt
+      const summaryH = 118;
 
       // Outer border box (White bg with crisp black border)
       doc.setDrawColor(0, 0, 0);
@@ -1850,86 +1902,90 @@ const BillList = () => {
       doc.rect(MARGIN, summaryY, fullW, summaryH, "FD");
 
       // Title Bar (Light grey fill)
-      doc.setFillColor(240, 240, 240);
-      doc.rect(MARGIN, summaryY, fullW, 15, "FD");
-      doc.setFontSize(10.5);
+      doc.setFillColor(238, 240, 244);
+      doc.rect(MARGIN, summaryY, fullW, 16, "FD");
+      doc.setFontSize(11);
       doc.setFont("nyala", "normal");
       doc.setTextColor(0, 0, 0);
-      doc.text("Summary Overview", MARGIN + fullW / 2, summaryY + 11, { align: "center" });
+      doc.text("Summary Overview", MARGIN + fullW / 2, summaryY + 12, { align: "center" });
 
-      // 2 Rows of Metrics (6 columns per row)
-      const sColW = (fullW - 16) / 6;
-      const sLabelY1 = summaryY + 27;
-      const sValueY1 = summaryY + 39;
-      const sLabelY2 = summaryY + 52;
-      const sValueY2 = summaryY + 64;
+      // Row 1: Dynamically distribute active columns
+      const sRow1 = [
+        { label: "Total Bills", value: fmt0(filteredData.length) },
+        { label: "የወሩ ፍጆታ (ሜ3)", value: fmt0(summations.consumption) },
+        { label: "ውዝፍ ፍጆታ (ሜ3)", value: fmt(summations.wuzifFjota) },
+        { label: "ጠቅላላ ደረቅ ቆሻሻ", value: fmt((summations.additionalHisab || 0) + (summations.wuzifDerekKoshasha || 0)) },
+      ];
+      if (hasTotPay1) sRow1.push({ label: totPay1Label, value: fmt(totPay1Val) });
+      if (hasTotPay2) sRow1.push({ label: totPay2Label, value: fmt(totPay2Val) });
 
-      // Row 1 Labels
-      doc.setFontSize(8.5);
-      doc.setFont("nyala", "normal");
-      doc.setTextColor(60, 60, 60);
-      doc.text("Total Bills", MARGIN + 8 + 0 * sColW, sLabelY1);
-      doc.text("የወሩ ፍጆታ (ሜ3)", MARGIN + 8 + 1 * sColW, sLabelY1);
-      doc.text("ውዝፍ ፍጆታ (ሜ3)", MARGIN + 8 + 2 * sColW, sLabelY1);
-      doc.text("ጠቅላላ ደረቅ ቆሻሻ", MARGIN + 8 + 3 * sColW, sLabelY1);
-      if (hasTotPay1) doc.text(totPay1Label, MARGIN + 8 + 4 * sColW, sLabelY1);
-      if (hasTotPay2) doc.text(totPay2Label, MARGIN + 8 + 5 * sColW, sLabelY1);
+      const r1ColW = (fullW - 16) / sRow1.length;
+      const sLabelY1 = summaryY + 29;
+      const sValueY1 = summaryY + 44;
+      sRow1.forEach((item, idx) => {
+        doc.setFontSize(9.5);
+        doc.setTextColor(70, 70, 70);
+        doc.text(item.label, MARGIN + 8 + idx * r1ColW, sLabelY1);
+        doc.setFontSize(13);
+        doc.setTextColor(0, 0, 0);
+        doc.text(item.value, MARGIN + 8 + idx * r1ColW, sValueY1);
+      });
 
-      // Row 1 Values
-      doc.setFontSize(10);
-      doc.setTextColor(0, 0, 0);
-      doc.text(fmt0(filteredData.length), MARGIN + 8 + 0 * sColW, sValueY1);
-      doc.text(fmt0(summations.consumption), MARGIN + 8 + 1 * sColW, sValueY1);
-      doc.text(fmt(summations.wuzifFjota), MARGIN + 8 + 2 * sColW, sValueY1);
-      doc.text(fmt((summations.additionalHisab || 0) + (summations.wuzifDerekKoshasha || 0)), MARGIN + 8 + 3 * sColW, sValueY1);
-      if (hasTotPay1) doc.text(fmt(totPay1Val), MARGIN + 8 + 4 * sColW, sValueY1);
-      if (hasTotPay2) doc.text(fmt(totPay2Val), MARGIN + 8 + 5 * sColW, sValueY1);
+      // Row 2: 5 items evenly distributed
+      const sRow2 = [
+        { label: "ጠቅላላ የዚህ ወር", value: fmt(summations.yezihWer) },
+        { label: "ቅድሚያ የተከፈለ", value: fmt(summations.prepaid) },
+        { label: "ጠቅላላ ተጨማሪ ክፍያ", value: fmt((summations.techemariKfya || 0) + (summations.wuzifTechemariKfya || 0)) },
+        { label: "ቅጣት", value: fmt(summations.kitat) },
+        { label: "ጠቅላላ ውዝፍ", value: fmt((summations.wuzifHisab || 0) - (summations.wuzifDerekKoshasha || 0)) },
+      ];
+      const r2ColW = (fullW - 16) / 5;
+      const sLabelY2 = summaryY + 59;
+      const sValueY2 = summaryY + 74;
+      sRow2.forEach((item, idx) => {
+        doc.setFontSize(9.5);
+        doc.setTextColor(70, 70, 70);
+        doc.text(item.label, MARGIN + 8 + idx * r2ColW, sLabelY2);
+        doc.setFontSize(13);
+        doc.setTextColor(0, 0, 0);
+        doc.text(item.value, MARGIN + 8 + idx * r2ColW, sValueY2);
+      });
 
-      // Row 2 Labels
-      doc.setFontSize(8.5);
-      doc.setTextColor(60, 60, 60);
-      doc.text("ጠቅላላ የዚህ ወር", MARGIN + 8 + 0 * sColW, sLabelY2);
-      doc.text("ቅድሚያ የተከፈለ", MARGIN + 8 + 1 * sColW, sLabelY2);
-      doc.text("ጠቅላላ ተጨማሪ ክፍያ", MARGIN + 8 + 2 * sColW, sLabelY2);
-      doc.text("ቅጣት", MARGIN + 8 + 3 * sColW, sLabelY2);
-      doc.text("ጠቅላላ ውዝፍ", MARGIN + 8 + 4 * sColW, sLabelY2);
-
-      // Row 2 Values
-      doc.setFontSize(10);
-      doc.setTextColor(0, 0, 0);
-      doc.text(fmt(summations.yezihWer), MARGIN + 8 + 0 * sColW, sValueY2);
-      doc.text(fmt(summations.prepaid), MARGIN + 8 + 1 * sColW, sValueY2);
-      doc.text(fmt((summations.techemariKfya || 0) + (summations.wuzifTechemariKfya || 0)), MARGIN + 8 + 2 * sColW, sValueY2);
-      doc.text(fmt(summations.kitat), MARGIN + 8 + 3 * sColW, sValueY2);
-      doc.text(fmt((summations.wuzifHisab || 0) - (summations.wuzifDerekKoshasha || 0)), MARGIN + 8 + 4 * sColW, sValueY2);
-
-      // Bottom Grand Total Framing
-      const tileY = summaryY + 72;
+      // Bottom Grand Total Framing (Row 3, Y: summaryY + 84, Height = 26 pt)
+      const tileY = summaryY + 84;
       const totalExcl = ((summations.tekilalaTekefay || 0) + (summations.prepaid || 0)) - ((summations.additionalHisab || 0) + (summations.wuzifDerekKoshasha || 0));
       const totalIncl = (summations.tekilalaTekefay || 0) + (summations.prepaid || 0);
+      const tileW = (fullW - 24) / 2;
+      const tileH = 26;
 
-      // Left Box: ጠቅላላ ክፍያ (Excl. Waste)
-      doc.setFontSize(9.5);
-      doc.setTextColor(0, 0, 0);
-      doc.text("ጠቅላላ ክፍያ:", MARGIN + 8, tileY + 16);
-      doc.setFillColor(245, 245, 245);
-      doc.setDrawColor(0, 0, 0);
+      // Left Tile: ጠቅላላ ክፍያ (Excl. Waste)
+      doc.setFillColor(243, 246, 250);
+      doc.setDrawColor(180, 190, 205);
       doc.setLineWidth(0.5);
-      doc.rect(MARGIN + 75, tileY + 3, 145, 18, "FD");
-      doc.setFontSize(11);
-      doc.text(fmt(totalExcl), MARGIN + 215, tileY + 16, { align: "right" });
+      doc.rect(MARGIN + 8, tileY, tileW, tileH, "FD");
+      doc.setFontSize(10.5);
+      doc.setTextColor(40, 40, 40);
+      doc.text("ጠቅላላ ክፍያ:", MARGIN + 16, tileY + 17);
+      doc.setFontSize(14.5);
+      doc.setTextColor(0, 0, 0);
+      doc.text(fmt(totalExcl), MARGIN + 8 + tileW - 10, tileY + 18, { align: "right" });
 
-      // Right Box: ጠቅላላ ክፍያ እና ደረቅ ቆሻሻ (Incl. Waste)
-      doc.setFontSize(9.5);
-      doc.text("ጠቅላላ ክፍያ እና ደረቅ ቆሻሻ:", MARGIN + fullW / 2 + 8, tileY + 16);
-      doc.setFillColor(245, 245, 245);
-      doc.rect(MARGIN + fullW - 148, tileY + 3, 140, 18, "FD");
-      doc.setFontSize(11);
-      doc.text(fmt(totalIncl), MARGIN + fullW - 12, tileY + 16, { align: "right" });
+      // Right Tile: ጠቅላላ ክፍያ እና ደረቅ ቆሻሻ (Incl. Waste)
+      const rightTileX = MARGIN + 8 + tileW + 8;
+      doc.setFillColor(242, 248, 243);
+      doc.setDrawColor(180, 205, 185);
+      doc.setLineWidth(0.5);
+      doc.rect(rightTileX, tileY, tileW, tileH, "FD");
+      doc.setFontSize(10.5);
+      doc.setTextColor(40, 40, 40);
+      doc.text("ጠቅላላ ክፍያ እና ደረቅ ቆሻሻ:", rightTileX + 8, tileY + 17);
+      doc.setFontSize(14.5);
+      doc.setTextColor(0, 0, 0);
+      doc.text(fmt(totalIncl), rightTileX + tileW - 10, tileY + 18, { align: "right" });
 
-      // ─── 3. GROUP 1 & 2 SIDE-BY-SIDE (Y: 202 to 346, Height = 144 pt) ──
-      const gBoxY = summaryY + summaryH + 6; // 202
-      const gBoxH = 144;
+      // ─── 3. GROUP 1 & 2 SIDE-BY-SIDE (Y: 220 to 425, Height = 205 pt) ──
+      const gBoxY = summaryY + summaryH + 8; // 220 pt
+      const gBoxH = 205;
       const gBoxW = (fullW - 10) / 2; // ~264.6 pt
       const leftBoxX = MARGIN;
       const rightBoxX = MARGIN + gBoxW + 10;
@@ -1941,58 +1997,77 @@ const BillList = () => {
       doc.setLineWidth(0.6);
       doc.rect(leftBoxX, gBoxY, gBoxW, gBoxH, "FD");
 
-      doc.setFillColor(240, 240, 240);
-      doc.rect(leftBoxX, gBoxY, gBoxW, 15, "FD");
-      doc.setFontSize(10.5);
+      doc.setFillColor(238, 240, 244);
+      doc.rect(leftBoxX, gBoxY, gBoxW, 16, "FD");
+      doc.setFontSize(11);
       doc.setFont("nyala", "normal");
       doc.setTextColor(0, 0, 0);
-      doc.text("Group 1: የዚህ ወር", leftBoxX + gBoxW / 2, gBoxY + 11, { align: "center" });
+      doc.text("Group 1: የዚህ ወር", leftBoxX + gBoxW / 2, gBoxY + 12, { align: "center" });
 
       // Row 1
-      doc.setFontSize(8.5);
-      doc.setTextColor(60, 60, 60);
-      doc.text("የውሃ ፍጆታ ብር", leftBoxX + 8, gBoxY + 27);
-      doc.text("ቆጣሪ ኪራይ", leftBoxX + 8 + gColW3, gBoxY + 27);
-      doc.text("ተጨማሪ ክፍያ", leftBoxX + 8 + 2 * gColW3, gBoxY + 27);
+      doc.setFontSize(9.5);
+      doc.setTextColor(70, 70, 70);
+      doc.text("የውሃ ፍጆታ ብር", leftBoxX + 8, gBoxY + 30);
+      doc.text("ቆጣሪ ኪራይ", leftBoxX + 8 + gColW3, gBoxY + 30);
+      doc.text("ተጨማሪ ክፍያ", leftBoxX + 8 + 2 * gColW3, gBoxY + 30);
 
-      doc.setFontSize(10);
+      doc.setFontSize(12.5);
       doc.setTextColor(0, 0, 0);
-      doc.text(fmt(summations.yezihWerFjotaKfya), leftBoxX + 8, gBoxY + 39);
-      doc.text(fmt(summations.kotariKiray), leftBoxX + 8 + gColW3, gBoxY + 39);
-      doc.text(fmt(summations.techemariKfya), leftBoxX + 8 + 2 * gColW3, gBoxY + 39);
+      doc.text(fmt(summations.yezihWerFjotaKfya), leftBoxX + 8, gBoxY + 44);
+      doc.text(fmt(summations.kotariKiray), leftBoxX + 8 + gColW3, gBoxY + 44);
+      doc.text(fmt(summations.techemariKfya), leftBoxX + 8 + 2 * gColW3, gBoxY + 44);
 
-      // Row 2
+      // Row 2 (use 8pt for custom labels if long to prevent overlap)
       doc.setFontSize(8.5);
-      doc.setTextColor(60, 60, 60);
-      doc.text("የዚህ ወር ደረቅ ቆሻሻ", leftBoxX + 8, gBoxY + 52);
-      if (hasCurPay1) doc.text(curPay1Label, leftBoxX + 8 + gColW3, gBoxY + 52);
-      if (hasCurPay2) doc.text(curPay2Label, leftBoxX + 8 + 2 * gColW3, gBoxY + 52);
+      doc.setTextColor(70, 70, 70);
+      doc.text("የዚህ ወር ደረቅ ቆሻሻ", leftBoxX + 8, gBoxY + 62);
+      if (hasCurPay1) {
+        doc.setFontSize(curPay1Label.length > 13 ? 8 : 8.5);
+        doc.text(curPay1Label, leftBoxX + 8 + gColW3, gBoxY + 62);
+      }
+      if (hasCurPay2) {
+        doc.setFontSize(curPay2Label.length > 13 ? 8 : 8.5);
+        doc.text(curPay2Label, leftBoxX + 8 + 2 * gColW3, gBoxY + 62);
+      }
 
-      doc.setFontSize(10);
+      doc.setFontSize(12.5);
       doc.setTextColor(0, 0, 0);
-      doc.text(fmt(summations.additionalHisab), leftBoxX + 8, gBoxY + 64);
-      if (hasCurPay1) doc.text(fmt(curPay1Val), leftBoxX + 8 + gColW3, gBoxY + 64);
-      if (hasCurPay2) doc.text(fmt(curPay2Val), leftBoxX + 8 + 2 * gColW3, gBoxY + 64);
+      doc.text(fmt(summations.additionalHisab), leftBoxX + 8, gBoxY + 76);
+      if (hasCurPay1) doc.text(fmt(curPay1Val), leftBoxX + 8 + gColW3, gBoxY + 76);
+      if (hasCurPay2) doc.text(fmt(curPay2Val), leftBoxX + 8 + 2 * gColW3, gBoxY + 76);
 
       // Divider line
-      doc.setDrawColor(160, 160, 160);
+      doc.setDrawColor(210, 210, 210);
       doc.setLineWidth(0.5);
-      doc.line(leftBoxX + 6, gBoxY + 91, leftBoxX + gBoxW - 6, gBoxY + 91);
+      doc.line(leftBoxX + 6, gBoxY + 120, leftBoxX + gBoxW - 6, gBoxY + 120);
 
-      // Subtotals (G1)
-      doc.setFontSize(9);
-      doc.setTextColor(0, 0, 0);
-      doc.text("የዚህ ወር", leftBoxX + 8, gBoxY + 104);
-      doc.text("የዚህ ወር አና ደረቅ ቆሻሻ", leftBoxX + 8 + gColW3 * 1.3, gBoxY + 104);
+      // Subtotals (G1) - 2 cards spanning the bottom
+      const g1SubCardW = (gBoxW - 20) / 2;
+      const g1SubY = gBoxY + 130;
+      const g1SubH = 58;
 
-      doc.setFillColor(245, 245, 245);
-      doc.setDrawColor(0, 0, 0);
-      doc.rect(leftBoxX + 8, gBoxY + 111, gColW3 * 1.2, 19, "FD");
-      doc.rect(leftBoxX + 8 + gColW3 * 1.3, gBoxY + 111, gColW3 * 1.5, 19, "FD");
-
+      doc.setFillColor(245, 247, 250);
+      doc.setDrawColor(190, 200, 215);
+      doc.setLineWidth(0.5);
+      doc.rect(leftBoxX + 8, g1SubY, g1SubCardW, g1SubH, "FD");
       doc.setFontSize(10.5);
-      doc.text(fmt(summations.yezihWer), leftBoxX + 8 + gColW3 * 1.2 - 4, gBoxY + 125, { align: "right" });
-      doc.text(fmt((summations.yezihWer || 0) + (summations.additionalHisab || 0)), leftBoxX + 8 + gColW3 * 2.8 - 4, gBoxY + 125, { align: "right" });
+      doc.setTextColor(50, 50, 50);
+      doc.text("የዚህ ወር", leftBoxX + 14, g1SubY + 20);
+      doc.setFontSize(13.5);
+      doc.setTextColor(0, 0, 0);
+      doc.text(fmt(summations.yezihWer), leftBoxX + 8 + g1SubCardW - 8, g1SubY + 44, { align: "right" });
+
+      const g1Sub2X = leftBoxX + 8 + g1SubCardW + 4;
+      doc.setFillColor(245, 247, 250);
+      doc.setDrawColor(190, 200, 215);
+      doc.setLineWidth(0.5);
+      doc.rect(g1Sub2X, g1SubY, g1SubCardW, g1SubH, "FD");
+      doc.setFontSize(10);
+      doc.setTextColor(50, 50, 50);
+      doc.text("የዚህ ወር እና ደረቅ ቆሻሻ", g1Sub2X + 8, g1SubY + 20);
+      doc.setFontSize(13.5);
+      doc.setTextColor(0, 0, 0);
+      doc.text(fmt((summations.yezihWer || 0) + (summations.additionalHisab || 0)), g1Sub2X + g1SubCardW - 8, g1SubY + 44, { align: "right" });
 
       // ── Right Box: Group 2: ውዝፍ ──
       doc.setDrawColor(0, 0, 0);
@@ -2000,32 +2075,32 @@ const BillList = () => {
       doc.setLineWidth(0.6);
       doc.rect(rightBoxX, gBoxY, gBoxW, gBoxH, "FD");
 
-      doc.setFillColor(240, 240, 240);
-      doc.rect(rightBoxX, gBoxY, gBoxW, 15, "FD");
-      doc.setFontSize(10.5);
+      doc.setFillColor(238, 240, 244);
+      doc.rect(rightBoxX, gBoxY, gBoxW, 16, "FD");
+      doc.setFontSize(11);
       doc.setFont("nyala", "normal");
       doc.setTextColor(0, 0, 0);
-      doc.text("Group 2: ውዝፍ", rightBoxX + gBoxW / 2, gBoxY + 11, { align: "center" });
+      doc.text("Group 2: ውዝፍ", rightBoxX + gBoxW / 2, gBoxY + 12, { align: "center" });
 
       // Row 1
-      doc.setFontSize(8.5);
-      doc.setTextColor(60, 60, 60);
-      doc.text("ውዝፍ ቆጣሪ ኪራይ", rightBoxX + 8, gBoxY + 26);
-      doc.text("ውዝፍ ተጨማሪ ክፍያ", rightBoxX + 8 + gColW3, gBoxY + 26);
-      doc.text("ቅጣት", rightBoxX + 8 + 2 * gColW3, gBoxY + 26);
+      doc.setFontSize(9.5);
+      doc.setTextColor(70, 70, 70);
+      doc.text("ውዝፍ ቆጣሪ ኪራይ", rightBoxX + 8, gBoxY + 30);
+      doc.text("ውዝፍ ተጨማሪ ክፍያ", rightBoxX + 8 + gColW3, gBoxY + 30);
+      doc.text("ቅጣት", rightBoxX + 8 + 2 * gColW3, gBoxY + 30);
 
-      doc.setFontSize(10);
+      doc.setFontSize(12);
       doc.setTextColor(0, 0, 0);
-      doc.text(fmt(summations.wuzifKotariKiray), rightBoxX + 8, gBoxY + 38);
-      doc.text(fmt(summations.wuzifTechemariKfya), rightBoxX + 8 + gColW3, gBoxY + 38);
-      doc.text(fmt(summations.kitat), rightBoxX + 8 + 2 * gColW3, gBoxY + 38);
+      doc.text(fmt(summations.wuzifKotariKiray), rightBoxX + 8, gBoxY + 44);
+      doc.text(fmt(summations.wuzifTechemariKfya), rightBoxX + 8 + gColW3, gBoxY + 44);
+      doc.text(fmt(summations.kitat), rightBoxX + 8 + 2 * gColW3, gBoxY + 44);
 
       // Row 2
-      doc.setFontSize(8.5);
-      doc.setTextColor(60, 60, 60);
-      doc.text("ውዝፍ ፍጆታ ክፍያ", rightBoxX + 8, gBoxY + 48);
-      doc.text("ውዝፍ ደረቅ ቆሻሻ", rightBoxX + 8 + gColW3, gBoxY + 48);
-      doc.text("የተላለፈ(ነባር) ውዝፍ", rightBoxX + 8 + 2 * gColW3, gBoxY + 48);
+      doc.setFontSize(9);
+      doc.setTextColor(70, 70, 70);
+      doc.text("ውዝፍ ፍጆታ ክፍያ", rightBoxX + 8, gBoxY + 60);
+      doc.text("ውዝፍ ደረቅ ቆሻሻ", rightBoxX + 8 + gColW3, gBoxY + 60);
+      doc.text("የተላለፈ ውዝፍ", rightBoxX + 8 + 2 * gColW3, gBoxY + 60);
 
       const transferredVal = (summations.wuzifHisab || 0) - (
         (summations.wuzifKotariKiray || 0) +
@@ -2034,52 +2109,83 @@ const BillList = () => {
         (summations.wuzifTechemariKfya || 0)
       );
 
-      doc.setFontSize(10);
+      doc.setFontSize(12);
       doc.setTextColor(0, 0, 0);
-      doc.text(fmt(summations.wuzifFjotaKfya), rightBoxX + 8, gBoxY + 60);
-      doc.text(fmt(summations.wuzifDerekKoshasha), rightBoxX + 8 + gColW3, gBoxY + 60);
-      doc.text(fmt(transferredVal), rightBoxX + 8 + 2 * gColW3, gBoxY + 60);
+      doc.text(fmt(summations.wuzifFjotaKfya), rightBoxX + 8, gBoxY + 74);
+      doc.text(fmt(summations.wuzifDerekKoshasha), rightBoxX + 8 + gColW3, gBoxY + 74);
+      doc.text(fmt(transferredVal), rightBoxX + 8 + 2 * gColW3, gBoxY + 74);
 
-      // Row 3
-      doc.setFontSize(8.5);
-      doc.setTextColor(60, 60, 60);
-      if (hasWuzifPay1) doc.text(wuzifPay1Label, rightBoxX + 8, gBoxY + 70);
-      if (hasWuzifPay2) doc.text(wuzifPay2Label, rightBoxX + 8 + gColW3, gBoxY + 70);
+      // Row 3 (if custom wuzif payments exist)
+      if (hasWuzifPay1 || hasWuzifPay2) {
+        doc.setFontSize(8.5);
+        doc.setTextColor(70, 70, 70);
+        if (hasWuzifPay1) doc.text(wuzifPay1Label, rightBoxX + 8, gBoxY + 90);
+        if (hasWuzifPay2) doc.text(wuzifPay2Label, rightBoxX + 8 + gColW3, gBoxY + 90);
 
-      doc.setFontSize(10);
-      doc.setTextColor(0, 0, 0);
-      if (hasWuzifPay1) doc.text(fmt(wuzifPay1Val), rightBoxX + 8, gBoxY + 82);
-      if (hasWuzifPay2) doc.text(fmt(wuzifPay2Val), rightBoxX + 8 + gColW3, gBoxY + 82);
+        doc.setFontSize(12);
+        doc.setTextColor(0, 0, 0);
+        if (hasWuzifPay1) doc.text(fmt(wuzifPay1Val), rightBoxX + 8, gBoxY + 104);
+        if (hasWuzifPay2) doc.text(fmt(wuzifPay2Val), rightBoxX + 8 + gColW3, gBoxY + 104);
+      }
 
       // Divider line
-      doc.setDrawColor(160, 160, 160);
+      doc.setDrawColor(210, 210, 210);
       doc.setLineWidth(0.5);
-      doc.line(rightBoxX + 6, gBoxY + 91, rightBoxX + gBoxW - 6, gBoxY + 91);
+      doc.line(rightBoxX + 6, gBoxY + 120, rightBoxX + gBoxW - 6, gBoxY + 120);
 
-      // Subtotals (G2) - 3 items
-      const g2SubColW = (gBoxW - 16) / 3;
-      doc.setFontSize(8.5);
+      // Subtotals (G2) - 3 cards
+      const g2SubCardW = (gBoxW - 20) / 3;
+      const g2SubY = gBoxY + 130;
+      const g2SubH = 58;
+
+      // Box 1
+      doc.setFillColor(245, 247, 250);
+      doc.setDrawColor(190, 200, 215);
+      doc.setLineWidth(0.5);
+      doc.rect(rightBoxX + 6, g2SubY, g2SubCardW, g2SubH, "FD");
+      doc.setFontSize(9.5);
+      doc.setTextColor(50, 50, 50);
+      doc.text("ውዝፍ", rightBoxX + 10, g2SubY + 20);
+      doc.setFontSize(12.5);
       doc.setTextColor(0, 0, 0);
-      doc.text("ውዝፍ", rightBoxX + 8, gBoxY + 104);
-      doc.text("ውዝፍ አና ደረቅ ቆሻሻ", rightBoxX + 8 + g2SubColW, gBoxY + 104);
-      doc.text("ውዝፍ አና ቅጣት", rightBoxX + 8 + 2 * g2SubColW, gBoxY + 104);
+      doc.text(fmt((summations.wuzifHisab || 0) - (summations.wuzifDerekKoshasha || 0)), rightBoxX + 6 + g2SubCardW - 4, g2SubY + 44, { align: "right" });
 
-      doc.setFillColor(245, 245, 245);
-      doc.setDrawColor(0, 0, 0);
-      doc.rect(rightBoxX + 6, gBoxY + 111, g2SubColW - 2, 19, "FD");
-      doc.rect(rightBoxX + 6 + g2SubColW, gBoxY + 111, g2SubColW - 2, 19, "FD");
-      doc.rect(rightBoxX + 6 + 2 * g2SubColW, gBoxY + 111, g2SubColW - 2, 19, "FD");
+      // Box 2
+      const g2Sub2X = rightBoxX + 6 + g2SubCardW + 4;
+      doc.setFillColor(245, 247, 250);
+      doc.setDrawColor(190, 200, 215);
+      doc.setLineWidth(0.5);
+      doc.rect(g2Sub2X, g2SubY, g2SubCardW, g2SubH, "FD");
+      doc.setFontSize(9);
+      doc.setTextColor(50, 50, 50);
+      doc.text("ውዝፍ+ደረቅ ቆሻሻ", g2Sub2X + 6, g2SubY + 20);
+      doc.setFontSize(12.5);
+      doc.setTextColor(0, 0, 0);
+      doc.text(fmt(summations.wuzifHisab), g2Sub2X + g2SubCardW - 4, g2SubY + 44, { align: "right" });
 
-      doc.setFontSize(10);
-      doc.text(fmt((summations.wuzifHisab || 0) - (summations.wuzifDerekKoshasha || 0)), rightBoxX + g2SubColW + 2, gBoxY + 125, { align: "right" });
-      doc.text(fmt(summations.wuzifHisab), rightBoxX + 2 * g2SubColW + 2, gBoxY + 125, { align: "right" });
-      doc.text(fmt((summations.wuzifHisab || 0) + (summations.kitat || 0)), rightBoxX + 3 * g2SubColW + 2, gBoxY + 125, { align: "right" });
+      // Box 3
+      const g2Sub3X = rightBoxX + 6 + 2 * g2SubCardW + 8;
+      doc.setFillColor(245, 247, 250);
+      doc.setDrawColor(190, 200, 215);
+      doc.setLineWidth(0.5);
+      doc.rect(g2Sub3X, g2SubY, g2SubCardW, g2SubH, "FD");
+      doc.setFontSize(9);
+      doc.setTextColor(50, 50, 50);
+      doc.text("ውዝፍ+ቅጣት", g2Sub3X + 6, g2SubY + 20);
+      doc.setFontSize(12.5);
+      doc.setTextColor(0, 0, 0);
+      doc.text(fmt((summations.wuzifHisab || 0) + (summations.kitat || 0)), g2Sub3X + g2SubCardW - 4, g2SubY + 44, { align: "right" });
 
-      // ─── 4. PAYMENT LOCATION SUMMARY TABLE (Y: 352 to ~600) ───────
-      const paymentStartY = gBoxY + gBoxH + 6; // ~352
+      // ─── 4. PAYMENT LOCATION SUMMARY TABLE (Y: 435 to ~660) ───────
+      const paymentStartY = gBoxY + gBoxH + 10; // 435 pt
 
       const resolveBankName = (bankKey) => {
-        return getBankName(bankKey) || bankKey || "Unknown Bank";
+        if (!bankKey) return "Unknown Bank";
+        const fromLookup = lookupBankName(bankKey);
+        if (fromLookup && fromLookup !== "Unknown Bank") return fromLookup;
+        const fromGet = getBankName(bankKey);
+        if (fromGet && fromGet !== "Unknown Bank") return fromGet;
+        return bankKey;
       };
 
       // Prepare table rows (All 8 columns matching Web UI)
@@ -2090,8 +2196,6 @@ const BillList = () => {
         "ቅድሚያ የተከፈለ",
         (summations.prepaidCount || 0).toString(),
         fmt(summations.prepaid || 0),
-        fmt(summations.prepaidAdditionalHisab || 0),
-        fmt(summations.prepaidWuzifDerekKoshasha || 0),
         fmt(summations.prepaidTotalDerekKoshasha || 0),
         fmt(summations.prepaidTekilalaTekefay || 0),
         fmt(summations.prepaidCheck || 0)
@@ -2102,8 +2206,6 @@ const BillList = () => {
         "ቢሮ የተከፈለ",
         (summations.paidAtOfficeCount || 0).toString(),
         fmt(summations.paidAtOffice || 0),
-        fmt(summations.officeAdditionalHisab || 0),
-        fmt(summations.officeWuzifDerekKoshasha || 0),
         fmt(summations.officeTotalDerekKoshasha || 0),
         fmt(summations.officeTekilalaTekefay || 0),
         fmt(summations.officeCheck || 0)
@@ -2115,8 +2217,6 @@ const BillList = () => {
           resolveBankName(bank),
           (summations.paidByBankCount?.[bank] || 0).toString(),
           fmt(summations.paidByBank?.[bank] || 0),
-          fmt(summations.bankAdditionalHisab?.[bank] || 0),
-          fmt(summations.bankWuzifDerekKoshasha?.[bank] || 0),
           fmt(summations.bankTotalDerekKoshasha?.[bank] || 0),
           fmt(summations.bankTekilalaTekefay?.[bank] || 0),
           fmt(summations.bankCheck?.[bank] || 0)
@@ -2126,8 +2226,6 @@ const BillList = () => {
       // 4. Total Bank Payments row
       const totBankCount = Object.values(summations.paidByBankCount || {}).reduce((a, b) => a + b, 0);
       const totBankPaid = Object.values(summations.paidByBank || {}).reduce((a, b) => a + b, 0);
-      const totBankAdd = Object.values(summations.bankAdditionalHisab || {}).reduce((a, b) => a + b, 0);
-      const totBankWuzif = Object.values(summations.bankWuzifDerekKoshasha || {}).reduce((a, b) => a + b, 0);
       const totBankDerek = Object.values(summations.bankTotalDerekKoshasha || {}).reduce((a, b) => a + b, 0);
       const totBankTekefay = Object.values(summations.bankTekilalaTekefay || {}).reduce((a, b) => a + b, 0);
       const totBankCheck = Object.values(summations.bankCheck || {}).reduce((a, b) => a + b, 0);
@@ -2136,8 +2234,6 @@ const BillList = () => {
         "Total Bank Payments",
         totBankCount.toString(),
         fmt(totBankPaid),
-        fmt(totBankAdd),
-        fmt(totBankWuzif),
         fmt(totBankDerek),
         fmt(totBankTekefay),
         fmt(totBankCheck)
@@ -2148,8 +2244,6 @@ const BillList = () => {
         "Grand Total",
         "",
         fmt(summations.totalPaidLocationSum || 0),
-        fmt(summations.totaladditionalHisab || 0),
-        fmt(summations.totalwuzifDerekKoshasha || 0),
         fmt((summations.totalwuzifDerekKoshasha || 0) + (summations.totaladditionalHisab || 0)),
         fmt(summations.totaltekelalaTekefay || 0),
         fmt((summations.totaltekelalaTekefay || 0) - (summations.totalPaidLocationSum || 0))
@@ -2161,8 +2255,6 @@ const BillList = () => {
           "Duplicate Payments",
           (summations.duplicatePaymentCount || 0).toString(),
           fmt(summations.duplicatePayments || 0),
-          fmt(summations.duplicateAdditionalHisab || 0),
-          fmt(summations.duplicateWuzifDerekKoshasha || 0),
           fmt((summations.duplicateWuzifDerekKoshasha || 0) + (summations.duplicateAdditionalHisab || 0)),
           fmt(summations.duplicateTekilalaTekefay || 0),
           fmt(summations.duplicateCheck || 0)
@@ -2174,8 +2266,6 @@ const BillList = () => {
           "Payment Location",
           "No. of\nBills",
           "Total Amount\n(ETB)",
-          "Additional\nHisab",
-          "Wuzif Derek\nKoshasha",
           "Total Derek\nKoshasha",
           "Tekilala\nTekefay",
           "Check"
@@ -2183,18 +2273,18 @@ const BillList = () => {
         body: paymentRows,
         styles: {
           font: "nyala",
-          fontSize: 7.8,
+          fontSize: 12.25,
           fontStyle: "normal",
           lineColor: [0, 0, 0],
           lineWidth: 0.4,
-          cellPadding: { top: 2, bottom: 2, left: 2.5, right: 2.5 },
+          cellPadding: { top: 3.5, bottom: 3.5, left: 4, right: 4 },
           textColor: [0, 0, 0]
         },
         headStyles: {
           font: "nyala",
-          fontSize: 8,
+          fontSize: 12.5,
           fontStyle: "normal",
-          fillColor: [238, 238, 238],
+          fillColor: [238, 240, 244],
           textColor: [0, 0, 0],
           lineColor: [0, 0, 0],
           lineWidth: 0.5,
@@ -2202,14 +2292,12 @@ const BillList = () => {
           valign: "middle"
         },
         columnStyles: {
-          0: { halign: "left", cellWidth: 90 },
-          1: { halign: "center", cellWidth: 34 },
-          2: { halign: "right", cellWidth: 68 },
-          3: { halign: "right", cellWidth: 58 },
-          4: { halign: "right", cellWidth: 64 },
-          5: { halign: "right", cellWidth: 64 },
-          6: { halign: "right", cellWidth: 78 },
-          7: { halign: "right", cellWidth: 83.28 }
+          0: { halign: "left", cellWidth: 120 },
+          1: { halign: "center", cellWidth: 43 },
+          2: { halign: "right", cellWidth: 94 },
+          3: { halign: "right", cellWidth: 94 },
+          4: { halign: "right", cellWidth: 94 },
+          5: { halign: "right", cellWidth: 94.28 }
         },
         theme: "grid",
         margin: { left: MARGIN, right: MARGIN },
@@ -2255,7 +2343,7 @@ const BillList = () => {
 
       const fileName = `bill-summations-${selectedKifyaWerMonth || "-"}-${selectedKifyaWerYear || "-"}.pdf`;
       if (preview) {
-        doc.output("dataurlnewwindow", { filename: fileName });
+        openPdfPreviewModal(doc, fileName, `Bill Summations Report - ${selectedKifyaWerMonth || ""} ${selectedKifyaWerYear || ""}`);
       } else {
         doc.save(fileName);
       }
@@ -2319,180 +2407,180 @@ const BillList = () => {
       doc.setTextColor(0, 0, 0);
       doc.text(reportTitle, pageWidth / 2, MARGIN + 58, { align: "center" });
 
-      // ─── 2. SUMMARY OVERVIEW (Y: 96 to 226, Height = 130 pt) ───────
-      const summaryY = MARGIN + 68; // 96
-      const summaryH = 126;
+      // ─── 2. SUMMARY OVERVIEW (Y: 94 to 246, Height = 152 pt) ───────
+      const summaryY = MARGIN + 66; // 94 pt
+      const summaryH = 152;
 
       doc.setDrawColor(0, 0, 0);
       doc.setFillColor(255, 255, 255);
       doc.setLineWidth(0.7);
       doc.rect(MARGIN, summaryY, fullW, summaryH, "FD");
 
-      doc.setFillColor(240, 240, 240);
-      doc.rect(MARGIN, summaryY, fullW, 18, "FD");
-      doc.setFontSize(12);
+      doc.setFillColor(238, 240, 244);
+      doc.rect(MARGIN, summaryY, fullW, 20, "FD");
+      doc.setFontSize(12.5);
       doc.setFont("nyala", "normal");
       doc.setTextColor(0, 0, 0);
-      doc.text("Summary Overview", MARGIN + fullW / 2, summaryY + 13, { align: "center" });
+      doc.text("Summary Overview", MARGIN + fullW / 2, summaryY + 14, { align: "center" });
 
-      const sColW = (fullW - 20) / 6;
-      const sLabelY1 = summaryY + 34;
-      const sValueY1 = summaryY + 49;
-      const sLabelY2 = summaryY + 68;
-      const sValueY2 = summaryY + 83;
+      // Row 1: Dynamically distribute active columns
+      const sRow1 = [
+        { label: "Total Bills", value: fmt0(filteredData.length) },
+        { label: "የወሩ ፍጆታ (ሜ3)", value: fmt0(summations.consumption) },
+        { label: "ውዝፍ ፍጆታ (ሜ3)", value: fmt(summations.wuzifFjota) },
+        { label: "ጠቅላላ ደረቅ ቆሻሻ", value: fmt((summations.additionalHisab || 0) + (summations.wuzifDerekKoshasha || 0)) },
+      ];
+      if (hasTotPay1) sRow1.push({ label: totPay1Label, value: fmt(totPay1Val) });
+      if (hasTotPay2) sRow1.push({ label: totPay2Label, value: fmt(totPay2Val) });
 
-      // Row 1
-      doc.setFontSize(9.5);
-      doc.setTextColor(60, 60, 60);
-      doc.text("Total Bills", MARGIN + 10 + 0 * sColW, sLabelY1);
-      doc.text("የወሩ ፍጆታ (ሜ3)", MARGIN + 10 + 1 * sColW, sLabelY1);
-      doc.text("ውዝፍ ፍጆታ (ሜ3)", MARGIN + 10 + 2 * sColW, sLabelY1);
-      doc.text("ጠቅላላ ደረቅ ቆሻሻ", MARGIN + 10 + 3 * sColW, sLabelY1);
-      if (hasTotPay1) doc.text(totPay1Label, MARGIN + 10 + 4 * sColW, sLabelY1);
-      if (hasTotPay2) doc.text(totPay2Label, MARGIN + 10 + 5 * sColW, sLabelY1);
+      const r1ColW = (fullW - 20) / sRow1.length;
+      const sLabelY1 = summaryY + 38;
+      const sValueY1 = summaryY + 55;
+      sRow1.forEach((item, idx) => {
+        doc.setFontSize(10.5);
+        doc.setTextColor(70, 70, 70);
+        doc.text(item.label, MARGIN + 10 + idx * r1ColW, sLabelY1);
+        doc.setFontSize(14);
+        doc.setTextColor(0, 0, 0);
+        doc.text(item.value, MARGIN + 10 + idx * r1ColW, sValueY1);
+      });
 
-      doc.setFontSize(11.5);
-      doc.setTextColor(0, 0, 0);
-      doc.text(fmt0(filteredData.length), MARGIN + 10 + 0 * sColW, sValueY1);
-      doc.text(fmt0(summations.consumption), MARGIN + 10 + 1 * sColW, sValueY1);
-      doc.text(fmt(summations.wuzifFjota), MARGIN + 10 + 2 * sColW, sValueY1);
-      doc.text(fmt((summations.additionalHisab || 0) + (summations.wuzifDerekKoshasha || 0)), MARGIN + 10 + 3 * sColW, sValueY1);
-      if (hasTotPay1) doc.text(fmt(totPay1Val), MARGIN + 10 + 4 * sColW, sValueY1);
-      if (hasTotPay2) doc.text(fmt(totPay2Val), MARGIN + 10 + 5 * sColW, sValueY1);
+      // Row 2: 5 items evenly distributed
+      const sRow2 = [
+        { label: "ጠቅላላ የዚህ ወር", value: fmt(summations.yezihWer) },
+        { label: "ቅድሚያ የተከፈለ", value: fmt(summations.prepaid) },
+        { label: "ጠቅላላ ተጨማሪ ክፍያ", value: fmt((summations.techemariKfya || 0) + (summations.wuzifTechemariKfya || 0)) },
+        { label: "ቅጣት", value: fmt(summations.kitat) },
+        { label: "ጠቅላላ ውዝፍ", value: fmt((summations.wuzifHisab || 0) - (summations.wuzifDerekKoshasha || 0)) },
+      ];
+      const r2ColW = (fullW - 20) / 5;
+      const sLabelY2 = summaryY + 76;
+      const sValueY2 = summaryY + 93;
+      sRow2.forEach((item, idx) => {
+        doc.setFontSize(10.5);
+        doc.setTextColor(70, 70, 70);
+        doc.text(item.label, MARGIN + 10 + idx * r2ColW, sLabelY2);
+        doc.setFontSize(14);
+        doc.setTextColor(0, 0, 0);
+        doc.text(item.value, MARGIN + 10 + idx * r2ColW, sValueY2);
+      });
 
-      // Row 2
-      doc.setFontSize(9.5);
-      doc.setTextColor(60, 60, 60);
-      doc.text("ጠቅላላ የዚህ ወር", MARGIN + 10 + 0 * sColW, sLabelY2);
-      doc.text("ቅድሚያ የተከፈለ", MARGIN + 10 + 1 * sColW, sLabelY2);
-      doc.text("ጠቅላላ ተጨማሪ ክፍያ", MARGIN + 10 + 2 * sColW, sLabelY2);
-      doc.text("ቅጣት", MARGIN + 10 + 3 * sColW, sLabelY2);
-      doc.text("ጠቅላላ ውዝፍ", MARGIN + 10 + 4 * sColW, sLabelY2);
+      // Divider line inside Summary Overview
+      doc.setDrawColor(210, 210, 210);
+      doc.setLineWidth(0.5);
+      doc.line(MARGIN + 10, summaryY + 107, MARGIN + fullW - 10, summaryY + 107);
 
-      doc.setFontSize(11.5);
-      doc.setTextColor(0, 0, 0);
-      doc.text(fmt(summations.yezihWer), MARGIN + 10 + 0 * sColW, sValueY2);
-      doc.text(fmt(summations.prepaid), MARGIN + 10 + 1 * sColW, sValueY2);
-      doc.text(fmt((summations.techemariKfya || 0) + (summations.wuzifTechemariKfya || 0)), MARGIN + 10 + 2 * sColW, sValueY2);
-      doc.text(fmt(summations.kitat), MARGIN + 10 + 3 * sColW, sValueY2);
-      doc.text(fmt((summations.wuzifHisab || 0) - (summations.wuzifDerekKoshasha || 0)), MARGIN + 10 + 4 * sColW, sValueY2);
-
-      // Bottom Grand Total Boxes
-      const tileY = summaryY + 95;
+      // Bottom Grand Total Boxes (Row 3, Y: summaryY + 115, Height = 28 pt)
+      const tileY = summaryY + 115;
       const totalExcl = ((summations.tekilalaTekefay || 0) + (summations.prepaid || 0)) - ((summations.additionalHisab || 0) + (summations.wuzifDerekKoshasha || 0));
       const totalIncl = (summations.tekilalaTekefay || 0) + (summations.prepaid || 0);
+      const tileW = (fullW - 28) / 2;
+      const tileH = 28;
 
+      // Left Tile: ጠቅላላ ክፍያ (Excl. Waste)
+      const leftTileX = MARGIN + 10;
+      doc.setFillColor(243, 246, 250);
+      doc.setDrawColor(180, 190, 205);
+      doc.setLineWidth(0.6);
+      doc.rect(leftTileX, tileY, tileW, tileH, "FD");
       doc.setFontSize(11);
+      doc.setTextColor(40, 40, 40);
+      doc.text("ጠቅላላ ክፍያ:", leftTileX + 10, tileY + 18);
+      doc.setFontSize(15.5);
       doc.setTextColor(0, 0, 0);
-      doc.text("ጠቅላላ ክፍያ:", MARGIN + 10, tileY + 18);
-      doc.setFillColor(245, 245, 245);
-      doc.setDrawColor(0, 0, 0);
-      doc.setLineWidth(0.5);
-      doc.rect(MARGIN + 85, tileY + 3, 160, 22, "FD");
-      doc.setFontSize(13);
-      doc.text(fmt(totalExcl), MARGIN + 238, tileY + 18, { align: "right" });
+      doc.text(fmt(totalExcl), leftTileX + tileW - 10, tileY + 19, { align: "right" });
 
+      // Right Tile: ጠቅላላ ክፍያ እና ደረቅ ቆሻሻ (Incl. Waste)
+      const rightTileX = MARGIN + 10 + tileW + 8;
+      doc.setFillColor(242, 248, 243);
+      doc.setDrawColor(180, 205, 185);
+      doc.setLineWidth(0.6);
+      doc.rect(rightTileX, tileY, tileW, tileH, "FD");
       doc.setFontSize(11);
-      doc.text("ጠቅላላ ክፍያ እና ደረቅ ቆሻሻ:", MARGIN + fullW / 2 + 10, tileY + 18);
-      doc.setFillColor(245, 245, 245);
-      doc.rect(MARGIN + fullW - 165, tileY + 3, 155, 22, "FD");
-      doc.setFontSize(13);
-      doc.text(fmt(totalIncl), MARGIN + fullW - 16, tileY + 18, { align: "right" });
+      doc.setTextColor(40, 40, 40);
+      doc.text("ጠቅላላ ክፍያ እና ደረቅ ቆሻሻ:", rightTileX + 10, tileY + 18);
+      doc.setFontSize(15.5);
+      doc.setTextColor(0, 0, 0);
+      doc.text(fmt(totalIncl), rightTileX + tileW - 10, tileY + 19, { align: "right" });
 
-      // ─── 3. GROUP 1: የዚህ ወር (Y: 232 to 386, Height = 154 pt) ─────
-      const g1Y = summaryY + summaryH + 10; // 232
-      const g1H = 154;
+      // ─── 3. GROUP 1: የዚህ ወር (Y: 256 to 424, Height = 168 pt) ─────
+      const g1Y = summaryY + summaryH + 10; // 256 pt
+      const g1H = 168;
 
       doc.setDrawColor(0, 0, 0);
       doc.setFillColor(255, 255, 255);
       doc.setLineWidth(0.7);
       doc.rect(MARGIN, g1Y, fullW, g1H, "FD");
 
-      doc.setFillColor(240, 240, 240);
-      doc.rect(MARGIN, g1Y, fullW, 18, "FD");
-      doc.setFontSize(12);
+      doc.setFillColor(238, 240, 244);
+      doc.rect(MARGIN, g1Y, fullW, 20, "FD");
+      doc.setFontSize(12.5);
       doc.setFont("nyala", "normal");
       doc.setTextColor(0, 0, 0);
-      doc.text("Group 1: የዚህ ወር", MARGIN + fullW / 2, g1Y + 13, { align: "center" });
+      doc.text("Group 1: የዚህ ወር", MARGIN + fullW / 2, g1Y + 14, { align: "center" });
 
-      const colW6 = (fullW - 24) / 6;
-      doc.setFontSize(9.5);
-      doc.setTextColor(60, 60, 60);
-      doc.text("የውሃ ፍጆታ ብር", MARGIN + 12 + 0 * colW6, g1Y + 38);
-      doc.text("ቆጣሪ ኪራይ", MARGIN + 12 + 1 * colW6, g1Y + 38);
-      doc.text("ተጨማሪ ክፍያ", MARGIN + 12 + 2 * colW6, g1Y + 38);
-      doc.text("የዚህ ወር ደረቅ ቆሻሻ", MARGIN + 12 + 3 * colW6, g1Y + 38);
-      if (hasCurPay1) doc.text(curPay1Label, MARGIN + 12 + 4 * colW6, g1Y + 38);
-      if (hasCurPay2) doc.text(curPay2Label, MARGIN + 12 + 5 * colW6, g1Y + 38);
+      // Row 1: Dynamically distribute active columns
+      const g1Items = [
+        { label: "የውሃ ፍጆታ ብር", value: fmt(summations.yezihWerFjotaKfya) },
+        { label: "ቆጣሪ ኪራይ", value: fmt(summations.kotariKiray) },
+        { label: "ተጨማሪ ክፍያ", value: fmt(summations.techemariKfya) },
+        { label: "የዚህ ወር ደረቅ ቆሻሻ", value: fmt(summations.additionalHisab) },
+      ];
+      if (hasCurPay1) g1Items.push({ label: curPay1Label, value: fmt(curPay1Val) });
+      if (hasCurPay2) g1Items.push({ label: curPay2Label, value: fmt(curPay2Val) });
 
-      doc.setFontSize(11.5);
-      doc.setTextColor(0, 0, 0);
-      doc.text(fmt(summations.yezihWerFjotaKfya), MARGIN + 12 + 0 * colW6, g1Y + 56);
-      doc.text(fmt(summations.kotariKiray), MARGIN + 12 + 1 * colW6, g1Y + 56);
-      doc.text(fmt(summations.techemariKfya), MARGIN + 12 + 2 * colW6, g1Y + 56);
-      doc.text(fmt(summations.additionalHisab), MARGIN + 12 + 3 * colW6, g1Y + 56);
-      if (hasCurPay1) doc.text(fmt(curPay1Val), MARGIN + 12 + 4 * colW6, g1Y + 56);
-      if (hasCurPay2) doc.text(fmt(curPay2Val), MARGIN + 12 + 5 * colW6, g1Y + 56);
+      const g1ColW = (fullW - 24) / g1Items.length;
+      const g1LabelY = g1Y + 40;
+      const g1ValueY = g1Y + 59;
+      g1Items.forEach((item, idx) => {
+        doc.setFontSize(10.5);
+        doc.setTextColor(70, 70, 70);
+        doc.text(item.label, MARGIN + 12 + idx * g1ColW, g1LabelY);
+        doc.setFontSize(14.5);
+        doc.setTextColor(0, 0, 0);
+        doc.text(item.value, MARGIN + 12 + idx * g1ColW, g1ValueY);
+      });
 
-      // Divider
-      doc.setDrawColor(160, 160, 160);
+      // Divider line
+      doc.setDrawColor(210, 210, 210);
       doc.setLineWidth(0.5);
-      doc.line(MARGIN + 12, g1Y + 76, MARGIN + fullW - 12, g1Y + 76);
+      doc.line(MARGIN + 12, g1Y + 82, MARGIN + fullW - 12, g1Y + 82);
 
-      // Subtotals (G1)
-      const colW4 = (fullW - 30) / 4;
+      // Subtotals (G1) - 2 cards spanning the full width
+      const g1SubW = (fullW - 32) / 2;
+      const g1SubY = g1Y + 94;
+      const g1SubH = 58;
+
+      // Left Subtotal: የዚህ ወር
+      doc.setFillColor(245, 247, 250);
+      doc.setDrawColor(180, 190, 205);
+      doc.setLineWidth(0.6);
+      doc.rect(MARGIN + 12, g1SubY, g1SubW, g1SubH, "FD");
       doc.setFontSize(11);
+      doc.setTextColor(50, 50, 50);
+      doc.text("የዚህ ወር", MARGIN + 22, g1SubY + 20);
+      doc.setFontSize(15.5);
       doc.setTextColor(0, 0, 0);
-      doc.text("የዚህ ወር", MARGIN + 12, g1Y + 98);
-      doc.text("የዚህ ወር አና ደረቅ ቆሻሻ", MARGIN + 12 + colW4 * 1.5, g1Y + 98);
+      doc.text(fmt(summations.yezihWer), MARGIN + 12 + g1SubW - 12, g1SubY + 44, { align: "right" });
 
-      doc.setFillColor(245, 245, 245);
-      doc.setDrawColor(0, 0, 0);
-      doc.rect(MARGIN + 12, g1Y + 106, colW4 * 1.3, 24, "FD");
-      doc.rect(MARGIN + 12 + colW4 * 1.5, g1Y + 106, colW4 * 1.6, 24, "FD");
-
-      doc.setFontSize(13.5);
-      doc.text(fmt(summations.yezihWer), MARGIN + 12 + colW4 * 1.3 - 6, g1Y + 123, { align: "right" });
-      doc.text(fmt((summations.yezihWer || 0) + (summations.additionalHisab || 0)), MARGIN + 12 + colW4 * 3.1 - 6, g1Y + 123, { align: "right" });
-
-      // ─── 4. GROUP 2: ውዝፍ (Y: 396 to 586, Height = 190 pt) ─────────
-      const g2Y = g1Y + g1H + 10; // 396
-      const g2H = 190;
-
-      doc.setDrawColor(0, 0, 0);
-      doc.setFillColor(255, 255, 255);
-      doc.setLineWidth(0.7);
-      doc.rect(MARGIN, g2Y, fullW, g2H, "FD");
-
-      doc.setFillColor(240, 240, 240);
-      doc.rect(MARGIN, g2Y, fullW, 18, "FD");
-      doc.setFontSize(12);
-      doc.setFont("nyala", "normal");
+      // Right Subtotal: የዚህ ወር እና ደረቅ ቆሻሻ
+      const rightSubX = MARGIN + 12 + g1SubW + 8;
+      doc.setFillColor(245, 247, 250);
+      doc.setDrawColor(180, 190, 205);
+      doc.setLineWidth(0.6);
+      doc.rect(rightSubX, g1SubY, g1SubW, g1SubH, "FD");
+      doc.setFontSize(11);
+      doc.setTextColor(50, 50, 50);
+      doc.text("የዚህ ወር እና ደረቅ ቆሻሻ", rightSubX + 12, g1SubY + 20);
+      doc.setFontSize(15.5);
       doc.setTextColor(0, 0, 0);
-      doc.text("Group 2: ውዝፍ", MARGIN + fullW / 2, g2Y + 13, { align: "center" });
+      doc.text(fmt((summations.yezihWer || 0) + (summations.additionalHisab || 0)), rightSubX + g1SubW - 12, g1SubY + 44, { align: "right" });
 
-      const colW3 = (fullW - 30) / 3;
+      // ─── 4. GROUP 2: ውዝፍ (Y: 434 to ~640) ────────────────────────
+      const g2Y = g1Y + g1H + 10; // 434 pt
+      const g2ColW3 = (fullW - 24) / 3;
 
       // Row 1
-      doc.setFontSize(10);
-      doc.setTextColor(60, 60, 60);
-      doc.text("ውዝፍ ቆጣሪ ኪራይ", MARGIN + 12, g2Y + 34);
-      doc.text("ውዝፍ ተጨማሪ ክፍያ", MARGIN + 12 + colW3, g2Y + 34);
-      doc.text("ቅጣት", MARGIN + 12 + 2 * colW3, g2Y + 34);
-
-      doc.setFontSize(12);
-      doc.setTextColor(0, 0, 0);
-      doc.text(fmt(summations.wuzifKotariKiray), MARGIN + 12, g2Y + 48);
-      doc.text(fmt(summations.wuzifTechemariKfya), MARGIN + 12 + colW3, g2Y + 48);
-      doc.text(fmt(summations.kitat), MARGIN + 12 + 2 * colW3, g2Y + 48);
-
-      // Row 2
-      doc.setFontSize(10);
-      doc.setTextColor(60, 60, 60);
-      doc.text("ውዝፍ ፍጆታ ክፍያ", MARGIN + 12, g2Y + 64);
-      doc.text("ውዝፍ ደረቅ ቆሻሻ", MARGIN + 12 + colW3, g2Y + 64);
-      doc.text("የተላለፈ(ነባር) ውዝፍ", MARGIN + 12 + 2 * colW3, g2Y + 64);
-
       const basicTransferred = (summations.wuzifHisab || 0) - (
         (summations.wuzifKotariKiray || 0) +
         (summations.wuzifFjotaKfya || 0) +
@@ -2500,74 +2588,138 @@ const BillList = () => {
         (summations.wuzifTechemariKfya || 0)
       );
 
-      doc.setFontSize(12);
-      doc.setTextColor(0, 0, 0);
-      doc.text(fmt(summations.wuzifFjotaKfya), MARGIN + 12, g2Y + 78);
-      doc.text(fmt(summations.wuzifDerekKoshasha), MARGIN + 12 + colW3, g2Y + 78);
-      doc.text(fmt(basicTransferred), MARGIN + 12 + 2 * colW3, g2Y + 78);
+      // Determine height depending on optional Row 3
+      const g2H = (hasWuzifPay1 || hasWuzifPay2) ? 234 : 205;
 
-      // Row 3
-      doc.setFontSize(10);
-      doc.setTextColor(60, 60, 60);
-      if (hasWuzifPay1) doc.text(wuzifPay1Label, MARGIN + 12, g2Y + 94);
-      if (hasWuzifPay2) doc.text(wuzifPay2Label, MARGIN + 12 + colW3, g2Y + 94);
-
-      doc.setFontSize(12);
-      doc.setTextColor(0, 0, 0);
-      if (hasWuzifPay1) doc.text(fmt(wuzifPay1Val), MARGIN + 12, g2Y + 108);
-      if (hasWuzifPay2) doc.text(fmt(wuzifPay2Val), MARGIN + 12 + colW3, g2Y + 108);
-
-      // Divider
-      doc.setDrawColor(160, 160, 160);
-      doc.setLineWidth(0.5);
-      doc.line(MARGIN + 12, g2Y + 122, MARGIN + fullW - 12, g2Y + 122);
-
-      // Subtotals (G2) - 3 items
-      doc.setFontSize(10.5);
-      doc.setTextColor(0, 0, 0);
-      doc.text("ውዝፍ", MARGIN + 12, g2Y + 138);
-      doc.text("ውዝፍ አና ደረቅ ቆሻሻ", MARGIN + 12 + colW3, g2Y + 138);
-      doc.text("ውዝፍ አና ቅጣት", MARGIN + 12 + 2 * colW3, g2Y + 138);
-
-      doc.setFillColor(245, 245, 245);
       doc.setDrawColor(0, 0, 0);
-      doc.rect(MARGIN + 12, g2Y + 146, colW3 - 10, 24, "FD");
-      doc.rect(MARGIN + 12 + colW3, g2Y + 146, colW3 - 10, 24, "FD");
-      doc.rect(MARGIN + 12 + 2 * colW3, g2Y + 146, colW3 - 10, 24, "FD");
+      doc.setFillColor(255, 255, 255);
+      doc.setLineWidth(0.7);
+      doc.rect(MARGIN, g2Y, fullW, g2H, "FD");
 
-      doc.setFontSize(13);
-      doc.text(fmt((summations.wuzifHisab || 0) - (summations.wuzifDerekKoshasha || 0)), MARGIN + colW3 - 4, g2Y + 163, { align: "right" });
-      doc.text(fmt(summations.wuzifHisab), MARGIN + 2 * colW3 - 4, g2Y + 163, { align: "right" });
-      doc.text(fmt((summations.wuzifHisab || 0) + (summations.kitat || 0)), MARGIN + 3 * colW3 - 4, g2Y + 163, { align: "right" });
+      doc.setFillColor(238, 240, 244);
+      doc.rect(MARGIN, g2Y, fullW, 20, "FD");
+      doc.setFontSize(12.5);
+      doc.setFont("nyala", "normal");
+      doc.setTextColor(0, 0, 0);
+      doc.text("Group 2: ውዝፍ", MARGIN + fullW / 2, g2Y + 14, { align: "center" });
+
+      // Row 1
+      doc.setFontSize(10.5);
+      doc.setTextColor(70, 70, 70);
+      doc.text("ውዝፍ ቆጣሪ ኪራይ", MARGIN + 12 + 0 * g2ColW3, g2Y + 40);
+      doc.text("ውዝፍ ተጨማሪ ክፍያ", MARGIN + 12 + 1 * g2ColW3, g2Y + 40);
+      doc.text("ቅጣት", MARGIN + 12 + 2 * g2ColW3, g2Y + 40);
+
+      doc.setFontSize(14);
+      doc.setTextColor(0, 0, 0);
+      doc.text(fmt(summations.wuzifKotariKiray), MARGIN + 12 + 0 * g2ColW3, g2Y + 58);
+      doc.text(fmt(summations.wuzifTechemariKfya), MARGIN + 12 + 1 * g2ColW3, g2Y + 58);
+      doc.text(fmt(summations.kitat), MARGIN + 12 + 2 * g2ColW3, g2Y + 58);
+
+      // Row 2
+      doc.setFontSize(10.5);
+      doc.setTextColor(70, 70, 70);
+      doc.text("ውዝፍ ፍጆታ ክፍያ", MARGIN + 12 + 0 * g2ColW3, g2Y + 77);
+      doc.text("ውዝፍ ደረቅ ቆሻሻ", MARGIN + 12 + 1 * g2ColW3, g2Y + 77);
+      doc.text("የተላለፈ ውዝፍ", MARGIN + 12 + 2 * g2ColW3, g2Y + 77);
+
+      doc.setFontSize(14);
+      doc.setTextColor(0, 0, 0);
+      doc.text(fmt(summations.wuzifFjotaKfya), MARGIN + 12 + 0 * g2ColW3, g2Y + 95);
+      doc.text(fmt(summations.wuzifDerekKoshasha), MARGIN + 12 + 1 * g2ColW3, g2Y + 95);
+      doc.text(fmt(basicTransferred), MARGIN + 12 + 2 * g2ColW3, g2Y + 95);
+
+      // Row 3 (if custom payments exist)
+      let g2DivY = g2Y + 112;
+      if (hasWuzifPay1 || hasWuzifPay2) {
+        doc.setFontSize(10);
+        doc.setTextColor(70, 70, 70);
+        if (hasWuzifPay1) doc.text(wuzifPay1Label, MARGIN + 12, g2Y + 112);
+        if (hasWuzifPay2) doc.text(wuzifPay2Label, MARGIN + 12 + g2ColW3, g2Y + 112);
+
+        doc.setFontSize(13.5);
+        doc.setTextColor(0, 0, 0);
+        if (hasWuzifPay1) doc.text(fmt(wuzifPay1Val), MARGIN + 12, g2Y + 127);
+        if (hasWuzifPay2) doc.text(fmt(wuzifPay2Val), MARGIN + 12 + g2ColW3, g2Y + 127);
+        g2DivY = g2Y + 140;
+      }
+
+      // Divider line
+      doc.setDrawColor(210, 210, 210);
+      doc.setLineWidth(0.5);
+      doc.line(MARGIN + 12, g2DivY, MARGIN + fullW - 12, g2DivY);
+
+      // Subtotals (G2) - 3 cards spanning full width
+      const g2SubW = (fullW - 32) / 3;
+      const g2SubY = g2DivY + 10;
+      const g2SubH = 58;
+
+      // Box 1
+      doc.setFillColor(245, 247, 250);
+      doc.setDrawColor(180, 190, 205);
+      doc.setLineWidth(0.6);
+      doc.rect(MARGIN + 12, g2SubY, g2SubW, g2SubH, "FD");
+      doc.setFontSize(10.5);
+      doc.setTextColor(50, 50, 50);
+      doc.text("ውዝፍ", MARGIN + 20, g2SubY + 20);
+      doc.setFontSize(15);
+      doc.setTextColor(0, 0, 0);
+      doc.text(fmt((summations.wuzifHisab || 0) - (summations.wuzifDerekKoshasha || 0)), MARGIN + 12 + g2SubW - 10, g2SubY + 44, { align: "right" });
+
+      // Box 2
+      const g2Sub2X = MARGIN + 12 + g2SubW + 4;
+      doc.setFillColor(245, 247, 250);
+      doc.setDrawColor(180, 190, 205);
+      doc.setLineWidth(0.6);
+      doc.rect(g2Sub2X, g2SubY, g2SubW, g2SubH, "FD");
+      doc.setFontSize(10.5);
+      doc.setTextColor(50, 50, 50);
+      doc.text("ውዝፍ አና ደረቅ ቆሻሻ", g2Sub2X + 8, g2SubY + 20);
+      doc.setFontSize(15);
+      doc.setTextColor(0, 0, 0);
+      doc.text(fmt(summations.wuzifHisab), g2Sub2X + g2SubW - 10, g2SubY + 44, { align: "right" });
+
+      // Box 3
+      const g2Sub3X = MARGIN + 12 + 2 * g2SubW + 8;
+      doc.setFillColor(245, 247, 250);
+      doc.setDrawColor(180, 190, 205);
+      doc.setLineWidth(0.6);
+      doc.rect(g2Sub3X, g2SubY, g2SubW, g2SubH, "FD");
+      doc.setFontSize(10.5);
+      doc.setTextColor(50, 50, 50);
+      doc.text("ውዝፍ አና ቅጣት", g2Sub3X + 8, g2SubY + 20);
+      doc.setFontSize(15);
+      doc.setTextColor(0, 0, 0);
+      doc.text(fmt((summations.wuzifHisab || 0) + (summations.kitat || 0)), g2Sub3X + g2SubW - 10, g2SubY + 44, { align: "right" });
 
       // ─── 5. DUPLICATE PAYMENTS CARD (if count > 0) ────────────────
       if ((summations.duplicatePaymentCount || 0) > 0) {
         const dpY = g2Y + g2H + 10;
-        const dpH = 34;
+        const dpH = 38;
 
         doc.setDrawColor(0, 0, 0);
-        doc.setFillColor(245, 245, 245);
+        doc.setFillColor(245, 247, 250);
         doc.setLineWidth(0.6);
         doc.rect(MARGIN, dpY, fullW, dpH, "FD");
 
-        doc.setFontSize(11);
+        doc.setFontSize(11.5);
         doc.setFont("nyala", "normal");
         doc.setTextColor(0, 0, 0);
-        doc.text("Duplicate Payments", MARGIN + 12, dpY + 21);
+        doc.text("Duplicate Payments", MARGIN + 14, dpY + 23);
 
-        doc.setFontSize(9.5);
-        doc.setTextColor(60, 60, 60);
-        doc.text("No. of Bills:", MARGIN + fullW * 0.35, dpY + 21);
-        doc.setFontSize(12);
+        doc.setFontSize(10);
+        doc.setTextColor(70, 70, 70);
+        doc.text("No. of Bills:", MARGIN + fullW * 0.35, dpY + 23);
+        doc.setFontSize(14);
         doc.setTextColor(0, 0, 0);
-        doc.text(String(summations.duplicatePaymentCount || 0), MARGIN + fullW * 0.48, dpY + 21);
+        doc.text(String(summations.duplicatePaymentCount || 0), MARGIN + fullW * 0.48, dpY + 23);
 
-        doc.setFontSize(9.5);
-        doc.setTextColor(60, 60, 60);
-        doc.text("Total Amount (ETB):", MARGIN + fullW * 0.60, dpY + 21);
-        doc.setFontSize(12);
+        doc.setFontSize(10);
+        doc.setTextColor(70, 70, 70);
+        doc.text("Total Amount (ETB):", MARGIN + fullW * 0.58, dpY + 23);
+        doc.setFontSize(14);
         doc.setTextColor(0, 0, 0);
-        doc.text(fmt(summations.duplicatePayments), MARGIN + fullW - 12, dpY + 21, { align: "right" });
+        doc.text(fmt(summations.duplicatePayments), MARGIN + fullW - 14, dpY + 23, { align: "right" });
       }
 
       // ─── 6. FOOTER (Y: 818 to 832) ────────────────────────────────
@@ -2594,7 +2746,7 @@ const BillList = () => {
 
       const fileName = `bill-summations-basic-${selectedKifyaWerMonth || "-"}-${selectedKifyaWerYear || "-"}.pdf`;
       if (preview) {
-        doc.output("dataurlnewwindow", { filename: fileName });
+        openPdfPreviewModal(doc, fileName, `Bill Summations Report (Basic) - ${selectedKifyaWerMonth || ""} ${selectedKifyaWerYear || ""}`);
       } else {
         doc.save(fileName);
       }
@@ -3421,12 +3573,15 @@ const BillList = () => {
                     : 'ይልተከፈለ '
                   }`}
               </Typography>
-              <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end', mb: 1 }}>
+              <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end', mb: 1, flexWrap: 'wrap' }}>
                 <Button variant="outlined" size="small" onClick={() => handleExportSummationsPDF(true)}>
                   Preview PDF
                 </Button>
                 <Button variant="contained" size="small" onClick={() => handleExportSummationsPDF(false)}>
                   Export PDF
+                </Button>
+                <Button variant="outlined" size="small" color="secondary" onClick={() => handleExportSummationsPDFBasic(true)}>
+                  Preview PDF Basic
                 </Button>
                 <Button variant="contained" size="small" color="secondary" onClick={() => handleExportSummationsPDFBasic(false)}>
                   Export PDF Basic
@@ -4972,6 +5127,104 @@ const BillList = () => {
         onSaveSuccess={handleImportSuccess}
       />
 
+      {/* PDF Report Preview Modal */}
+      <Dialog
+        open={Boolean(pdfPreviewModal.open)}
+        onClose={handleClosePdfPreviewModal}
+        maxWidth="lg"
+        fullWidth
+        PaperProps={{
+          sx: {
+            height: "90vh",
+            maxHeight: "90vh",
+            display: "flex",
+            flexDirection: "column",
+            borderRadius: 2,
+            overflow: "hidden",
+          },
+        }}
+      >
+        <DialogTitle
+          sx={{
+            m: 0,
+            p: 1.5,
+            px: 2,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            bgcolor: "primary.main",
+            color: "white",
+          }}
+        >
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
+            <ReceiptLongIcon />
+            <Typography variant="h6" component="span" sx={{ fontWeight: 600, fontSize: "1.1rem" }}>
+              {pdfPreviewModal.title || "PDF Report Preview"}
+            </Typography>
+          </Box>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+            <Button
+              variant="contained"
+              color="secondary"
+              size="small"
+              startIcon={<DownloadIcon />}
+              onClick={() => {
+                if (pdfPreviewModal.doc) {
+                  pdfPreviewModal.doc.save(pdfPreviewModal.fileName || "report.pdf");
+                } else if (pdfPreviewModal.url) {
+                  const a = document.createElement("a");
+                  a.href = pdfPreviewModal.url;
+                  a.download = pdfPreviewModal.fileName || "report.pdf";
+                  a.click();
+                }
+              }}
+              sx={{ fontWeight: "bold" }}
+            >
+              Download PDF
+            </Button>
+            <IconButton
+              aria-label="close"
+              onClick={handleClosePdfPreviewModal}
+              sx={{ color: "white" }}
+            >
+              <CloseIcon />
+            </IconButton>
+          </Box>
+        </DialogTitle>
+        <DialogContent
+          dividers
+          sx={{
+            p: 0,
+            flex: 1,
+            display: "flex",
+            flexDirection: "column",
+            overflow: "hidden",
+            bgcolor: "#525659",
+          }}
+        >
+          {pdfPreviewModal.url ? (
+            <iframe
+              src={pdfPreviewModal.url}
+              title="PDF Report Preview"
+              width="100%"
+              height="100%"
+              style={{ border: "none", flex: 1, width: "100%", height: "100%" }}
+            />
+          ) : (
+            <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", flex: 1, color: "white" }}>
+              <CircularProgress color="inherit" />
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 2, py: 1, justifyContent: "space-between", bgcolor: "background.paper" }}>
+          <Typography variant="body2" color="text.secondary">
+            {pdfPreviewModal.fileName}
+          </Typography>
+          <Button onClick={handleClosePdfPreviewModal} variant="outlined" color="primary" size="small">
+            Close
+          </Button>
+        </DialogActions>
+      </Dialog>
     </>
   );
 };

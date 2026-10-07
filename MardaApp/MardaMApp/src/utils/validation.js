@@ -97,7 +97,11 @@ export const validation = {
         }
 
         if (currentReadingNum < prevReading) {
-            return { action: 'error', message: 'Reading cannot be less than previous reading' };
+            return {
+                action: 'confirm_lower',
+                message: `Current reading (${currentReadingNum}) is less than previous reading (${prevReading}).\n\nConfirm if this is a meter replacement, reset/rollover, or negative adjustment.`,
+                data
+            };
         }
 
         // Warn when previous_reading is 0 — could mean missing CSV data

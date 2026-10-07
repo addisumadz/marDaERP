@@ -83,6 +83,8 @@ import ViewCustomerModal from "./ViewCustomerModal";
 import ReadingDetailModal from "../../components/ReadingDetailModal";
 import MetersModal from "./MetersModal";
 import { amharicFuzzyFilter } from "../../../lib/amharicFuzzyFilter";
+import { generateWordVariants } from "../../../lib/amharicSearchUtils";
+import { transliterateToAmharic } from "../../../helpers/amharicInput";
 import EthiopianCalendarConverterPure from "../../../lib/ethiopianCalendarConverterPure";
 import { ReadingService } from "../../../lib/ReadingService";
 import bankDerashService from "../../../lib/bankDerashService";
@@ -213,6 +215,83 @@ const buildSingleBillAdjustmentLines = (oldBill, newBill, bpMappings) => {
   return { lines, error: null, newBillRows, oldBillRows };
 };
 
+// =========================================================================
+// PRO-LEVEL BILINGUAL SEARCH FILTERS (AMHARIC + ENGLISH + GLOBAL SEARCH)
+// =========================================================================
+
+const bilingualNameFilter = (row, columnId, filterValue) => {
+  if (!row || !row.original || !filterValue) return false;
+  const q = String(filterValue).trim();
+  if (!q) return true;
+
+  const amharic = String(row.original.fullName || "").trim();
+  const english = String(row.original.fullNameEng || "").trim();
+  const qLower = q.toLowerCase();
+
+  // 1. Direct English substring match
+  if (english.toLowerCase().includes(qLower)) return true;
+
+  // 2. Direct Amharic substring match
+  if (amharic.toLowerCase().includes(qLower)) return true;
+
+  // 3. Transliterate English phonetically to Amharic and check Amharic name
+  try {
+    const transliterated = transliterateToAmharic(q, "phonetic");
+    if (transliterated && amharic.includes(transliterated)) return true;
+  } catch (e) {}
+
+  // 4. Amharic fuzzy / variants match
+  try {
+    const normalized = amharic.replace(/\s+/g, "").toLowerCase();
+    const variants = generateWordVariants(q.replace(/\s+/g, "").toLowerCase());
+    if (variants.some((v) => normalized.includes(v))) return true;
+  } catch (e) {}
+
+  return false;
+};
+
+const bilingualGlobalFilter = (row, columnIds, filterValue) => {
+  if (!filterValue) return true;
+  const q = String(filterValue).trim().toLowerCase();
+  if (!q) return true;
+
+  const c = row.original;
+  if (!c) return false;
+
+  // 1. Account Number
+  if (c.accountNumber && String(c.accountNumber).toLowerCase().includes(q)) return true;
+
+  // 2. English Name
+  if (c.fullNameEng && String(c.fullNameEng).toLowerCase().includes(q)) return true;
+
+  // 3. Amharic Name (plain, transliterated, and fuzzy variants)
+  if (c.fullName) {
+    const amharicLower = String(c.fullName).toLowerCase();
+    if (amharicLower.includes(q)) return true;
+    try {
+      const transliterated = transliterateToAmharic(q, "phonetic");
+      if (transliterated && amharicLower.includes(transliterated)) return true;
+    } catch (e) {}
+    try {
+      const normalized = amharicLower.replace(/\s+/g, "");
+      const variants = generateWordVariants(q.replace(/\s+/g, ""));
+      if (variants.some((v) => normalized.includes(v))) return true;
+    } catch (e) {}
+  }
+
+  // 4. Phone Number
+  if (c.phoneNumber && String(c.phoneNumber).toLowerCase().includes(q)) return true;
+
+  // 5. Meter Number
+  if (c.meterNumber && String(c.meterNumber).toLowerCase().includes(q)) return true;
+
+  // 6. National ID / House Number
+  if (c.nationalIdNumber && String(c.nationalIdNumber).toLowerCase().includes(q)) return true;
+  if (c.houseNumber && String(c.houseNumber).toLowerCase().includes(q)) return true;
+
+  return false;
+};
+
 const fmt = (n) => (n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 const CustomerList = () => {
@@ -292,10 +371,6 @@ const CustomerList = () => {
     return { currentBpMap, currentFyId };
   };
 
-  useEffect(() => {
-    getEnsuredJournalSupportData();
-  }, []);
-
   const [derashModalOpen, setDerashModalOpen] = useState(false);
   const [derashLoading, setDerashLoading] = useState(false);
   const [derashResult, setDerashResult] = useState(null);
@@ -326,21 +401,23 @@ const CustomerList = () => {
     onError: (error) => console.error("Error fetching branches:", error),
   });
 
-  const { data: meterSizes = [] } = useQuery({
-    queryKey: ["meterSizes"],
-    queryFn: () => dropdownService.getMeterSizes(),
-  });
-
   const { data: customerTypes = [], isLoading: isCustomerTypesLoading } = useQuery({
     queryKey: ["customerTypes"],
     queryFn: () => dropdownService.getCustomerTypes(),
     onError: (error) => console.error("Error fetching customer types:", error),
   });
 
-  // Fetch ketenas based on selected kebele (or all active if none selected)
+  const { data: meterSizes = [] } = useQuery({
+    queryKey: ["meterSizes"],
+    queryFn: () => dropdownService.getMeterSizes(),
+    staleTime: 10 * 60 * 1000,
+  });
+
+  // Fetch ketenas based on selected kebele (only when a kebele is selected)
   const { data: ketenas = [], isLoading: isKetenasLoading } = useQuery({
     queryKey: ["ketenas", selectedKebeleId],
-    queryFn: () => dropdownService.getKetenasByKebele(selectedKebeleId || null),
+    queryFn: () => dropdownService.getKetenasByKebele(selectedKebeleId),
+    enabled: Boolean(selectedKebeleId),
     staleTime: 5 * 60 * 1000,
     onError: (error) => console.error("Error fetching ketenas:", error),
   });
@@ -356,9 +433,11 @@ const CustomerList = () => {
     onError: (error) => console.error("Error fetching readers:", error),
   });
 
+  // Fetch billing banks only when manual bank modal is opened
   const { data: billingBanks = [], isLoading: isBillingBanksLoading } = useQuery({
     queryKey: ["billing-banks-all-for-manual"],
     queryFn: () => billingBanksService.getAllBillingBanks(),
+    enabled: Boolean(manualBankModalOpen),
     refetchOnWindowFocus: false,
     staleTime: 10 * 60 * 1000,
     onError: (error) => console.error("Error fetching billing banks:", error),
@@ -384,7 +463,10 @@ const CustomerList = () => {
   const handleCustomerTabChange = (event, newValue) => {
     setActiveCustomerTab(newValue);
     setPagination((prev) => ({ ...prev, pageIndex: 0 }));
+    setRowSelection({});
+    setSelectedCustomerId(null);
     setActiveBillTab(0);
+    setActiveWuzifTab(0);
   };
 
   const handleWuzifTabChange = (event, newValue) => {
@@ -402,16 +484,6 @@ const CustomerList = () => {
     pageIndex: 0,
     pageSize: 10,
   });
-  const [globalFilter, setGlobalFilter] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
-
-  useEffect(() => {
-    const handler = setTimeout(() => {
-      setDebouncedSearch(globalFilter);
-      setPagination((prev) => ({ ...prev, pageIndex: 0 }));
-    }, 400);
-    return () => clearTimeout(handler);
-  }, [globalFilter]);
 
   useEffect(() => {
     setPagination((prev) => ({ ...prev, pageIndex: 0 }));
@@ -424,46 +496,74 @@ const CustomerList = () => {
     selectedReaderId,
   ]);
 
-  const customerStatus = activeCustomerTab === 0 ? "active" : "deleted";
-
-  // Fetch paginated customers based on filters and search
+  // Fetch all customers (matching customerList/page.js)
   const {
-    data: paginatedData = { content: [], totalElements: 0 },
+    data: allCustomers = [],
     isError: isCustomersError,
     isFetching,
     isLoading: isCustomersLoading,
     refetch: refetchCustomersAll,
   } = useQuery({
-    queryKey: [
-      "customers-paginated-filtered",
-      pagination.pageIndex,
-      pagination.pageSize,
-      customerStatus,
-      selectedCustomerTypeId,
-      selectedKebeleId,
-      selectedKetenaId,
-      selectedBranchId,
-      selectedReaderId,
-      debouncedSearch,
-    ],
+    queryKey: ["customers-all"],
     queryFn: async () => {
-      const data = await customerService.getCustomersPaginatedFiltered({
-        pageIndex: pagination.pageIndex,
-        pageSize: pagination.pageSize,
-        status: customerStatus,
-        customerTypeId: selectedCustomerTypeId || undefined,
-        kebeleId: selectedKebeleId || undefined,
-        ketenaId: selectedKetenaId || undefined,
-        branchId: selectedBranchId || undefined,
-        readerId: selectedReaderId || undefined,
-        search: debouncedSearch || undefined,
-      });
-      return data;
+      return customerService.getAllCustomers();
     },
     keepPreviousData: true,
-    staleTime: 30 * 1000,
+    staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
   });
+
+  const activeCustomers = useMemo(
+    () => (allCustomers || []).filter((c) => c.status === "active"),
+    [allCustomers]
+  );
+
+  const deletedCustomers = useMemo(
+    () => (allCustomers || []).filter((c) => c.status === "deleted"),
+    [allCustomers]
+  );
+
+  const filteredCustomers = useMemo(() => {
+    let result = activeCustomerTab === 0 ? [...activeCustomers] : [...deletedCustomers];
+
+    if (selectedCustomerTypeId) {
+      result = result.filter(
+        (c) => c.customerTypeId && String(c.customerTypeId) === String(selectedCustomerTypeId)
+      );
+    }
+    if (selectedKebeleId) {
+      result = result.filter(
+        (c) => c.addressStreetsId && String(c.addressStreetsId) === String(selectedKebeleId)
+      );
+    }
+    if (selectedKetenaId) {
+      result = result.filter(
+        (c) => c.addressKetenaId && String(c.addressKetenaId) === String(selectedKetenaId)
+      );
+    }
+    if (selectedBranchId) {
+      result = result.filter(
+        (c) => c.branchsId && String(c.branchsId) === String(selectedBranchId)
+      );
+    }
+    if (selectedReaderId) {
+      result = result.filter(
+        (c) => c.assignedReaderId && String(c.assignedReaderId) === String(selectedReaderId)
+      );
+    }
+    return result;
+  }, [
+    activeCustomers,
+    deletedCustomers,
+    activeCustomerTab,
+    selectedCustomerTypeId,
+    selectedKebeleId,
+    selectedKetenaId,
+    selectedBranchId,
+    selectedReaderId,
+  ]);
 
   const { data: viewedCustomer, isFetching: isCustomerDetailsFetching } = useQuery({
     queryKey: ["customer-details", viewedCustomerId],
@@ -477,8 +577,8 @@ const CustomerList = () => {
   // Active Selected Customer Record (found from directory or fetched)
   const selectedCustomerRecord = useMemo(() => {
     if (!selectedCustomerId) return null;
-    return paginatedData?.content?.find((c) => String(c.id) === String(selectedCustomerId)) || null;
-  }, [selectedCustomerId, paginatedData?.content]);
+    return (allCustomers || []).find((c) => String(c.id) === String(selectedCustomerId)) || null;
+  }, [selectedCustomerId, allCustomers]);
 
   // Combined Bill and Wuzif Data Fetch
   const {
@@ -1291,7 +1391,7 @@ const CustomerList = () => {
     });
   };
 
-  // --- Customer Directory Columns ---
+  // --- Customer Directory Columns (Bilingual & Advanced Filtering) ---
   const columns = useMemo(
     () => [
       {
@@ -1306,11 +1406,12 @@ const CustomerList = () => {
       {
         accessorKey: "accountNumber",
         header: "Account Number",
-        filterFn: amharicFuzzyFilter,
+        sortingFn: "alphanumeric",
+        filterFn: "contains",
         Cell: ({ cell }) => (
           <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-            <Typography variant="body2" sx={{ fontWeight: 600, fontFamily: "monospace", color: "primary.main" }}>
-              {cell.getValue() || "-"}
+            <Typography variant="body2" sx={{ fontWeight: 800, fontFamily: "monospace", color: "primary.main" }}>
+              {cell.getValue() || "—"}
             </Typography>
             {cell.getValue() && (
               <Tooltip title="Copy Account Number">
@@ -1332,28 +1433,69 @@ const CustomerList = () => {
       },
       {
         accessorKey: "fullName",
-        header: "Full Name",
-        filterFn: amharicFuzzyFilter,
+        header: "Full Name (ሙሉ ስም)",
+        filterFn: "bilingualName", // Searches BOTH Amharic & English
+        Cell: ({ row }) => (
+          <Box>
+            <Typography variant="body2" sx={{ fontWeight: 700, color: "text.primary" }}>
+              {row.original.fullName || "—"}
+            </Typography>
+            {row.original.fullNameEng && (
+              <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+                {row.original.fullNameEng}
+              </Typography>
+            )}
+          </Box>
+        ),
+      },
+      {
+        accessorKey: "fullNameEng",
+        header: "English Name",
+        filterFn: "contains",
         Cell: ({ cell }) => (
-          <Typography variant="body2" sx={{ fontWeight: 600, color: "text.primary" }}>
-            {cell.getValue() || "-"}
+          <Typography variant="body2" color="text.secondary">
+            {cell.getValue() || "—"}
           </Typography>
         ),
       },
       {
         accessorKey: "phoneNumber",
         header: "Phone Number",
-        filterFn: amharicFuzzyFilter,
+        filterFn: "contains",
+        Cell: ({ cell }) => cell.getValue() || "—",
+      },
+      {
+        accessorKey: "addressStreetsId",
+        header: "Kebele",
+        Cell: ({ cell }) => {
+          const k = (kebeles || []).find((x) => String(x.id) === String(cell.getValue()));
+          return k?.name || cell.getValue() || "—";
+        },
+      },
+      {
+        accessorKey: "meterNumber",
+        header: "Meter Number",
+        filterFn: "contains",
+        Cell: ({ cell }) => (
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+            <SpeedIcon fontSize="inherit" color="action" />
+            <span>{cell.getValue() || "—"}</span>
+          </Box>
+        ),
       },
       {
         accessorKey: "registeredDate",
-        header: "Registered Date",
-        Cell: ({ cell }) => {
-          const gregorianDate = cell.getValue();
-          if (!gregorianDate) return "-";
-          return EthiopianCalendarConverterPure.formatEthiopianDate(
-            EthiopianCalendarConverterPure.gregorianToEthiopian(gregorianDate),
-            "dd/mm/yyyy"
+        header: "Reg. Date (EC)",
+        Cell: ({ row }) => {
+          return (
+            row.original.registeredDateEthiopianAmharic ||
+            row.original.registeredDateEthiopian ||
+            (row.original.registeredDate
+              ? EthiopianCalendarConverterPure.formatEthiopianDate(
+                  EthiopianCalendarConverterPure.gregorianToEthiopian(row.original.registeredDate),
+                  "dd/mm/yyyy"
+                )
+              : "—")
           );
         },
       },
@@ -1369,13 +1511,13 @@ const CustomerList = () => {
               label={isActive ? "Active" : "Deleted"}
               color={isActive ? "success" : "default"}
               variant={isActive ? "filled" : "outlined"}
-              sx={{ height: 22, fontSize: "0.75rem", fontWeight: 600 }}
+              sx={{ height: 22, fontSize: "0.75rem", fontWeight: 700 }}
             />
           );
         },
       },
     ],
-    []
+    [kebeles]
   );
 
   // --- Bill Columns ---
@@ -1631,21 +1773,26 @@ const CustomerList = () => {
   // Master Customer Table
   const table = useMaterialReactTable({
     columns,
-    data: paginatedData?.content || [],
+    data: filteredCustomers,
+    filterFns: {
+      amharicFuzzy: amharicFuzzyFilter,
+      bilingualName: bilingualNameFilter,
+    },
+    globalFilterFn: bilingualGlobalFilter,
     initialState: {
-      showColumnFilters: false,
+      showColumnFilters: true,
       showGlobalFilter: true,
       pagination: { pageIndex: 0, pageSize: 10 },
     },
-    manualPagination: true,
-    manualFiltering: true,
-    rowCount: paginatedData?.totalElements || 0,
+    manualPagination: false,
+    manualFiltering: false,
+    manualSorting: false,
+    enableColumnFilterModes: true,
+    columnFilterModeOptions: ["contains", "startsWith", "equals", "fuzzy", "bilingualName"],
     enableRowNumbers: true,
     rowNumberMode: "original",
-    onGlobalFilterChange: setGlobalFilter,
     state: {
       pagination,
-      globalFilter,
       isLoading: isCustomersLoading,
       showProgressBars: isFetching,
       showAlertBanner: isCustomersError,
@@ -1852,6 +1999,7 @@ const CustomerList = () => {
     setSelectedKetenaId("");
     setSelectedBranchId("");
     setSelectedReaderId("");
+    setPagination((prev) => ({ ...prev, pageIndex: 0 }));
   };
 
   // Live consumption calculation in Edit Reading modal

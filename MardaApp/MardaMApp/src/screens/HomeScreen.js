@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 
 import {
     StyleSheet,
@@ -52,9 +53,11 @@ export default function HomeScreen({ onNavigateToReadings, onNavigateToSync, onN
     const [showServerConfig, setShowServerConfig] = useState(false);
     const [serverAddress, setServerAddress] = useState('');
 
-    useEffect(() => {
-        loadData();
-    }, []);
+    useFocusEffect(
+        useCallback(() => {
+            loadData();
+        }, [])
+    );
 
     const loadData = async () => {
         try {

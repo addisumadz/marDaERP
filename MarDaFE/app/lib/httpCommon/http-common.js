@@ -25,6 +25,8 @@ const processQueue = (error, token = null) => {
   failedQueue = [];
 };
 
+let isRedirecting = false;
+
 // Configure global Axios interceptor for automatic 401 Unauthorized handling & transparent token refresh
 if (typeof window !== "undefined" && !window.__axios401InterceptorAttached) {
   window.__axios401InterceptorAttached = true;
@@ -111,7 +113,7 @@ if (typeof window !== "undefined" && !window.__axios401InterceptorAttached) {
             isRefreshing = false;
           }
 
-          // If refresh token is missing or refresh failed: clear storage and redirect cleanly
+          // If refresh token is missing or refresh failed: clear storage and coordinate session termination
           try {
             localStorage.removeItem("user_token");
             localStorage.removeItem("token");
@@ -119,8 +121,15 @@ if (typeof window !== "undefined" && !window.__axios401InterceptorAttached) {
             sessionStorage.clear();
           } catch (_) {}
 
-          if (!window.location.pathname.startsWith("/signin")) {
-            window.location.href = "/signin?error=SessionExpired";
+          if (!isRedirecting && typeof window !== "undefined" && !window.location.pathname.startsWith("/signin")) {
+            isRedirecting = true;
+            import("next-auth/react")
+              .then(({ signOut }) => {
+                signOut({ callbackUrl: "/signin?error=SessionExpired", redirect: true });
+              })
+              .catch(() => {
+                window.location.href = "/signin?error=SessionExpired";
+              });
           }
         }
       }

@@ -243,6 +243,11 @@ export default function CustomerDetailScreen({ customer: propCustomer, onBack, o
                     () => proceedSaveReading(result.data.currentReadingNum, result.data.prevReading, result.data.consumption, result.data.zeroReasonId)
                 );
                 return;
+            case 'confirm_lower':
+                showAlert('⚠️ Verify Meter', result.message, 'warning', false,
+                    () => proceedSaveReading(result.data.currentReadingNum, result.data.prevReading, result.data.consumption, result.data.zeroReasonId)
+                );
+                return;
             case 'confirm_high':
                 showAlert('Confirm', result.message, 'warning', false,
                     () => proceedSaveReading(result.data.currentReadingNum, result.data.prevReading, result.data.consumption, result.data.zeroReasonId)
@@ -329,7 +334,7 @@ export default function CustomerDetailScreen({ customer: propCustomer, onBack, o
                 `Coordinates:\n${location.coords.latitude.toFixed(6)}, ${location.coords.longitude.toFixed(6)}\n\nAccuracy: ${accuracy}m\n\nSave this location to customer record?`,
                 'success',
                 false, // Show Cancel/Save buttons
-                () => {
+                async () => {
                     // On Save: Update customer data
                     setLocationCoords(coordsString);
                     const updatedCustomer = {
@@ -337,8 +342,8 @@ export default function CustomerDetailScreen({ customer: propCustomer, onBack, o
                         location_coordination: coordsString,
                         isModified: true
                     };
-                    handleSave(updatedCustomer);
-                    // Don't show another modal - handleSave already handles confirmation
+                    await handleSave(updatedCustomer);
+                    showAlert('Success', 'GPS location saved to customer record', 'success');
                 }
             );
         } catch (error) {

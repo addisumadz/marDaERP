@@ -2,6 +2,16 @@
 const nextConfig = {
   reactStrictMode: true,
 
+  experimental: {
+    optimizePackageImports: [
+      "@mui/material",
+      "@mui/icons-material",
+      "lucide-react",
+      "@material-ui/core",
+      "@material-ui/icons",
+    ],
+  },
+
   images: {
     formats: ["image/avif", "image/webp"],
     // domains: ["example.com"],

@@ -52,6 +52,7 @@ export default function App() {
         if (!result.success) {
             Alert.alert('Error', 'Failed to save changes');
         }
+        return result;
     };
 
     // Show loading while checking authentication
@@ -115,8 +116,7 @@ export default function App() {
                                     customer={props.route.params?.customer}
                                     onBack={() => props.navigation.goBack()}
                                     onSave={async (updatedCustomer) => {
-                                        await handleDetailSave(updatedCustomer);
-                                        props.navigation.goBack();
+                                        return await handleDetailSave(updatedCustomer);
                                     }}
                                 />
                             )}

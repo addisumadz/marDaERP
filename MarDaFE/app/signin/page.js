@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import Image from "next/image";
-import { signIn, useSession } from "next-auth/react";
+import { signIn, signOut, useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Loader from "../ui/components/common/Loader";
 import Box from "@mui/material/Box";
@@ -47,6 +47,25 @@ export default function SignInPage() {
   }, []);
 
   useEffect(() => {
+    // Check if redirected here due to session expiration or inactivity
+    const urlParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+    const isExpiredNotice =
+      urlParams?.get("error") === "SessionExpired" ||
+      urlParams?.get("reason") === "inactivity";
+
+    if (isExpiredNotice) {
+      if (typeof window !== "undefined") {
+        localStorage.removeItem("user_token");
+        localStorage.removeItem("token");
+        localStorage.removeItem("refreshToken");
+      }
+      if (status === "authenticated") {
+        signOut({ redirect: false });
+      }
+      setErrorMessage("Your session has expired. Please sign in again.");
+      return;
+    }
+
     if (status === "authenticated" && session) {
       // Check if token is marked as expired
       if (session.isTokenExpired === 1 || session.isTokenExpierd === 1) {
@@ -131,8 +150,13 @@ export default function SignInPage() {
     return <Loader />;
   }
 
-  // Already authenticated and valid
-  if (status === "authenticated" && session?.isTokenExpired !== 1 && session?.isTokenExpierd !== 1) {
+  // Already authenticated and valid (only if NOT an expired notice)
+  const urlParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+  const isExpiredNotice =
+    urlParams?.get("error") === "SessionExpired" ||
+    urlParams?.get("reason") === "inactivity";
+
+  if (!isExpiredNotice && status === "authenticated" && session?.isTokenExpired !== 1 && session?.isTokenExpierd !== 1) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-100">
         <div className="max-w-md w-full rounded-xl bg-white p-8 text-center shadow-lg">

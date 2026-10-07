@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import {
     StyleSheet,
     Text,
@@ -83,16 +84,11 @@ export default function CustomerListScreen({ onSettingsPress, onCustomerSelect, 
         }
     }, [initialTab]);
 
-    useEffect(() => {
-        loadCustomers();
-    }, []);
-
-    // Reload when tab or search changes
-    useEffect(() => {
-        if (!isLoading) {
+    useFocusEffect(
+        useCallback(() => {
             loadCustomers();
-        }
-    }, [activeTab, searchQuery]);
+        }, [activeTab, searchQuery])
+    );
 
     const loadCustomers = async () => {
         try {
@@ -260,6 +256,11 @@ export default function CustomerListScreen({ onSettingsPress, onCustomerSelect, 
                 return;
             case 'warn_zero_prev':
                 showAlert('⚠️ Verify Reading', result.message, 'warning', false,
+                    () => proceedSave(result.data.currentReadingNum, result.data.prevReading, result.data.consumption, result.data.zeroReasonId)
+                );
+                return;
+            case 'confirm_lower':
+                showAlert('⚠️ Verify Meter', result.message, 'warning', false,
                     () => proceedSave(result.data.currentReadingNum, result.data.prevReading, result.data.consumption, result.data.zeroReasonId)
                 );
                 return;

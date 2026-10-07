@@ -324,6 +324,11 @@ export default function NearbyCustomersScreen({ onBack, onSelectCustomer }) {
                     () => proceedSave(result.data.currentReadingNum, result.data.prevReading, result.data.consumption, result.data.zeroReasonId)
                 );
                 return;
+            case 'confirm_lower':
+                showAlert('⚠️ Verify Meter', result.message, 'warning', false,
+                    () => proceedSave(result.data.currentReadingNum, result.data.prevReading, result.data.consumption, result.data.zeroReasonId)
+                );
+                return;
             case 'confirm_high':
                 showAlert('Confirm', result.message, 'warning', false,
                     () => proceedSave(result.data.currentReadingNum, result.data.prevReading, result.data.consumption, result.data.zeroReasonId)

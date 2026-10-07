@@ -29,6 +29,7 @@ const parseCsvData = (csvText) => {
 
     for (let i = 1; i < data.length; i++) {
         const values = data[i];
+        if (!values || values.length < 6) continue;
 
         // Format: 
         // 0: customer_info_id
@@ -36,19 +37,29 @@ const parseCsvData = (csvText) => {
         // 2: maximumreading
         // 3: wuzif_hisab
         // 4: wuzif_kezih_eske (remark)
-        // 5: kifya_wer
-        // 6: additional_text
+        // 5: kifya_wer (or month name if unquoted comma split)
+        // 6: year (if split) or additional_text
+        // 7: additional_text (if split)
 
         const row = {};
-        if (values.length >= 6) {
-            row['customer_info_id'] = values[0];
-            row['consumption'] = values[1];
-            row['maximumreading'] = values[2];
-            row['wuzif_hisab'] = values[3];
-            row['wuzif_kezih_eske'] = values[4]; // Description/Reason
-            row['kifya_wer'] = values[5];
-            row['additional_text'] = values[6] || "";
+        row['customer_info_id'] = values[0];
+        row['consumption'] = values[1];
+        row['maximumreading'] = values[2];
+        row['wuzif_hisab'] = values[3];
+        row['wuzif_kezih_eske'] = values[4];
+
+        const val5 = values[5] ? values[5].toString().trim() : '';
+        const val6 = values[6] ? values[6].toString().trim() : '';
+
+        // Check if kifya_wer was split due to unquoted comma (e.g. "መስከረም, 2018" split into ["መስከረም", " 2018"])
+        if (values.length >= 7 && /^\d{4}$/.test(val6)) {
+            row['kifya_wer'] = `${val5}, ${val6}`;
+            row['additional_text'] = values[7] || '';
+        } else {
+            row['kifya_wer'] = val5;
+            row['additional_text'] = val6;
         }
+
         csvData.push(row);
     }
 

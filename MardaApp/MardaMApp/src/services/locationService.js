@@ -13,7 +13,32 @@ const ACCURACY_THRESHOLDS = {
     low: 70,
 };
 
+/**
+ * In-memory fast cache for 0ms instant location access across screens.
+ */
+let _cachedLocation = null;
+let _cachedTimestamp = 0;
+
 export const locationService = {
+
+    /**
+     * Clear the in-memory GPS cache.
+     */
+    clearLocationCache: () => {
+        _cachedLocation = null;
+        _cachedTimestamp = 0;
+    },
+
+    /**
+     * Inspect current in-memory cache state.
+     */
+    getLocationCache: () => {
+        return {
+            location: _cachedLocation,
+            timestamp: _cachedTimestamp,
+            ageMs: _cachedLocation ? Date.now() - _cachedTimestamp : null,
+        };
+    },
 
     /**
      * Get the saved GPS accuracy level from AsyncStorage.
@@ -79,14 +104,22 @@ export const locationService = {
      * Get Best Location using watchPositionAsync.
      * Collects GPS fixes over a time window and returns the most accurate one.
      * Uses BestForNavigation (sensor fusion) for maximum accuracy.
+     * Stops early as soon as targetAccuracy (matching user setting) is satisfied.
      *
      * @param {Object} options
      * @param {number} options.timeoutMs - Max time to collect fixes (default 8000ms)
-     * @param {number} options.targetAccuracy - Stop early if this accuracy is reached (default 10m)
+     * @param {number} options.targetAccuracy - Stop early if this accuracy reached (default: matches setting)
      * @returns {Object} Best location fix
      */
     getBestLocation: async (options = {}) => {
-        const { timeoutMs = 8000, targetAccuracy = 10 } = options;
+        const { timeoutMs = 8000 } = options;
+        let targetAccuracy = options.targetAccuracy;
+
+        // Dynamic Target Accuracy: defaults to user's configured setting (High: 20m, Medium: 40m, Low: 70m)
+        if (!targetAccuracy) {
+            const level = await locationService.getSavedAccuracyLevel();
+            targetAccuracy = locationService.getAccuracyThreshold(level);
+        }
 
         return new Promise(async (resolve, reject) => {
             let bestLocation = null;
@@ -99,6 +132,8 @@ export const locationService = {
                 }
                 if (bestLocation) {
                     console.log(`[Location] Best fix: ${bestLocation.coords.accuracy.toFixed(1)}m`);
+                    _cachedLocation = bestLocation;
+                    _cachedTimestamp = Date.now();
                     resolve(bestLocation);
                 } else {
                     reject(new Error('NO_LOCATION_FIX'));
@@ -117,10 +152,10 @@ export const locationService = {
                     (loc) => {
                         if (!bestLocation || loc.coords.accuracy < bestLocation.coords.accuracy) {
                             bestLocation = loc;
-                            console.log(`[Location] New best: ${loc.coords.accuracy.toFixed(1)}m`);
+                            console.log(`[Location] New best: ${loc.coords.accuracy.toFixed(1)}m (target: <=${targetAccuracy}m)`);
                         }
-                        // Stop early if we reached target accuracy
-                        if (bestLocation.coords.accuracy <= targetAccuracy) {
+                        // Stop early if we reached target accuracy for configured setting
+                        if (bestLocation && bestLocation.coords.accuracy <= targetAccuracy) {
                             clearTimeout(timer);
                             finish();
                         }
@@ -152,22 +187,22 @@ export const locationService = {
      * Get Fresh Location (no cache).
      * Strategy:
      * 1. Ensure GPS is enabled (Android)
-     * 2. Use watchPositionAsync to collect best fix over timeoutMs
-     * 3. Fallback to single BestForNavigation shot with timeout
-     * 4. Last resort: Highest accuracy single shot
+     * 2. Use watchPositionAsync to collect best fix (stops early on targetAccuracy, max 8s)
+     * 3. Fallback: single assisted GPS shot (Balanced, 5s timeout)
+     * Eliminates old 28s cascading freeze, capping maximum wait at ~13s.
      *
      * @param {Object} options
      * @param {number} options.timeoutMs - Time window for collecting fixes (default 8000)
-     * @param {number} options.targetAccuracy - Stop early when this accuracy reached (default 10)
+     * @param {number} options.targetAccuracy - Target accuracy (default: dynamic from setting)
      * @returns {Object} Location object
      */
     getFreshLocation: async (options = {}) => {
-        const { timeoutMs = 8000, targetAccuracy = 10 } = options;
+        const { timeoutMs = 8000, targetAccuracy = null } = options;
 
         // Ensure GPS is on
         await locationService.ensureGPSEnabled();
 
-        // Try watch-based collection first (best accuracy)
+        // 1. Try watch-based collection first (sensor fusion, dynamic early exit)
         try {
             const loc = await locationService.getBestLocation({ timeoutMs, targetAccuracy });
             return loc;
@@ -175,59 +210,82 @@ export const locationService = {
             console.warn('[Location] Watch-based location failed:', e.message);
         }
 
-        // Fallback: single shot with BestForNavigation + timeout
+        // 2. Streamlined assisted fallback: 5s Balanced single-shot (prevents 28s cascading lockup)
         try {
-            console.log('[Location] Falling back to single-shot BestForNavigation...');
+            console.log('[Location] Falling back to 5s Balanced single-shot...');
             const loc = await locationService.getLocationWithTimeout(
-                Location.Accuracy.BestForNavigation, 10000
+                Location.Accuracy.Balanced, 5000
             );
-            return loc;
+            if (loc) {
+                _cachedLocation = loc;
+                _cachedTimestamp = Date.now();
+                return loc;
+            }
         } catch (e) {
-            console.warn('[Location] BestForNavigation fallback failed:', e.message);
+            console.warn('[Location] Balanced fallback failed:', e.message);
+            if (e.message === 'GPS_TIMEOUT') {
+                throw e;
+            }
         }
 
-        // Last resort: Highest accuracy (no sensor fusion)
-        console.log('[Location] Last resort: Highest accuracy...');
-        return await locationService.getLocationWithTimeout(
-            Location.Accuracy.Highest, 10000
-        );
+        throw new Error('NO_LOCATION_FIX');
     },
 
     /**
      * Get Smart Location (with cache).
-     * Uses cached location if it's fresh enough, otherwise fetches new.
+     * Strategy:
+     * 1. In-Memory Fast Cache: Instant 0ms return if younger than maxAge (default 30s)
+     * 2. OS Last Known Position: Instant return if younger than maxAge
+     * 3. Fresh fetch with dynamic early exit if cache is empty or expired
      *
      * @param {Object} options
-     * @param {number} options.maxAge - Max cache age in ms (default 15000 = 15s)
+     * @param {number} options.maxAge - Max cache age in ms (default 30000 = 30s)
      * @param {number} options.requiredAccuracy - Max acceptable accuracy in meters (default null)
      * @param {number} options.timeoutMs - Timeout for fresh fetch (default 8000)
-     * @param {number} options.targetAccuracy - Target accuracy for fresh fetch (default 10)
+     * @param {number} options.targetAccuracy - Target accuracy for fresh fetch (default: dynamic from setting)
      * @returns {Object} Location object
      */
     getSmartLocation: async (options = {}) => {
-        const { maxAge = 15000, requiredAccuracy = null, timeoutMs = 8000, targetAccuracy = 10 } = options;
+        const { maxAge = 30000, requiredAccuracy = null, timeoutMs = 8000, targetAccuracy = null } = options;
 
-        // 1. Try Last Known Position (Instant)
+        // 1. Fast In-Memory Cache (0ms instant return across screens)
+        if (_cachedLocation) {
+            const age = Date.now() - _cachedTimestamp;
+            if (age < maxAge) {
+                if (!requiredAccuracy || (_cachedLocation.coords && _cachedLocation.coords.accuracy <= requiredAccuracy)) {
+                    console.log(`[Location] Fast in-memory cache hit (Age: ${Math.round(age / 1000)}s, Accuracy: ${_cachedLocation.coords.accuracy.toFixed(1)}m)`);
+                    return _cachedLocation;
+                } else {
+                    console.log(`[Location] Fast cache ignored: accuracy ${_cachedLocation.coords.accuracy.toFixed(1)}m > ${requiredAccuracy}m`);
+                }
+            } else {
+                console.log(`[Location] Fast cache expired: ${Math.round(age / 1000)}s > ${Math.round(maxAge / 1000)}s`);
+            }
+        }
+
+        // 2. OS Last Known Position Fallback (Expo Native bridge)
         try {
             const lastKnown = await Location.getLastKnownPositionAsync();
             if (lastKnown) {
                 const age = Date.now() - lastKnown.timestamp;
                 if (age < maxAge) {
                     if (!requiredAccuracy || (lastKnown.coords && lastKnown.coords.accuracy <= requiredAccuracy)) {
-                        console.log(`[Location] Using cached position (Age: ${Math.round(age / 1000)}s, Accuracy: ${lastKnown.coords.accuracy.toFixed(1)}m)`);
+                        console.log(`[Location] Using OS cached position (Age: ${Math.round(age / 1000)}s, Accuracy: ${lastKnown.coords.accuracy.toFixed(1)}m)`);
+                        _cachedLocation = lastKnown;
+                        _cachedTimestamp = Date.now();
                         return lastKnown;
                     } else {
-                        console.log(`[Location] Cache ignored: accuracy ${lastKnown.coords.accuracy.toFixed(1)}m > ${requiredAccuracy}m`);
+                        console.log(`[Location] OS cache ignored: accuracy ${lastKnown.coords.accuracy.toFixed(1)}m > ${requiredAccuracy}m`);
                     }
                 } else {
-                    console.log(`[Location] Cache too old: ${Math.round(age / 1000)}s > ${maxAge / 1000}s`);
+                    console.log(`[Location] OS cache too old: ${Math.round(age / 1000)}s > ${Math.round(maxAge / 1000)}s`);
                 }
             }
         } catch (e) {
             console.warn('[Location] Last known check failed:', e);
         }
 
-        // 2. Fetch fresh location
+        // 3. Fetch fresh location with dynamic target accuracy
         return await locationService.getFreshLocation({ timeoutMs, targetAccuracy });
     },
 

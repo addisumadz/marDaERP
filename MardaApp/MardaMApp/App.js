@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { StyleSheet, Text, View, Alert } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { authService } from './src/services/authService';
@@ -65,8 +66,9 @@ export default function App() {
     }
 
     return (
-        <NavigationContainer>
-            <Stack.Navigator
+        <SafeAreaProvider>
+            <NavigationContainer>
+                <Stack.Navigator
                 screenOptions={{
                     headerShown: false,
                     animation: 'slide_from_right',
@@ -147,6 +149,7 @@ export default function App() {
                 )}
             </Stack.Navigator>
         </NavigationContainer>
+    </SafeAreaProvider>
     );
 }
 

@@ -68,6 +68,16 @@ const ReadingFilters = memo(function ReadingFilters({
   onWuzifOpChange,
   onWuzifValChange,
 
+  // Consumption filter
+  consumptionOp,
+  consumptionVal,
+  onConsumptionOpChange,
+  onConsumptionValChange,
+
+  // Exaggerated filter
+  filterExaggerated,
+  onToggleExaggerated,
+
   // Lookup data
   customerTypes = [],
   kebeles = [],
@@ -85,7 +95,7 @@ const ReadingFilters = memo(function ReadingFilters({
 }) {
   const anyFilterSet =
     selectedCustomerTypeId || selectedKebeleId || selectedKetenaId ||
-    selectedBranchId || selectedReaderId;
+    selectedBranchId || selectedReaderId || wuzifMonthsVal || consumptionVal || filterExaggerated;
 
   return (
     <>
@@ -149,6 +159,40 @@ const ReadingFilters = memo(function ReadingFilters({
           inputProps={{ min: 0 }}
           sx={{ width: 140 }}
         />
+
+        {/* Consumption Filter (mirrored from Wuzif) */}
+        <FormControl size="small" sx={{ minWidth: 100 }}>
+          <InputLabel id="consumption-operator-label">Cons Op</InputLabel>
+          <Select
+            labelId="consumption-operator-label"
+            value={consumptionOp}
+            label="Cons Op"
+            onChange={(e) => onConsumptionOpChange(e.target.value)}
+          >
+            <MenuItem value="eq">=</MenuItem>
+            <MenuItem value="lt">{"<"}</MenuItem>
+            <MenuItem value="gte">≥</MenuItem>
+          </Select>
+        </FormControl>
+        <TextField
+          size="small"
+          type="number"
+          label="Consumption"
+          value={consumptionVal}
+          onChange={(e) => onConsumptionValChange(e.target.value)}
+          inputProps={{ min: 0 }}
+          sx={{ width: 140 }}
+        />
+
+        {/* Exaggerated Filter Button */}
+        <Button
+          variant={filterExaggerated ? "contained" : "outlined"}
+          color={filterExaggerated ? "warning" : "inherit"}
+          onClick={() => onToggleExaggerated(!filterExaggerated)}
+          sx={{ borderRadius: 2.5, height: 40, px: 2, fontWeight: 700 }}
+        >
+          {filterExaggerated ? "Exaggerated (Active)" : "Exaggerated"}
+        </Button>
 
         {/* Customer Type */}
         <FormControl size="small" sx={{ minWidth: 200 }}>

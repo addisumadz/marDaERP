@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Image from "next/image";
-import { signIn, signOut, useSession } from "next-auth/react";
+import { signIn, signOut, useSession, getSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Loader from "../ui/components/common/Loader";
 import Box from "@mui/material/Box";
@@ -15,11 +15,31 @@ export default function SignInPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  const noticeHandledRef = useRef(false);
 
   const router = useRouter();
   const { data: session, status } = useSession();
 
   const isButtonDisabled = !username || !password || isSubmitting;
+
+  const navigateByRole = (sessionObj) => {
+    const raw = sessionObj?.user?.roles || sessionObj?.roles || [];
+    const roles = Array.isArray(raw) ? raw : [];
+    const normalized = roles.map((r) =>
+      String(r || "").replace(/^ROLE_/i, "").toLowerCase()
+    );
+    const permittedPages = sessionObj?.user?.permittedPages || sessionObj?.permittedPages || [];
+
+    if (roles.includes("ROLE_ADMIN") || roles.includes("admin")) {
+      router.push("/ui/admin");
+    } else if (normalized.length === 1 && normalized.includes("cashier")) {
+      router.push("/ui/cashier/cashier");
+    } else if (roles.length > 0 || permittedPages.length > 0) {
+      router.push("/ui/manager");
+    } else {
+      router.push("/unauthorized");
+    }
+  };
 
   useEffect(() => {
     const loadDelay = setTimeout(() => {
@@ -46,31 +66,49 @@ export default function SignInPage() {
     return () => clearTimeout(loadDelay);
   }, []);
 
+  // ONE-TIME effect on mount: consume expiration or inactivity notice and clean the URL
   useEffect(() => {
-    // Check if redirected here due to session expiration or inactivity
-    const urlParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
-    const isExpiredNotice =
-      urlParams?.get("error") === "SessionExpired" ||
-      urlParams?.get("reason") === "inactivity";
+    if (noticeHandledRef.current) return;
+    noticeHandledRef.current = true;
 
-    if (isExpiredNotice) {
-      if (typeof window !== "undefined") {
-        localStorage.removeItem("user_token");
-        localStorage.removeItem("token");
-        localStorage.removeItem("refreshToken");
+    if (typeof window === "undefined") return;
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const reason = urlParams.get("reason");
+    const error = urlParams.get("error");
+
+    if (reason === "inactivity" || error === "SessionExpired") {
+      // Clear stale local tokens
+      localStorage.removeItem("user_token");
+      localStorage.removeItem("token");
+      localStorage.removeItem("refreshToken");
+
+      // Terminate any lingering session
+      signOut({ redirect: false });
+
+      if (reason === "inactivity") {
+        setErrorMessage("You were signed out due to inactivity. Please sign in again.");
+      } else {
+        setErrorMessage("Your session has expired. Please sign in again.");
       }
-      if (status === "authenticated") {
-        signOut({ redirect: false });
-      }
-      setErrorMessage("Your session has expired. Please sign in again.");
-      return;
+
+      // Strip query params from browser URL so subsequent login attempts are clean
+      window.history.replaceState({}, document.title, window.location.pathname);
     }
+  }, []);
+
+  // Redirect authenticated users who already have an active valid session
+  useEffect(() => {
+    // If an expiration notice is currently displayed on the page, do not auto-redirect
+    if (errorMessage) return;
 
     if (status === "authenticated" && session) {
       // Check if token is marked as expired
       if (session.isTokenExpired === 1 || session.isTokenExpierd === 1) {
         if (typeof window !== "undefined") {
           localStorage.removeItem("user_token");
+          localStorage.removeItem("token");
+          localStorage.removeItem("refreshToken");
         }
         return;
       }
@@ -87,25 +125,9 @@ export default function SignInPage() {
         }
       }
 
-      const raw = session?.user?.roles || session?.roles || [];
-      const roles = Array.isArray(raw) ? raw : [];
-      const normalized = roles.map((r) =>
-        String(r || "").replace(/^ROLE_/i, "").toLowerCase()
-      );
-      const permittedPages = session?.user?.permittedPages || session?.permittedPages || [];
-
-      // Route by role
-      if (roles.includes("ROLE_ADMIN") || roles.includes("admin")) {
-        router.push("/ui/admin");
-      } else if (normalized.length === 1 && normalized.includes("cashier")) {
-        router.push("/ui/cashier/cashier");
-      } else if (roles.length > 0 || permittedPages.length > 0) {
-        router.push("/ui/manager");
-      } else {
-        router.push("/unauthorized");
-      }
+      navigateByRole(session);
     }
-  }, [status, session, router]);
+  }, [status, session, router, errorMessage]);
 
   useEffect(() => {
     if (username || password) {
@@ -118,6 +140,11 @@ export default function SignInPage() {
     setErrorMessage("");
     setIsSubmitting(true);
 
+    // Ensure URL has no lingering query params
+    if (typeof window !== "undefined") {
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+
     try {
       const result = await signIn("credentials", {
         username: username.trim(),
@@ -125,9 +152,8 @@ export default function SignInPage() {
         redirect: false,
       });
 
-      setIsSubmitting(false);
-
       if (result?.error) {
+        setIsSubmitting(false);
         if (result.error === "fetch failed") {
           setErrorMessage("Cannot connect to server. Please check backend.");
         } else if (result.error.includes("locked")) {
@@ -137,7 +163,25 @@ export default function SignInPage() {
         } else {
           setErrorMessage("Invalid username or password");
         }
-      } else if (result?.ok) {
+        return;
+      }
+
+      if (result?.ok) {
+        // Fetch fresh session directly to hydrate tokens and navigate immediately
+        const freshSession = await getSession();
+        if (freshSession && typeof window !== "undefined") {
+          localStorage.setItem("user_token", JSON.stringify(freshSession));
+          const directToken = freshSession?.accessToken || freshSession?.token || freshSession?.access_token;
+          if (directToken) {
+            localStorage.setItem("token", String(directToken));
+          }
+          if (freshSession?.refreshToken) {
+            localStorage.setItem("refreshToken", String(freshSession.refreshToken));
+          }
+          navigateByRole(freshSession);
+        } else {
+          router.push("/ui/manager");
+        }
         router.refresh();
       }
     } catch (err) {
@@ -150,13 +194,8 @@ export default function SignInPage() {
     return <Loader />;
   }
 
-  // Already authenticated and valid (only if NOT an expired notice)
-  const urlParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
-  const isExpiredNotice =
-    urlParams?.get("error") === "SessionExpired" ||
-    urlParams?.get("reason") === "inactivity";
-
-  if (!isExpiredNotice && status === "authenticated" && session?.isTokenExpired !== 1 && session?.isTokenExpierd !== 1) {
+  // Already authenticated and valid (only if NOT displaying an expiration error message)
+  if (!errorMessage && status === "authenticated" && session && session?.isTokenExpired !== 1 && session?.isTokenExpierd !== 1) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-100">
         <div className="max-w-md w-full rounded-xl bg-white p-8 text-center shadow-lg">

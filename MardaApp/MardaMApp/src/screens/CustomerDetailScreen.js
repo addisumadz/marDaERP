@@ -7,7 +7,6 @@ import {
     TouchableOpacity,
     Alert,
     ScrollView,
-    SafeAreaView,
     StatusBar,
     ActivityIndicator,
     Platform,
@@ -15,6 +14,7 @@ import {
     Modal,
     KeyboardAvoidingView
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialIcons, FontAwesome5 } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { databaseService } from '../services/databaseService';
@@ -182,11 +182,10 @@ export default function CustomerDetailScreen({ customer: propCustomer, onBack, o
             // Get GPS accuracy level from settings
             const level = await locationService.getSavedAccuracyLevel();
 
-            // Get location using locationService (smart: cache if < 15s, else fresh)
+            // Get location using locationService (smart: 30s cache, dynamic target accuracy)
             const currentLoc = await locationService.getSmartLocation({
-                maxAge: 15000,
+                maxAge: 30000,
                 timeoutMs: 8000,
-                targetAccuracy: 10,
             });
 
             const gpsAccuracy = currentLoc?.coords?.accuracy || 0;
@@ -230,36 +229,14 @@ export default function CustomerDetailScreen({ customer: propCustomer, onBack, o
         }
     };
 
-    // Shared validation for ReadingEntryModal
-    const handleSubmitReading = ({ currentReading, zeroReasonId }, { setShowZeroReasonPicker }) => {
-        const result = validation.validateAndPrepareReading(customer, currentReading, zeroReasonId);
+    // Submission handler called by ReadingEntryModal after validation & confirmation
+    const handleSubmitReading = (readingData, callbacks) => {
+        const { currentReading: inputReading, currentReadingNum, prevReading, consumption, zeroReasonId } = readingData;
+        const numVal = currentReadingNum !== undefined ? currentReadingNum : parseFloat(inputReading);
+        const prevVal = prevReading !== undefined ? prevReading : Number(customer.previous_reading || 0);
+        const consVal = consumption !== undefined ? consumption : (numVal - prevVal);
 
-        switch (result.action) {
-            case 'error':
-                showAlert('Error', result.message, 'error');
-                return;
-            case 'warn_zero_prev':
-                showAlert('⚠️ Verify Reading', result.message, 'warning', false,
-                    () => proceedSaveReading(result.data.currentReadingNum, result.data.prevReading, result.data.consumption, result.data.zeroReasonId)
-                );
-                return;
-            case 'confirm_lower':
-                showAlert('⚠️ Verify Meter', result.message, 'warning', false,
-                    () => proceedSaveReading(result.data.currentReadingNum, result.data.prevReading, result.data.consumption, result.data.zeroReasonId)
-                );
-                return;
-            case 'confirm_high':
-                showAlert('Confirm', result.message, 'warning', false,
-                    () => proceedSaveReading(result.data.currentReadingNum, result.data.prevReading, result.data.consumption, result.data.zeroReasonId)
-                );
-                return;
-            case 'select_zero_reason':
-                setShowZeroReasonPicker(true);
-                return;
-            case 'proceed':
-                proceedSaveReading(result.data.currentReadingNum, result.data.prevReading, result.data.consumption, result.data.zeroReasonId);
-                return;
-        }
+        proceedSaveReading(numVal, prevVal, consVal, zeroReasonId);
     };
 
     const proceedSaveReading = async (currentReadingNum, prevReading, consumption, zeroReasonId) => {

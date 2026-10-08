@@ -270,6 +270,23 @@ public interface BillingReadingRepository extends JpaRepository<BillingReading, 
                         String kifyaWer);
 
         /**
+         * Fast projection query for bulk average consumption calculation.
+         * Returns only lightweight primitive columns for the specified customers and periods,
+         * filtering out void/deleted readings directly at the SQL level.
+         * Ordered so the most recent registered reading per (customerId, kifyaWer) appears first.
+         */
+        @Query("SELECT b.billingCustomerInfo.id, b.kifyaWer, b.consumption, b.lastReading, b.previousReading " +
+                        "FROM BillingReading b " +
+                        "WHERE b.billingCustomerInfo.id IN :customerIds " +
+                        "AND b.kifyaWer IN :periods " +
+                        "AND (b.status IS NULL OR LOWER(b.status) != 'deleted') " +
+                        "AND b.isVoid = false " +
+                        "ORDER BY b.billingCustomerInfo.id ASC, b.kifyaWer ASC, b.registeredDate DESC, b.id DESC")
+        List<Object[]> findReadingsProjectionForAverageCalculation(
+                        @Param("customerIds") java.util.Collection<Integer> customerIds,
+                        @Param("periods") java.util.Collection<String> periods);
+
+        /**
          * Find a billing reading by its invoice number (for Unicash CSV import)
          * 
          * @param invoiceNumbers The invoice number to search for

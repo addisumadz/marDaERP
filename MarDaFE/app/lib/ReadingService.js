@@ -888,7 +888,7 @@ export class ReadingService {
         payload,
         {
           headers: { "Content-Type": "application/json", ...authHeader(user_accessToken) },
-          timeout: 900000, // 5 minutes — bulk operation across many customers
+          timeout: 60000, // 1 minute — batch optimized on backend
         }
       );
       return res.data;

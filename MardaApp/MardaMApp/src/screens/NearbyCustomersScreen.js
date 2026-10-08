@@ -7,11 +7,11 @@ import {
     TouchableOpacity,
     RefreshControl,
     ActivityIndicator,
-    SafeAreaView,
     StatusBar,
     Platform,
     TextInput,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialIcons, FontAwesome } from '@expo/vector-icons';
 
 import { databaseService } from '../services/databaseService';
@@ -39,6 +39,7 @@ export default function NearbyCustomersScreen({ onBack, onSelectCustomer }) {
     const [selectedCustomer, setSelectedCustomer] = useState(null);
     const [loadingCustomerId, setLoadingCustomerId] = useState(null);
     const [zeroReasons, setZeroReasons] = useState([]);
+    const [isSavingReading, setIsSavingReading] = useState(false);
 
     // Alert State
     const [alertConfig, setAlertConfig] = useState({
@@ -147,17 +148,15 @@ export default function NearbyCustomersScreen({ onBack, onSelectCustomer }) {
             // 2. Get Location (fresh or cached based on button)
             let currentLocation;
             if (useCache) {
-                // Smart: use cache if < 15s, otherwise fetch fresh
+                // Smart: use cache if < 30s, otherwise fetch fresh
                 currentLocation = await locationService.getSmartLocation({
-                    maxAge: 15000,
+                    maxAge: 30000,
                     timeoutMs: 8000,
-                    targetAccuracy: 10,
                 });
             } else {
                 // Always fresh GPS (no cache)
                 currentLocation = await locationService.getFreshLocation({
                     timeoutMs: 8000,
-                    targetAccuracy: 10,
                 });
             }
 
@@ -253,11 +252,10 @@ export default function NearbyCustomersScreen({ onBack, onSelectCustomer }) {
                 return;
             }
 
-            // Use smart location with 60s cache for reading verification
+            // Use smart location with cache for reading verification
             const currentLoc = await locationService.getSmartLocation({
-                maxAge: 60000,
+                maxAge: 30000,
                 timeoutMs: 8000,
-                targetAccuracy: 10,
             });
 
             const gpsAccuracy = currentLoc?.coords?.accuracy || 0;
@@ -312,38 +310,23 @@ export default function NearbyCustomersScreen({ onBack, onSelectCustomer }) {
         setModalVisible(true);
     };
 
-    const handleSubmitReading = ({ currentReading, zeroReasonId }, { setShowZeroReasonPicker }) => {
-        const result = validation.validateAndPrepareReading(selectedCustomer, currentReading, zeroReasonId);
+    const handleSubmitReading = (readingData, callbacks) => {
+        const { currentReading: inputReading, currentReadingNum, prevReading, consumption, zeroReasonId } = readingData;
 
-        switch (result.action) {
-            case 'error':
-                showAlert('Error', result.message, 'error');
-                return;
-            case 'warn_zero_prev':
-                showAlert('⚠️ Verify Reading', result.message, 'warning', false,
-                    () => proceedSave(result.data.currentReadingNum, result.data.prevReading, result.data.consumption, result.data.zeroReasonId)
-                );
-                return;
-            case 'confirm_lower':
-                showAlert('⚠️ Verify Meter', result.message, 'warning', false,
-                    () => proceedSave(result.data.currentReadingNum, result.data.prevReading, result.data.consumption, result.data.zeroReasonId)
-                );
-                return;
-            case 'confirm_high':
-                showAlert('Confirm', result.message, 'warning', false,
-                    () => proceedSave(result.data.currentReadingNum, result.data.prevReading, result.data.consumption, result.data.zeroReasonId)
-                );
-                return;
-            case 'select_zero_reason':
-                setShowZeroReasonPicker(true);
-                return;
-            case 'proceed':
-                proceedSave(result.data.currentReadingNum, result.data.prevReading, result.data.consumption, result.data.zeroReasonId);
-                return;
+        if (!selectedCustomer) {
+            showAlert('Error', 'No customer selected', 'error');
+            return;
         }
+
+        const numVal = currentReadingNum !== undefined ? currentReadingNum : parseFloat(inputReading);
+        const prevVal = prevReading !== undefined ? prevReading : Number(selectedCustomer.previous_reading || 0);
+        const consVal = consumption !== undefined ? consumption : (numVal - prevVal);
+
+        proceedSave(numVal, prevVal, consVal, zeroReasonId);
     };
 
     const proceedSave = async (currentReadingNum, prevReading, consumption, zeroReasonId) => {
+        setIsSavingReading(true);
         try {
             const kfyawor = await syncService.getKfyawor();
             if (!kfyawor || !kfyawor.kfyawor) {
@@ -384,6 +367,8 @@ export default function NearbyCustomersScreen({ onBack, onSelectCustomer }) {
         } catch (error) {
             console.error('Save reading error:', error);
             showAlert('Error', 'Failed to save reading', 'error');
+        } finally {
+            setIsSavingReading(false);
         }
     };
 
@@ -578,6 +563,7 @@ export default function NearbyCustomersScreen({ onBack, onSelectCustomer }) {
                 customer={selectedCustomer}
                 onSubmit={handleSubmitReading}
                 zeroReasons={zeroReasons}
+                isSubmitting={isSavingReading}
             />
 
             <CustomAlert

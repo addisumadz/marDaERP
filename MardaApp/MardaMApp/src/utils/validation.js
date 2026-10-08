@@ -81,48 +81,67 @@ export const validation = {
      * data = { currentReadingNum, prevReading, consumption, zeroReasonId }
      */
     validateAndPrepareReading: (customer, currentReading, zeroReasonId) => {
-        if (!currentReading) {
+        if (currentReading === null || currentReading === undefined || currentReading === '') {
             return { action: 'error', message: 'Please enter a reading value' };
         }
 
         const currentReadingNum = parseFloat(currentReading);
-        const prevReading = customer.previous_reading || 0;
-        const maxReading = customer.max_reading || 0;
-        const consumption = currentReadingNum - prevReading;
-
-        const data = { currentReadingNum, prevReading, consumption, zeroReasonId };
-
         if (isNaN(currentReadingNum)) {
             return { action: 'error', message: 'Please enter a valid number' };
         }
 
+        if (currentReadingNum < 0) {
+            return { action: 'error', message: 'Reading cannot be negative' };
+        }
+
+        if (currentReadingNum > VALIDATION_RULES.MAX_READING) {
+            return { action: 'error', message: `Reading cannot exceed ${VALIDATION_RULES.MAX_READING.toLocaleString()}` };
+        }
+
+        const prevReading = Number(customer?.previous_reading || 0);
+        const consumption = currentReadingNum - prevReading;
+        const data = { currentReadingNum, prevReading, consumption, zeroReasonId };
+
+        // 1. Negative consumption check: Current reading is less than previous reading
         if (currentReadingNum < prevReading) {
             return {
                 action: 'confirm_lower',
-                message: `Current reading (${currentReadingNum}) is less than previous reading (${prevReading}).\n\nConfirm if this is a meter replacement, reset/rollover, or negative adjustment.`,
+                message: `Current reading (${currentReadingNum}) is less than previous reading (${prevReading}). Negative consumption is not allowed.\n\nContinue by setting reading to ${prevReading} (0 m³ consumption)?`,
+                targetReading: prevReading,
                 data
             };
         }
 
-        // Warn when previous_reading is 0 — could mean missing CSV data
+        // 2. Zero consumption check: Reading equals previous reading
+        if (consumption === 0) {
+            if (!zeroReasonId) {
+                return { action: 'select_zero_reason', data };
+            }
+            // Once zeroReasonId is provided, save immediately
+            return { action: 'proceed', data };
+        }
+
+        // 3. Exaggerated reading check: For consumption > 0, check if exceeds 2x average (default average: 10 m³)
+        const avg = Number(customer?.avgConsumption || customer?.avg_consumption) || (customer?.max_reading && customer.max_reading > prevReading ? (customer.max_reading - prevReading) / 2 : 10);
+        const maxThreshold = (customer?.max_reading && customer.max_reading > prevReading) 
+            ? customer.max_reading 
+            : Math.round(prevReading + (avg * 2));
+
+        if (currentReadingNum > maxThreshold) {
+            return {
+                action: 'confirm_high',
+                message: `Reading (${currentReadingNum}) exceeds 2× average consumption (Limit: ${maxThreshold}, Consumption: ${consumption} m³).\n\nAre you sure you want to proceed with this reading?`,
+                data
+            };
+        }
+
+        // 4. Zero previous reading check
         if (prevReading === 0 && currentReadingNum > 0) {
-            return { 
-                action: 'warn_zero_prev', 
-                message: `Previous reading is 0. This may indicate missing data from the server.\n\nPlease verify the meter and confirm the reading of ${currentReadingNum}.`,
+            return {
+                action: 'warn_zero_prev',
+                message: `Previous reading is 0. This may indicate initial reading or missing server data.\n\nPlease verify the meter and confirm reading of ${currentReadingNum}.`,
                 data
             };
-        }
-
-        if (maxReading > 0 && currentReadingNum > maxReading) {
-            return { 
-                action: 'confirm_high', 
-                message: 'Reading exceeds average consumption. Continue?',
-                data 
-            };
-        }
-
-        if (consumption === 0 && !zeroReasonId) {
-            return { action: 'select_zero_reason' };
         }
 
         return { action: 'proceed', data };

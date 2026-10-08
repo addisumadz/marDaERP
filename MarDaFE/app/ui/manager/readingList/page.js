@@ -148,6 +148,9 @@ const BillList = () => {
   const [selectedReaderId, setSelectedReaderId] = useState("");
   const [wuzifMonthsOp, setWuzifMonthsOp] = useState("eq");
   const [wuzifMonthsVal, setWuzifMonthsVal] = useState("");
+  const [consumptionOp, setConsumptionOp] = useState("eq");
+  const [consumptionVal, setConsumptionVal] = useState("");
+  const [filterExaggerated, setFilterExaggerated] = useState(false);
 
   // ─── Row Selection ───
   const [rowSelection, setRowSelection] = useState({});
@@ -432,6 +435,7 @@ const BillList = () => {
         addressKetenaId: cust?.addressKetenaId ?? r?.addressKetenaId,
         branchsId: cust?.branchsId ?? r?.branchsId,
         assignedReaderId: cust?.assignedReaderId ?? r?.assignedReaderId,
+        initialConsumption: r?.initialConsumption ?? cust?.initialConsumption ?? null,
       };
     });
   }, [readings, anyDropdownSelected, customerByAccount]);
@@ -509,8 +513,23 @@ const BillList = () => {
         return wuzifMonthsOp === "gte" ? val >= target : wuzifMonthsOp === "lt" ? val < target : val === target;
       });
     }
+    if (consumptionVal !== "" && !isNaN(Number(consumptionVal))) {
+      const target = Number(consumptionVal);
+      result = result.filter((r) => {
+        const val = Number(r?.consumption ?? NaN);
+        if (Number.isNaN(val)) return false;
+        return consumptionOp === "gte" ? val >= target : consumptionOp === "lt" ? val < target : val === target;
+      });
+    }
+    if (filterExaggerated) {
+      result = result.filter((r) => {
+        const cons = Number(r?.consumption ?? 0);
+        const avg = Number(r?.initialConsumption ?? 0);
+        return cons > avg;
+      });
+    }
     return result;
-  }, [readings, enrichedReadings, anyDropdownSelected, dfCustomerTypeId, dfKebeleId, dfKetenaId, dfBranchId, dfReaderId, wuzifMonthsOp, wuzifMonthsVal]);
+  }, [readings, enrichedReadings, anyDropdownSelected, dfCustomerTypeId, dfKebeleId, dfKetenaId, dfBranchId, dfReaderId, wuzifMonthsOp, wuzifMonthsVal, consumptionOp, consumptionVal, filterExaggerated]);
 
   const finalFilteredReadings = useMemo(() => {
     if (!showOnlyDuplicatesReadings) return filteredReadings;
@@ -711,10 +730,24 @@ const BillList = () => {
               billGenTimerRef.current = null;
             }
 
-            if (info?.status === "ERROR" || (info?.message && info.message.includes("0 bills"))) {
-              toast.error(info?.message || "Failed to generate bills for selected readings.");
+            const message = info?.message || "";
+            const billCountMatch = message.match(/(\d+)\s+bills?/i);
+            const billCount = billCountMatch ? parseInt(billCountMatch[1], 10) : null;
+            const isZeroBills = billCount === 0 || /\b0 bills\b/i.test(message);
+            const isAlreadyBilled = message.toLowerCase().includes("already billed");
+
+            if (info?.status === "ERROR") {
+              toast.error(message || "Failed to generate bills for selected readings.");
+            } else if (isZeroBills) {
+              toast.warn(message || "No bills were generated for selected readings.");
+              setRowSelection({});
+              Promise.allSettled([refetch(), refetchWithoutReading(), refetchBilledCount()]);
+            } else if (isAlreadyBilled) {
+              toast.info(message || "All selected readings are already billed.");
+              setRowSelection({});
+              Promise.allSettled([refetch(), refetchWithoutReading(), refetchBilledCount()]);
             } else {
-              toast.success(info?.message || "Bills generated successfully!");
+              toast.success(message || "Bills generated successfully!");
               setRowSelection({});
               Promise.allSettled([refetch(), refetchWithoutReading(), refetchBilledCount()]);
             }
@@ -780,6 +813,9 @@ const BillList = () => {
   const handleClearAllFilters = () => {
     setSelectedCustomerTypeId(""); setSelectedKebeleId(""); setSelectedKetenaId("");
     setSelectedBranchId(""); setSelectedReaderId("");
+    setWuzifMonthsVal("");
+    setConsumptionVal("");
+    setFilterExaggerated(false);
   };
 
   // ─── Bank Derash Handlers ───
@@ -1309,15 +1345,15 @@ const BillList = () => {
       },
     },
     {
-      accessorKey: "tekilalaTekefay",
-      header: "Total Payable",
-      size: 130,
+      accessorKey: "initialConsumption",
+      header: "Avarage",
+      size: 110,
       Cell: ({ row }) => {
-        const val = row.original.tekilalaTekefay;
-        if (val == null || !Number.isFinite(Number(val)) || Number(val) <= 0) return "-";
+        const val = row.original.initialConsumption;
+        if (val == null || !Number.isFinite(Number(val))) return "-";
         return (
-          <Typography variant="body2" sx={{ fontWeight: 700, color: "success.dark" }}>
-            {Number(val).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ETB
+          <Typography variant="body2" sx={{ fontWeight: 600 }}>
+            {Number(val).toLocaleString()} m³
           </Typography>
         );
       },
@@ -1718,6 +1754,12 @@ const BillList = () => {
           wuzifMonthsVal={wuzifMonthsVal}
           onWuzifOpChange={setWuzifMonthsOp}
           onWuzifValChange={setWuzifMonthsVal}
+          consumptionOp={consumptionOp}
+          consumptionVal={consumptionVal}
+          onConsumptionOpChange={setConsumptionOp}
+          onConsumptionValChange={setConsumptionVal}
+          filterExaggerated={filterExaggerated}
+          onToggleExaggerated={setFilterExaggerated}
           customerTypes={customerTypes}
           kebeles={kebeles}
           ketenas={ketenas}

@@ -6,12 +6,12 @@ import {
     TouchableOpacity,
     ScrollView,
     StatusBar,
-    SafeAreaView,
     Platform,
     Modal,
     TextInput,
     Alert,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, FontAwesome, MaterialIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { authService } from '../services/authService';

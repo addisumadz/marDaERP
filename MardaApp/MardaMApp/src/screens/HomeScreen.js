@@ -5,7 +5,6 @@ import {
     StyleSheet,
     Text,
     View,
-    SafeAreaView,
     ScrollView,
     TouchableOpacity,
     RefreshControl,
@@ -16,6 +15,7 @@ import {
     Modal,
     TextInput,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { STORAGE_KEYS } from '../constants/config';
 import { Ionicons, MaterialCommunityIcons, FontAwesome5 } from '@expo/vector-icons';

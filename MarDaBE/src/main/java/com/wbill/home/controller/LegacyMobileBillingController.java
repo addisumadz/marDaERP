@@ -1001,11 +1001,12 @@ public class LegacyMobileBillingController {
                 }
                 row.put("previous_reading", prevReading);
 
-                int maxReading = 0;
-                if (c.getBillingCustomerInfoMeter() != null) {
-                    maxReading = c.getBillingCustomerInfoMeter().getMaxReference();
-                }
+                int avgConsumption = (c.getInitialConsumption() != null && c.getInitialConsumption() > 0)
+                        ? c.getInitialConsumption()
+                        : 10;
+                int maxReading = prevReading + (avgConsumption * 2);
                 row.put("max_reading", maxReading);
+                row.put("avg_consumption", avgConsumption);
                 row.put("reading_month", kifyaWerStr);
                 row.put("last_reading", 0);
                 row.put("additional_text", "");

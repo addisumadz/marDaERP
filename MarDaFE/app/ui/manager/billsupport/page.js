@@ -49,7 +49,7 @@ import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import FilterAltOffIcon from "@mui/icons-material/FilterAltOff";
 import CancelPresentationIcon from "@mui/icons-material/CancelPresentation";
 import CloseIcon from "@mui/icons-material/Close";
-import ProPeriodPicker from "@/app/ui/components/ProPeriodPicker";
+import ProPeriodPicker, { getPreviousPeriod } from "@/app/ui/components/ProPeriodPicker";
 import { ETH_MONTHS_AM } from "@/app/helpers/constants";
 import { ReadingService } from "../../../lib/ReadingService";
 import { DropdownService } from "../../../lib/dropdownService";
@@ -1368,12 +1368,8 @@ const BillSupport = () => {
           return null;
         }
 
-        let maximumreading = 0;
-        if (Number.isFinite(avg) && avg > 0) {
-          maximumreading = Math.round(lastReading + (avg * 2));
-        } else {
-          maximumreading = lastReading;
-        }
+        const effectiveAvg = (Number.isFinite(avg) && avg > 0) ? avg : 10;
+        const maximumreading = Math.round(lastReading + (effectiveAvg * 2));
 
         return {
           customer_info_id: customerInfoId,
@@ -2056,6 +2052,22 @@ const BillSupport = () => {
     setAvgMonths("");
     setIsAvgDialogOpen(true);
   };
+
+  const previewPeriods = useMemo(() => {
+    const num = Number(avgMonths);
+    if (!selectedKifyaWerMonth || !selectedKifyaWerYear || !Number.isFinite(num) || num <= 0) {
+      return [];
+    }
+    const list = [];
+    let cur = { month: selectedKifyaWerMonth, year: Number(selectedKifyaWerYear) };
+    list.push(`${cur.month}, ${cur.year}`);
+    const maxMonths = Math.min(num, 36);
+    for (let i = 1; i < maxMonths; i++) {
+      cur = getPreviousPeriod(cur.month, cur.year);
+      list.push(`${cur.month}, ${cur.year}`);
+    }
+    return list;
+  }, [selectedKifyaWerMonth, selectedKifyaWerYear, avgMonths]);
 
   const handleApplyAverageInit = () => {
     if (!selectedKifyaWerMonth || !selectedKifyaWerYear) {
@@ -3230,38 +3242,101 @@ const BillSupport = () => {
       <Dialog
         open={isAvgDialogOpen}
         onClose={() =>
-          !averageInitMutation.isLoading && setIsAvgDialogOpen(false)
+          !averageInitMutation.isPending && setIsAvgDialogOpen(false)
         }
-        maxWidth="xs"
+        maxWidth="sm"
         fullWidth
+        PaperProps={{ sx: { borderRadius: 3 } }}
       >
-        <DialogTitle>Initialize Average Consumption</DialogTitle>
+        <DialogTitle sx={{ fontWeight: "bold", pb: 1 }}>
+          Initialize Average Consumption
+        </DialogTitle>
         <DialogContent dividers>
-          <Box sx={{ display: "flex", flexDirection: "column", gap: 2, mt: 1 }}>
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 2.5, mt: 1 }}>
+            <Paper
+              variant="outlined"
+              sx={{
+                p: 2,
+                borderRadius: 2,
+                bgcolor: "#f8fafc",
+                borderColor: "#e2e8f0",
+              }}
+            >
+              <Grid container spacing={2}>
+                <Grid item xs={12} sm={6}>
+                  <Typography variant="caption" color="text.secondary">
+                    Current Billing Period
+                  </Typography>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                    {selectedKifyaWerMonth}, {selectedKifyaWerYear}
+                  </Typography>
+                </Grid>
+                <Grid item xs={12} sm={6}>
+                  <Typography variant="caption" color="text.secondary">
+                    Target Customers
+                  </Typography>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 600, color: "primary.main" }}>
+                    {Array.isArray(filteredData) ? filteredData.length.toLocaleString() : 0} in view
+                  </Typography>
+                </Grid>
+              </Grid>
+            </Paper>
+
             <TextField
               label="Number of Months"
               type="number"
               fullWidth
               value={avgMonths}
               onChange={(e) => setAvgMonths(e.target.value)}
-              inputProps={{ min: 1 }}
+              inputProps={{ min: 1, max: 36 }}
+              helperText="Includes the selected month and preceding months to calculate the average"
+              autoFocus
             />
+
+            {previewPeriods.length > 0 && (
+              <Box>
+                <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1, fontWeight: 600 }}>
+                  Evaluated Billing Periods ({previewPeriods.length} months):
+                </Typography>
+                <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.8, maxHeight: 110, overflowY: "auto", p: 0.5 }}>
+                  {previewPeriods.map((p, idx) => (
+                    <Chip
+                      key={p}
+                      label={`${idx + 1}. ${p}${idx === 0 ? " (Selected)" : ""}`}
+                      size="small"
+                      variant={idx === 0 ? "filled" : "outlined"}
+                      color={idx === 0 ? "primary" : "default"}
+                      sx={{
+                        fontSize: "0.75rem",
+                        ...(idx !== 0 && { bgcolor: "#ffffff", borderColor: "#cbd5e1" }),
+                      }}
+                    />
+                  ))}
+                </Box>
+              </Box>
+            )}
+
+            <Alert severity="info" sx={{ fontSize: "0.8rem", borderRadius: 2 }}>
+              Only active consumption (&gt; 0 m³) is averaged. Customers with no previous active usage history will be assigned the standard default of 10 m³.
+            </Alert>
           </Box>
         </DialogContent>
-        <DialogActions>
+        <DialogActions sx={{ px: 3, py: 2 }}>
           <Button
             onClick={() => setIsAvgDialogOpen(false)}
             disabled={averageInitMutation.isPending}
+            sx={{ textTransform: "none" }}
           >
             Cancel
           </Button>
           <Button
             variant="contained"
             onClick={handleApplyAverageInit}
-            disabled={averageInitMutation.isPending}
+            disabled={averageInitMutation.isPending || !avgMonths || Number(avgMonths) <= 0}
             startIcon={averageInitMutation.isPending ? <CircularProgress size={16} color="inherit" /> : null}
+            sx={{ fontWeight: "bold", textTransform: "none", px: 3, borderRadius: 2 }}
           >
-            {averageInitMutation.isPending ? "Applying..." : "Apply"}
+            {averageInitMutation.isPending ? "Calculating..." : "Apply Average"}
           </Button>
         </DialogActions>
       </Dialog>

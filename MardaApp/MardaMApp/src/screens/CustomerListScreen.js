@@ -10,7 +10,6 @@ import {
     Switch,
     Image,
     StatusBar,
-    SafeAreaView,
     Platform,
     ActivityIndicator,
     Alert,
@@ -18,6 +17,7 @@ import {
     KeyboardAvoidingView,
     ScrollView
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, FontAwesome, MaterialIcons, Entypo } from '@expo/vector-icons';
 import { authService } from '../services/authService';
 import { syncService } from '../services/syncService';
@@ -134,6 +134,7 @@ export default function CustomerListScreen({ onSettingsPress, onCustomerSelect, 
     const [showZeroReasonPicker, setShowZeroReasonPicker] = useState(false);
     const [loadingCustomerId, setLoadingCustomerId] = useState(null);
     const [readerGps, setReaderGps] = useState(null);
+    const [isSavingReading, setIsSavingReading] = useState(false);
 
     // Load zero reasons
     useEffect(() => {
@@ -177,8 +178,8 @@ export default function CustomerListScreen({ onSettingsPress, onCustomerSelect, 
             // Load configured GPS accuracy level
             const gpsLevel = await locationService.getSavedAccuracyLevel();
 
-            // Optimize GPS: Use Smart Location Service
-            currentLoc = await locationService.getSmartLocation();
+            // Optimize GPS: Use Smart Location Service (30s cache, dynamic target accuracy)
+            currentLoc = await locationService.getSmartLocation({ maxAge: 30000 });
 
             // GPS Accuracy Check using configured level
             const gpsAccuracy = currentLoc?.coords?.accuracy || 0;
@@ -240,45 +241,22 @@ export default function CustomerListScreen({ onSettingsPress, onCustomerSelect, 
     };
 
     const handleSaveReading = (readingData, callbacks) => {
-        const { currentReading: inputReading, zeroReasonId } = readingData;
-        const { setShowZeroReasonPicker } = callbacks;
+        const { currentReading: inputReading, currentReadingNum, prevReading, consumption, zeroReasonId } = readingData;
 
         if (!selectedCustomer) {
             showAlert('Error', 'No customer selected', 'error');
             return;
         }
 
-        const result = validation.validateAndPrepareReading(selectedCustomer, inputReading, zeroReasonId);
+        const numVal = currentReadingNum !== undefined ? currentReadingNum : parseFloat(inputReading);
+        const prevVal = prevReading !== undefined ? prevReading : Number(selectedCustomer.previous_reading || 0);
+        const consVal = consumption !== undefined ? consumption : (numVal - prevVal);
 
-        switch (result.action) {
-            case 'error':
-                showAlert('Error', result.message, 'error');
-                return;
-            case 'warn_zero_prev':
-                showAlert('⚠️ Verify Reading', result.message, 'warning', false,
-                    () => proceedSave(result.data.currentReadingNum, result.data.prevReading, result.data.consumption, result.data.zeroReasonId)
-                );
-                return;
-            case 'confirm_lower':
-                showAlert('⚠️ Verify Meter', result.message, 'warning', false,
-                    () => proceedSave(result.data.currentReadingNum, result.data.prevReading, result.data.consumption, result.data.zeroReasonId)
-                );
-                return;
-            case 'confirm_high':
-                showAlert('Confirm', result.message, 'warning', false,
-                    () => proceedSave(result.data.currentReadingNum, result.data.prevReading, result.data.consumption, result.data.zeroReasonId)
-                );
-                return;
-            case 'select_zero_reason':
-                setShowZeroReasonPicker(true);
-                return;
-            case 'proceed':
-                proceedSave(result.data.currentReadingNum, result.data.prevReading, result.data.consumption, result.data.zeroReasonId);
-                return;
-        }
+        proceedSave(numVal, prevVal, consVal, zeroReasonId);
     };
 
     const proceedSave = async (currentReadingNum, prevReading, consumption, zeroReasonId) => {
+        setIsSavingReading(true);
         try {
             const kfyawor = await syncService.getKfyawor();
             if (!kfyawor || !kfyawor.kfyawor) {
@@ -303,7 +281,6 @@ export default function CustomerListScreen({ onSettingsPress, onCustomerSelect, 
             if (result.success) {
                 setModalVisible(false);
                 loadCustomers();
-                // Success alert removed as per user request
 
                 if (result.updated) {
                     showAlert(
@@ -318,6 +295,8 @@ export default function CustomerListScreen({ onSettingsPress, onCustomerSelect, 
         } catch (error) {
             console.error('Save reading error:', error);
             showAlert('Error', 'Failed to save reading', 'error');
+        } finally {
+            setIsSavingReading(false);
         }
     };
 
@@ -461,6 +440,7 @@ export default function CustomerListScreen({ onSettingsPress, onCustomerSelect, 
                 customer={selectedCustomer}
                 onSubmit={handleSaveReading}
                 zeroReasons={zeroReasons}
+                isSubmitting={isSavingReading}
             />
 
             {/* Custom Alert Component */}

@@ -730,12 +730,8 @@ const ReadingManagement = () => {
           return null;
         }
 
-        let maximumreading = 0;
-        if (Number.isFinite(avg) && avg > 0) {
-          maximumreading = Math.round(lastReading + (avg * 2));
-        } else {
-          maximumreading = lastReading;
-        }
+        const effectiveAvg = (Number.isFinite(avg) && avg > 0) ? avg : 10;
+        const maximumreading = Math.round(lastReading + (effectiveAvg * 2));
 
         return {
           customer_info_id: customerInfoId,

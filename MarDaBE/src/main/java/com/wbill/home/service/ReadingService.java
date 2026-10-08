@@ -67,6 +67,8 @@ public class ReadingService {
     private SmsService smsService;
     @Autowired
     private SmsSettingService smsSettingService;
+    @Autowired
+    private jakarta.persistence.EntityManager entityManager;
 
     @Transactional(readOnly = true)
     public List<BillingReadingDTO> getAllReadingsForList() {
@@ -953,116 +955,145 @@ public class ReadingService {
             return BulkUpdateResponseDTO.error("months must be greater than zero");
         }
 
-        int updated = 0;
-        for (String acc : accountNumbers) {
-            if (acc == null) {
-                continue;
+        // 1. Precompute billing periods ONCE starting from the selected month (currentKifyaWer)
+        java.util.List<String> periods = new java.util.ArrayList<>();
+        String period = currentKifyaWer != null ? currentKifyaWer.trim() : "";
+        if (period.isEmpty()) {
+            return BulkUpdateResponseDTO.error("kifyaWer is required");
+        }
+        for (int i = 0; i < months; i++) {
+            if (period == null || period.trim().isEmpty()) {
+                break;
             }
-            String trimmedAcc = acc.trim();
-            if (trimmedAcc.isEmpty()) {
-                continue;
+            if (!periods.contains(period)) {
+                periods.add(period);
             }
-
-            java.util.Optional<BillingCustomerInfo> customerOpt = billingCustomerInfoRepository
-                    .findByAccountNumber(trimmedAcc);
-            if (customerOpt.isEmpty()) {
-                continue;
-            }
-            BillingCustomerInfo customer = customerOpt.get();
-
-            // Start from the PREVIOUS month — do NOT include the current month in its own
-            // average
-            java.util.List<String> periods = new java.util.ArrayList<>();
-            String period;
             try {
-                period = EthiopianCalendarUtil.getPreviousKifyaWer(currentKifyaWer);
+                period = EthiopianCalendarUtil.getPreviousKifyaWer(period);
             } catch (Exception ex) {
-                System.out.println("[AVG-INIT] ERROR: could not compute previous month from: " + currentKifyaWer);
+                break;
+            }
+        }
+
+        if (periods.isEmpty()) {
+            return BulkUpdateResponseDTO.error("No valid historical periods found for: " + currentKifyaWer);
+        }
+
+        // Deduplicate non-empty account numbers
+        java.util.Set<String> uniqueAccounts = new java.util.LinkedHashSet<>();
+        for (String acc : accountNumbers) {
+            if (acc != null && !acc.trim().isEmpty()) {
+                uniqueAccounts.add(acc.trim());
+            }
+        }
+        if (uniqueAccounts.isEmpty()) {
+            return BulkUpdateResponseDTO.error("No valid account numbers provided");
+        }
+
+        java.util.List<String> accountList = new java.util.ArrayList<>(uniqueAccounts);
+        final int CHUNK_SIZE = 1000;
+        int totalUpdated = 0;
+
+        for (int start = 0; start < accountList.size(); start += CHUNK_SIZE) {
+            int end = Math.min(start + CHUNK_SIZE, accountList.size());
+            java.util.List<String> chunk = accountList.subList(start, end);
+
+            // Step A: Load customer entities for this chunk
+            java.util.List<BillingCustomerInfo> customers = billingCustomerInfoRepository.findByAccountNumberIn(chunk);
+            if (customers == null || customers.isEmpty()) {
                 continue;
             }
-            for (int i = 0; i < months; i++) {
-                if (period == null || period.trim().isEmpty()) {
-                    break;
-                }
-                if (!periods.contains(period)) {
-                    periods.add(period);
-                }
-                try {
-                    period = EthiopianCalendarUtil.getPreviousKifyaWer(period);
-                } catch (Exception ex) {
-                    break;
+
+            java.util.List<Integer> customerIds = new java.util.ArrayList<>();
+            for (BillingCustomerInfo c : customers) {
+                customerIds.add(c.getId());
+            }
+
+            // Step B: Bulk fetch readings projection for all customers in this chunk across all periods
+            java.util.List<Object[]> readingRows = billingReadingRepository
+                    .findReadingsProjectionForAverageCalculation(customerIds, periods);
+
+            // Map: customerId -> (Map: kifyaWer -> latest Object[] row)
+            java.util.Map<Integer, java.util.Map<String, Object[]>> customerPeriodReadings = new java.util.HashMap<>();
+            if (readingRows != null) {
+                for (Object[] row : readingRows) {
+                    Integer cId = ((Number) row[0]).intValue();
+                    String p = (String) row[1];
+                    java.util.Map<String, Object[]> periodMap = customerPeriodReadings.computeIfAbsent(cId, k -> new java.util.HashMap<>());
+                    // Because ORDER BY is registeredDate DESC, id DESC, the first one encountered is the latest valid reading
+                    periodMap.putIfAbsent(p, row);
                 }
             }
 
-            // System.out.println("[AVG-INIT] Account=" + trimmedAcc + " currentKifyaWer=" +
-            // currentKifyaWer
-            // + " months=" + months + " periods=" + periods);
+            java.util.List<BillingCustomerInfo> toUpdate = new java.util.ArrayList<>();
 
-            int sum = 0;
-            int count = 0;
+            // Step C: Calculate average for each customer
+            for (BillingCustomerInfo customer : customers) {
+                int sum = 0;
+                int count = 0;
+                java.util.Map<String, Object[]> periodMap = customerPeriodReadings.get(customer.getId());
 
-            for (String p : periods) {
-                if (p == null || p.trim().isEmpty()) {
-                    continue;
-                }
-                java.util.Optional<BillingReading> readingOpt = billingReadingRepository
-                        .findFirstByBillingCustomerInfoAndKifyaWerOrderByRegisteredDateDesc(
-                                customer, p);
-                if (readingOpt.isEmpty()) {
-                    // System.out.println("[AVG-INIT] period=" + p + " -> NO reading found");
-                    continue;
-                }
-                BillingReading reading = readingOpt.get();
-                if ("deleted".equalsIgnoreCase(reading.getStatus()) || reading.isVoid()) {
-                    // System.out.println("[AVG-INIT] period=" + p + " -> SKIPPED (deleted/void)");
-                    continue;
-                }
-                int cons = reading.getConsumption();
-                // Fallback: compute from lastReading - previousReading if consumption field is
-                // 0
-                if (cons == 0) {
-                    int lastR = reading.getLastReading();
-                    int prevR = reading.getPreviousReading();
-                    if (lastR > 0 && prevR >= 0) {
-                        cons = lastR - prevR;
+                if (periodMap != null) {
+                    for (String p : periods) {
+                        Object[] row = periodMap.get(p);
+                        if (row == null) {
+                            continue;
+                        }
+                        int cons = row[2] != null ? ((Number) row[2]).intValue() : 0;
+                        int lastR = row[3] != null ? ((Number) row[3]).intValue() : 0;
+                        int prevR = row[4] != null ? ((Number) row[4]).intValue() : 0;
+
+                        if (cons == 0 && lastR > 0 && prevR >= 0) {
+                            cons = lastR - prevR;
+                        }
+
+                        // User requirement: Skip records with cons <= 0 (previous behavior preserved)
+                        if (cons <= 0) {
+                            continue;
+                        }
+
+                        sum += cons;
+                        count++;
                     }
                 }
-                if (cons <= 0) {
-                    // System.out.println("[AVG-INIT] period=" + p + " -> SKIPPED (cons=" + cons
-                    // + " lastReading=" + reading.getLastReading()
-                    // + " prevReading=" + reading.getPreviousReading()
-                    // + " isBillGenerated=" + reading.isBillGenerated() + ")");
-                    continue;
+
+                if (count > 0) {
+                    int avg = (int) Math.round(sum / (double) count);
+                    if (avg <= 0) {
+                        avg = 1;
+                    }
+                    customer.setInitialConsumption(avg);
+                    toUpdate.add(customer);
+                } else {
+                    // count == 0: If customer has no existing average (null or <= 0), fallback to 10 m³
+                    Integer existingAvg = customer.getInitialConsumption();
+                    if (existingAvg == null || existingAvg <= 0) {
+                        customer.setInitialConsumption(10);
+                        toUpdate.add(customer);
+                    }
                 }
-                // System.out.println("[AVG-INIT] period=" + p + " -> cons=" + cons
-                // + " (field=" + reading.getConsumption()
-                // + " lastR=" + reading.getLastReading()
-                // + " prevR=" + reading.getPreviousReading() + ")");
-                sum += cons;
-                count++;
             }
 
-            if (count == 0) {
-                // System.out.println("[AVG-INIT] Account=" + trimmedAcc + " -> count=0,
-                // SKIPPING");
-                continue;
+            // Step D: Batch save and clear session cache
+            if (!toUpdate.isEmpty()) {
+                billingCustomerInfoRepository.saveAll(toUpdate);
+                totalUpdated += toUpdate.size();
             }
 
-            int avg = (int) Math.round(sum / (double) count);
-            // System.out.println("[AVG-INIT] Account=" + trimmedAcc + " -> sum=" + sum + "
-            // count=" + count + " avg=" + avg);
-            customer.setInitialConsumption(avg);
-            billingCustomerInfoRepository.save(customer);
-            updated++;
+            if (entityManager != null) {
+                entityManager.flush();
+                entityManager.clear();
+            }
         }
 
-        if (updated == 0) {
+        if (totalUpdated == 0) {
             return BulkUpdateResponseDTO.error("No customers were updated for the given criteria.");
         }
+
         return new BulkUpdateResponseDTO(
                 true,
-                updated,
-                "Initialized average consumption for " + updated + " customer(s).");
+                totalUpdated,
+                "Initialized average consumption for " + totalUpdated + " customer(s).");
     }
 
     @Transactional

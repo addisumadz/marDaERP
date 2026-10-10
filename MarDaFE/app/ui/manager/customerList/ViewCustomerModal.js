@@ -353,8 +353,24 @@ const ViewCustomerModal = ({
                   <DetailRow label="Max Monthly Cap" value={customer.maxReference} />
                   <DetailRow
                     label="Meter Replacement Status"
-                    value={customer.isInitializedSecondTime ? "Replaced (2nd Init)" : "Original Meter"}
+                    value={
+                      customer.lastMeterChangedDate || customer.isInitializedSecondTime
+                        ? `Replaced (${customer.lastMeterChangedDateEthiopianAmharic || customer.lastMeterChangedDateEthiopian || "2nd Init"})`
+                        : "Original Meter"
+                    }
                   />
+                  {customer.lastMeterChangedDate && (
+                    <>
+                      <DetailRow
+                        label="Last Meter Replacement Date (EC)"
+                        value={customer.lastMeterChangedDateEthiopianAmharic || customer.lastMeterChangedDateEthiopian || "—"}
+                      />
+                      <DetailRow
+                        label="Last Meter Replacement Date (GC)"
+                        value={new Date(customer.lastMeterChangedDate).toLocaleDateString()}
+                      />
+                    </>
+                  )}
 
                   <Typography variant="subtitle2" color="primary" sx={{ fontWeight: 700, mt: 2.5, mb: 1.5 }}>
                     Registration & Status Timeline

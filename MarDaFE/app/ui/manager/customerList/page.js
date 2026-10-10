@@ -197,6 +197,10 @@ const CustomerList = () => {
   const [filterRegistrationDateTo, setFilterRegistrationDateTo] = useState("");
   const [filterHasPrepaid, setFilterHasPrepaid] = useState("");
   const [filterMeterChanged, setFilterMeterChanged] = useState("");
+  const [selectedMeterStatus, setSelectedMeterStatus] = useState("");
+  const [selectedMeterSizeId, setSelectedMeterSizeId] = useState("");
+  const [filterMeterChangeDateFrom, setFilterMeterChangeDateFrom] = useState("");
+  const [filterMeterChangeDateTo, setFilterMeterChangeDateTo] = useState("");
   const [filterHasDryWaste, setFilterHasDryWaste] = useState("");
   const [filterHasAdditionalPayment, setFilterHasAdditionalPayment] = useState("");
 
@@ -256,16 +260,31 @@ const CustomerList = () => {
     return null;
   };
 
-  const parseFilterDate = (val) => {
+  const parseFilterDate = (val, isEndOfDay = false) => {
     if (!val) return null;
-    if (val instanceof Date) return val;
-    if (typeof val === "string") {
-      const d = new Date(val);
-      if (!isNaN(d.getTime())) return d;
-      try {
-        const parsed = EthiopianCalendarConverterPure.fromEthiopianInputValue(val);
-        if (parsed instanceof Date && !isNaN(parsed.getTime())) return parsed;
-      } catch (e) {}
+    let d = null;
+    if (val instanceof Date) {
+      d = new Date(val.getTime());
+    } else if (typeof val === "string") {
+      const parsedD = new Date(val);
+      if (!isNaN(parsedD.getTime())) {
+        d = parsedD;
+      } else {
+        try {
+          const parsed = EthiopianCalendarConverterPure.fromEthiopianInputValue(val);
+          if (parsed instanceof Date && !isNaN(parsed.getTime())) {
+            d = parsed;
+          }
+        } catch (e) {}
+      }
+    }
+    if (d) {
+      if (isEndOfDay) {
+        d.setHours(23, 59, 59, 999);
+      } else {
+        d.setHours(0, 0, 0, 0);
+      }
+      return d;
     }
     return null;
   };
@@ -282,6 +301,10 @@ const CustomerList = () => {
       filterRegistrationDateTo: setFilterRegistrationDateTo,
       filterHasPrepaid: setFilterHasPrepaid,
       filterMeterChanged: setFilterMeterChanged,
+      selectedMeterStatus: setSelectedMeterStatus,
+      selectedMeterSizeId: setSelectedMeterSizeId,
+      filterMeterChangeDateFrom: setFilterMeterChangeDateFrom,
+      filterMeterChangeDateTo: setFilterMeterChangeDateTo,
       filterHasDryWaste: setFilterHasDryWaste,
       filterHasAdditionalPayment: setFilterHasAdditionalPayment,
     };
@@ -301,6 +324,10 @@ const CustomerList = () => {
     setFilterRegistrationDateTo("");
     setFilterHasPrepaid("");
     setFilterMeterChanged("");
+    setSelectedMeterStatus("");
+    setSelectedMeterSizeId("");
+    setFilterMeterChangeDateFrom("");
+    setFilterMeterChangeDateTo("");
     setFilterHasDryWaste("");
     setFilterHasAdditionalPayment("");
     setAssignScope("");
@@ -526,8 +553,8 @@ const CustomerList = () => {
       result = result.filter((c) => c.oldHasPenalty === false);
     }
     if (filterRegistrationDateFrom || filterRegistrationDateTo) {
-      const fromDate = parseFilterDate(filterRegistrationDateFrom);
-      const toDate = parseFilterDate(filterRegistrationDateTo);
+      const fromDate = parseFilterDate(filterRegistrationDateFrom, false);
+      const toDate = parseFilterDate(filterRegistrationDateTo, true);
       if (fromDate || toDate) {
         result = result.filter((c) => {
           const regDate = c.registeredDate;
@@ -546,11 +573,56 @@ const CustomerList = () => {
     } else if (filterHasPrepaid === "false") {
       result = result.filter((c) => (c.customerBalanceBirr || c.prepaidBirrCurrentBalance) <= 0);
     }
-    if (filterMeterChanged === "true") {
-      result = result.filter((c) => c.isInitializedSecondTime === true);
-    } else if (filterMeterChanged === "false") {
-      result = result.filter((c) => c.isInitializedSecondTime === false);
+
+    const hasValidMeter = (meter) => {
+      if (!meter) return false;
+      const s = String(meter).trim();
+      return s !== "" && s !== "-" && s !== "null" && s !== "0";
+    };
+
+    const isCustomerMeterReplaced = (c) => {
+      return Boolean(c.lastMeterChangedDate) || c.isInitializedSecondTime === true;
+    };
+
+    const effectiveMeterStatus =
+      selectedMeterStatus ||
+      (filterMeterChanged === "true" ? "replaced" : filterMeterChanged === "false" ? "original" : "");
+
+    if (effectiveMeterStatus === "metered") {
+      result = result.filter((c) => hasValidMeter(c.meterNumber) || isCustomerMeterReplaced(c));
+    } else if (effectiveMeterStatus === "unmetered") {
+      result = result.filter((c) => !hasValidMeter(c.meterNumber) && !isCustomerMeterReplaced(c));
+    } else if (effectiveMeterStatus === "replaced") {
+      result = result.filter((c) => isCustomerMeterReplaced(c));
+    } else if (effectiveMeterStatus === "original") {
+      result = result.filter((c) => hasValidMeter(c.meterNumber) && !isCustomerMeterReplaced(c));
+    } else if (effectiveMeterStatus === "not_initialized") {
+      result = result.filter((c) => c.isInitialized === false || !c.isInitialized);
     }
+
+    if (selectedMeterSizeId) {
+      result = result.filter(
+        (c) => c.meterSizeId && String(c.meterSizeId) === String(selectedMeterSizeId)
+      );
+    }
+
+    if (filterMeterChangeDateFrom || filterMeterChangeDateTo) {
+      const fromDate = parseFilterDate(filterMeterChangeDateFrom, false);
+      const toDate = parseFilterDate(filterMeterChangeDateTo, true);
+      if (fromDate || toDate) {
+        result = result.filter((c) => {
+          const chDate = c.lastMeterChangedDate;
+          if (!chDate) return false;
+          const cDate =
+            typeof chDate === "string" ? new Date(chDate) : chDate instanceof Date ? chDate : null;
+          if (!cDate || isNaN(cDate.getTime())) return false;
+          if (fromDate && cDate < fromDate) return false;
+          if (toDate && cDate > toDate) return false;
+          return true;
+        });
+      }
+    }
+
     if (filterHasDryWaste === "true") {
       result = result.filter((c) => c.additionalMonthlyPayment > 0);
     } else if (filterHasDryWaste === "false") {
@@ -576,6 +648,10 @@ const CustomerList = () => {
     filterRegistrationDateTo,
     filterHasPrepaid,
     filterMeterChanged,
+    selectedMeterStatus,
+    selectedMeterSizeId,
+    filterMeterChangeDateFrom,
+    filterMeterChangeDateTo,
     filterHasDryWaste,
     filterHasAdditionalPayment,
   ]);
@@ -1076,23 +1152,42 @@ const CustomerList = () => {
         setSnackbar({ open: true, message: "No customer records to export.", severity: "warning" });
         return;
       }
-      const exportData = list.map((c, idx) => ({
-        "#": idx + 1,
-        "Account Number": c.accountNumber || "",
-        "Full Name": c.fullName || "",
-        "English Name": c.fullNameEng || "",
-        "Phone Number": c.phoneNumber || "",
-        Status: c.status || "",
-        "Meter Number": c.meterNumber || "",
-        "Initial Reading": c.initialReading || 0,
-        "Dry Waste Fee": c.additionalMonthlyPayment || 0,
-        "Prepaid Balance": c.customerBalanceBirr || c.prepaidBirrCurrentBalance || 0,
-        "Additional Fee Name": c.techemariFieldName || "",
-        "Additional Fee Amount": c.techemariKfya || 0,
-        "Has Old Penalty": c.oldHasPenalty ? "Yes" : "No",
-        "Old Arrears Total": c.oldKfyaAndPenaltyTotal || 0,
-        "Registered Date (EC)": c.registeredDateEthiopianAmharic || c.registeredDateEthiopian || "",
-      }));
+      const exportData = list.map((c, idx) => {
+        const hasMeter =
+          c.meterNumber &&
+          String(c.meterNumber).trim() !== "" &&
+          String(c.meterNumber).trim() !== "-" &&
+          String(c.meterNumber).trim() !== "0" &&
+          String(c.meterNumber).trim() !== "null";
+        const isReplaced = Boolean(c.lastMeterChangedDate) || c.isInitializedSecondTime === true;
+        const meterStatusStr = !hasMeter && !isReplaced ? "Unmetered" : isReplaced ? "Replaced" : "Original";
+        const meterSizeObj = (meterSizes || []).find((s) => String(s.id) === String(c.meterSizeId));
+        const meterSizeStr = meterSizeObj ? (meterSizeObj.sizeName || meterSizeObj.name || "") : "";
+
+        return {
+          "#": idx + 1,
+          "Account Number": c.accountNumber || "",
+          "Full Name": c.fullName || "",
+          "English Name": c.fullNameEng || "",
+          "Phone Number": c.phoneNumber || "",
+          Status: c.status || "",
+          "Meter Number": c.meterNumber || "",
+          "Meter Status": meterStatusStr,
+          "Meter Size": meterSizeStr,
+          "Last Meter Change Date (EC)":
+            c.lastMeterChangedDateEthiopianAmharic ||
+            c.lastMeterChangedDateEthiopian ||
+            (isReplaced ? "Replaced" : ""),
+          "Initial Reading": c.initialReading || 0,
+          "Dry Waste Fee": c.additionalMonthlyPayment || 0,
+          "Prepaid Balance": c.customerBalanceBirr || c.prepaidBirrCurrentBalance || 0,
+          "Additional Fee Name": c.techemariFieldName || "",
+          "Additional Fee Amount": c.techemariKfya || 0,
+          "Has Old Penalty": c.oldHasPenalty ? "Yes" : "No",
+          "Old Arrears Total": c.oldKfyaAndPenaltyTotal || 0,
+          "Registered Date (EC)": c.registeredDateEthiopianAmharic || c.registeredDateEthiopian || "",
+        };
+      });
       const ws = XLSX.utils.json_to_sheet(exportData);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Customers");
@@ -1104,7 +1199,7 @@ const CustomerList = () => {
         severity: "success",
       });
     },
-    [filteredCustomers, rowSelection, selectedCount, activeCustomerTab]
+    [filteredCustomers, rowSelection, selectedCount, activeCustomerTab, meterSizes]
   );
 
   // =====================================================================
@@ -1113,15 +1208,6 @@ const CustomerList = () => {
 
   const columns = useMemo(
     () => [
-      {
-        header: "#",
-        size: 30,
-        Cell: ({ row, table }) => {
-          const pageIndex = table.getState().pagination.pageIndex;
-          const pageSize = table.getState().pagination.pageSize;
-          return pageIndex * pageSize + row.index + 1;
-        },
-      },
       {
         accessorKey: "accountNumber",
         header: "Account Number",
@@ -1150,16 +1236,6 @@ const CustomerList = () => {
         ),
       },
       {
-        accessorKey: "fullNameEng",
-        header: "English Name",
-        filterFn: "contains",
-        Cell: ({ cell }) => (
-          <Typography variant="body2" color="text.secondary">
-            {cell.getValue() || "—"}
-          </Typography>
-        ),
-      },
-      {
         accessorKey: "phoneNumber",
         header: "Phone Number",
         filterFn: "contains",
@@ -1177,24 +1253,64 @@ const CustomerList = () => {
         accessorKey: "meterNumber",
         header: "Meter Number",
         filterFn: "contains",
-        Cell: ({ cell }) => (
-          <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-            <SpeedIcon fontSize="inherit" color="action" />
-            <span>{cell.getValue() || "—"}</span>
-          </Box>
-        ),
-      },
-      {
-        accessorKey: "customerBalanceBirr",
-        header: "Prepaid Deposit",
-        Cell: ({ row }) => {
-          const val = Number(
-            row.original.customerBalanceBirr || row.original.prepaidBirrCurrentBalance || 0
-          );
-          return val > 0 ? (
-            <Chip label={`${val.toLocaleString()} ETB`} size="small" color="success" variant="outlined" sx={{ fontWeight: 700 }} />
-          ) : (
-            "—"
+        Cell: ({ row, cell }) => {
+          const val = cell.getValue();
+          const hasMeter =
+            val &&
+            String(val).trim() !== "" &&
+            String(val).trim() !== "-" &&
+            String(val).trim() !== "0" &&
+            String(val).trim() !== "null";
+          const isReplaced =
+            Boolean(row.original.lastMeterChangedDate) ||
+            row.original.isInitializedSecondTime === true;
+          const changeDateStr =
+            row.original.lastMeterChangedDateEthiopianAmharic ||
+            row.original.lastMeterChangedDateEthiopian;
+
+          if (!hasMeter && !isReplaced) {
+            return (
+              <Chip
+                label="Unmetered"
+                size="small"
+                color="warning"
+                variant="outlined"
+                sx={{ fontWeight: 600, height: 22, fontSize: "0.75rem" }}
+              />
+            );
+          }
+
+          const displayMeterVal = hasMeter
+            ? val
+            : row.original.meterNumber && String(row.original.meterNumber).trim() !== "0"
+            ? row.original.meterNumber
+            : "Replaced Meter";
+
+          return (
+            <Box sx={{ display: "flex", flexDirection: "column", gap: 0.25 }}>
+              <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                <SpeedIcon fontSize="inherit" color="action" />
+                <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                  {displayMeterVal}
+                </Typography>
+                {isReplaced && (
+                  <Tooltip title={changeDateStr ? `Replaced: ${changeDateStr}` : "Meter Replaced"}>
+                    <Chip
+                      label="Replaced"
+                      size="small"
+                      color="info"
+                      variant="filled"
+                      sx={{ height: 18, fontSize: "0.65rem", fontWeight: 700 }}
+                    />
+                  </Tooltip>
+                )}
+              </Box>
+              {isReplaced && changeDateStr && (
+                <Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.7rem", pl: 2.5 }}>
+                  🔄 {changeDateStr}
+                </Typography>
+              )}
+            </Box>
           );
         },
       },
@@ -1206,22 +1322,6 @@ const CustomerList = () => {
             row.original.registeredDateEthiopianAmharic ||
             row.original.registeredDateEthiopian ||
             "—"
-          );
-        },
-      },
-      {
-        accessorKey: "status",
-        header: "Status",
-        Cell: ({ row }) => {
-          const isComplete = row.original.completeDeleted === "deleted";
-          const isActive = row.original.status === "active";
-          return (
-            <Chip
-              size="small"
-              label={isComplete ? "Complete Deleted" : isActive ? "Active" : "Terminated"}
-              color={isComplete ? "default" : isActive ? "success" : "error"}
-              sx={{ fontWeight: 700 }}
-            />
           );
         },
       },
@@ -1529,6 +1629,10 @@ const CustomerList = () => {
           filterRegistrationDateTo={filterRegistrationDateTo}
           filterHasPrepaid={filterHasPrepaid}
           filterMeterChanged={filterMeterChanged}
+          selectedMeterStatus={selectedMeterStatus}
+          selectedMeterSizeId={selectedMeterSizeId}
+          filterMeterChangeDateFrom={filterMeterChangeDateFrom}
+          filterMeterChangeDateTo={filterMeterChangeDateTo}
           filterHasDryWaste={filterHasDryWaste}
           filterHasAdditionalPayment={filterHasAdditionalPayment}
           assignScope={assignScope}
@@ -1557,6 +1661,7 @@ const CustomerList = () => {
           ketenas={ketenas}
           branches={branches}
           readers={readers}
+          meterSizes={meterSizes}
           isCustomerTypesLoading={isCustomerTypesLoading}
           isKebelesLoading={isKebelesLoading}
           isKetenasLoading={isKetenasLoading}

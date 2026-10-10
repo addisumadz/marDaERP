@@ -29,6 +29,9 @@ public class BillingCustomerInfoDTO implements Serializable {
     private Date meterLifeLimit;
     private boolean isInitialized;
     private boolean isInitializedSecondTime;
+    private Date lastMeterChangedDate;
+    private String lastMeterChangedDateEthiopian;
+    private String lastMeterChangedDateEthiopianAmharic;
     private double prepaidBirrCurrentBalance;
     private String terminationRemark;
     private String locationCoordination;
@@ -271,6 +274,40 @@ public class BillingCustomerInfoDTO implements Serializable {
         } else {
             this.canceledActivatedDateEthiopian = null;
             this.canceledActivatedDateEthiopianAmharic = null;
+        }
+    }
+
+    public Date getLastMeterChangedDate() { return lastMeterChangedDate; }
+    public void setLastMeterChangedDate(Date lastMeterChangedDate) {
+        this.lastMeterChangedDate = lastMeterChangedDate;
+        convertLastMeterChangedDateToEthiopian();
+    }
+
+    public String getLastMeterChangedDateEthiopian() { return lastMeterChangedDateEthiopian; }
+    public void setLastMeterChangedDateEthiopian(String lastMeterChangedDateEthiopian) {
+        this.lastMeterChangedDateEthiopian = lastMeterChangedDateEthiopian;
+    }
+
+    public String getLastMeterChangedDateEthiopianAmharic() { return lastMeterChangedDateEthiopianAmharic; }
+    public void setLastMeterChangedDateEthiopianAmharic(String lastMeterChangedDateEthiopianAmharic) {
+        this.lastMeterChangedDateEthiopianAmharic = lastMeterChangedDateEthiopianAmharic;
+    }
+
+    private void convertLastMeterChangedDateToEthiopian() {
+        if (lastMeterChangedDate != null) {
+            try {
+                LocalDate localDate = new java.sql.Date(lastMeterChangedDate.getTime()).toLocalDate();
+                EthiopianCalendarConverter.EthiopianDate ethDate = 
+                    EthiopianCalendarConverter.gregorianToEthiopian(localDate);
+                this.lastMeterChangedDateEthiopian = ethDate.format("dd/MM/yyyy");
+                this.lastMeterChangedDateEthiopianAmharic = ethDate.formatWithAmharicMonth();
+            } catch (Exception e) {
+                this.lastMeterChangedDateEthiopian = null;
+                this.lastMeterChangedDateEthiopianAmharic = null;
+            }
+        } else {
+            this.lastMeterChangedDateEthiopian = null;
+            this.lastMeterChangedDateEthiopianAmharic = null;
         }
     }
 }

@@ -31,6 +31,10 @@ const CustomerFilters = ({
   filterRegistrationDateTo,
   filterHasPrepaid,
   filterMeterChanged,
+  selectedMeterStatus,
+  selectedMeterSizeId,
+  filterMeterChangeDateFrom,
+  filterMeterChangeDateTo,
   filterHasDryWaste,
   filterHasAdditionalPayment,
   assignScope,
@@ -44,16 +48,27 @@ const CustomerFilters = ({
   ketenas = [],
   branches = [],
   readers = [],
+  meterSizes = [],
   // Loading states
   isCustomerTypesLoading,
   isKebelesLoading,
   isKetenasLoading,
   isBranchesLoading,
   isReadersLoading,
+  isMeterSizesLoading,
   // Helper
   formatEthiopianDateForPicker,
 }) => {
   const [advancedOpen, setAdvancedOpen] = useState(false);
+
+  const effectiveMeterStatus =
+    selectedMeterStatus !== undefined && selectedMeterStatus !== null && selectedMeterStatus !== ""
+      ? selectedMeterStatus
+      : filterMeterChanged === "true"
+      ? "replaced"
+      : filterMeterChanged === "false"
+      ? "original"
+      : "";
 
   // Compute active filters count
   const activeFiltersCount = [
@@ -66,7 +81,10 @@ const CustomerFilters = ({
     filterRegistrationDateFrom,
     filterRegistrationDateTo,
     filterHasPrepaid,
-    filterMeterChanged,
+    effectiveMeterStatus,
+    selectedMeterSizeId,
+    filterMeterChangeDateFrom,
+    filterMeterChangeDateTo,
     filterHasDryWaste,
     filterHasAdditionalPayment,
   ].filter(Boolean).length;
@@ -306,19 +324,41 @@ const CustomerFilters = ({
             </Select>
           </FormControl>
 
-          {/* Meter Changed Filter */}
-          <FormControl size="small" sx={{ minWidth: 150, flex: "1 1 140px" }}>
+          {/* Meter Status Filter */}
+          <FormControl size="small" sx={{ minWidth: 175, flex: "1 1 165px" }}>
             <InputLabel>Meter Status</InputLabel>
             <Select
-              value={filterMeterChanged}
+              value={effectiveMeterStatus}
               label="Meter Status"
-              onChange={(e) => onFilterChange("filterMeterChanged", e.target.value)}
+              onChange={(e) => onFilterChange("selectedMeterStatus", e.target.value)}
             >
               <MenuItem value="">
-                <em>All</em>
+                <em>All Meter Statuses</em>
               </MenuItem>
-              <MenuItem value="true">Meter Replaced/Changed</MenuItem>
-              <MenuItem value="false">Original Meter</MenuItem>
+              <MenuItem value="metered">Metered (Has Meter)</MenuItem>
+              <MenuItem value="unmetered">Unmetered (No Meter)</MenuItem>
+              <MenuItem value="replaced">Meter Replaced</MenuItem>
+              <MenuItem value="original">Original / Active Meter</MenuItem>
+              <MenuItem value="not_initialized">Pending Initialization</MenuItem>
+            </Select>
+          </FormControl>
+
+          {/* Meter Size / Caliber Filter */}
+          <FormControl size="small" sx={{ minWidth: 150, flex: "1 1 140px" }} disabled={isMeterSizesLoading}>
+            <InputLabel>Meter Size</InputLabel>
+            <Select
+              value={selectedMeterSizeId || ""}
+              label="Meter Size"
+              onChange={(e) => onFilterChange("selectedMeterSizeId", e.target.value)}
+            >
+              <MenuItem value="">
+                <em>All Sizes</em>
+              </MenuItem>
+              {meterSizes?.map((size) => (
+                <MenuItem key={size.id} value={size.id}>
+                  {size.sizeName || size.name || `Size ${size.id}`}
+                </MenuItem>
+              ))}
             </Select>
           </FormControl>
 
@@ -375,6 +415,28 @@ const CustomerFilters = ({
               placeholder="dd/MM/yyyy"
             />
           </Box>
+
+          {/* Ethiopian Meter Changed Date From */}
+          <Box sx={{ flex: "1 1 180px", minWidth: 180 }}>
+            <EtDatePicker
+              label="Meter Changed From (EC)"
+              value={formatEthiopianDateForPicker(filterMeterChangeDateFrom)}
+              onChange={(date) => onFilterChange("filterMeterChangeDateFrom", date || "")}
+              size="small"
+              placeholder="dd/MM/yyyy"
+            />
+          </Box>
+
+          {/* Ethiopian Meter Changed Date To */}
+          <Box sx={{ flex: "1 1 180px", minWidth: 180 }}>
+            <EtDatePicker
+              label="Meter Changed To (EC)"
+              value={formatEthiopianDateForPicker(filterMeterChangeDateTo)}
+              onChange={(date) => onFilterChange("filterMeterChangeDateTo", date || "")}
+              size="small"
+              placeholder="dd/MM/yyyy"
+            />
+          </Box>
         </Box>
 
         {/* Quick Filter Chips */}
@@ -402,12 +464,21 @@ const CustomerFilters = ({
           />
 
           <Chip
+            label="Unmetered"
+            size="small"
+            clickable
+            color={effectiveMeterStatus === "unmetered" ? "warning" : "default"}
+            variant={effectiveMeterStatus === "unmetered" ? "filled" : "outlined"}
+            onClick={() => onFilterChange("selectedMeterStatus", effectiveMeterStatus === "unmetered" ? "" : "unmetered")}
+          />
+
+          <Chip
             label="Meter Replaced"
             size="small"
             clickable
-            color={filterMeterChanged === "true" ? "info" : "default"}
-            variant={filterMeterChanged === "true" ? "filled" : "outlined"}
-            onClick={() => onFilterChange("filterMeterChanged", filterMeterChanged === "true" ? "" : "true")}
+            color={effectiveMeterStatus === "replaced" ? "info" : "default"}
+            variant={effectiveMeterStatus === "replaced" ? "filled" : "outlined"}
+            onClick={() => onFilterChange("selectedMeterStatus", effectiveMeterStatus === "replaced" ? "" : "replaced")}
           />
 
           <Chip

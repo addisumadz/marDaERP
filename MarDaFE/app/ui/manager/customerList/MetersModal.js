@@ -24,7 +24,7 @@ import {
   CircularProgress,
   Alert,
 } from "@mui/material";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { MaterialReactTable, useMaterialReactTable } from "material-react-table";
 import EditIcon from "@mui/icons-material/Edit";
 import DeleteIcon from "@mui/icons-material/Delete";
@@ -37,11 +37,13 @@ import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 import { CustomerService } from "../../../lib/customerService";
 import { DropdownService } from "../../../lib/dropdownService";
 import ConfirmDialog from "@/app/ui/components/ConfirmDialog";
+import EthiopianCalendarConverterPure from "../../../lib/ethiopianCalendarConverterPure";
 
 const customerService = new CustomerService();
 const dropdownService = new DropdownService();
 
 const MetersModal = ({ open, onClose, customerId, allCustomers = [], meterSizes = [] }) => {
+  const queryClient = useQueryClient();
   const [editingMeter, setEditingMeter] = useState(null);
   const [meterToDelete, setMeterToDelete] = useState(null);
 
@@ -82,19 +84,27 @@ const MetersModal = ({ open, onClose, customerId, allCustomers = [], meterSizes 
     staleTime: Infinity,
   });
 
+  const invalidateCustomerQueries = () => {
+    refetch();
+    queryClient.invalidateQueries({ queryKey: ["customers-all"] });
+    if (customerId) {
+      queryClient.invalidateQueries({ queryKey: ["customer-details", customerId] });
+    }
+  };
+
   const { mutateAsync: createMeter, isLoading: isCreating } = useMutation({
     mutationFn: ({ customerId, data }) => customerService.createMeter(customerId, data),
-    onSuccess: () => refetch(),
+    onSuccess: invalidateCustomerQueries,
   });
 
   const { mutateAsync: updateMeter, isLoading: isUpdating } = useMutation({
     mutationFn: ({ meterId, data }) => customerService.updateMeter(meterId, data),
-    onSuccess: () => refetch(),
+    onSuccess: invalidateCustomerQueries,
   });
 
   const { mutateAsync: deleteMeter, isLoading: isDeleting } = useMutation({
     mutationFn: (meterId) => customerService.deleteMeter(meterId),
-    onSuccess: () => refetch(),
+    onSuccess: invalidateCustomerQueries,
   });
 
   useEffect(() => {
@@ -191,6 +201,30 @@ const MetersModal = ({ open, onClose, customerId, allCustomers = [], meterSizes 
         accessorKey: "maxReference",
         header: "Max Threshold",
         Cell: ({ cell }) => Number(cell.getValue() || 0).toLocaleString(),
+      },
+      {
+        accessorKey: "registeredDate",
+        header: "Reg. Date (EC)",
+        Cell: ({ row }) => {
+          const direct =
+            row.original.registeredDateEthiopianAmharic ||
+            row.original.registeredDateEthiopian;
+          if (direct) return direct;
+
+          if (row.original.registeredDate) {
+            try {
+              const ethDate = EthiopianCalendarConverterPure.gregorianToEthiopian(
+                row.original.registeredDate
+              );
+              return ethDate
+                ? ethDate.formatWithAmharicMonth() || ethDate.format("dd/MM/yyyy")
+                : "—";
+            } catch (e) {
+              return "—";
+            }
+          }
+          return "—";
+        },
       },
     ],
     [meterSizes]

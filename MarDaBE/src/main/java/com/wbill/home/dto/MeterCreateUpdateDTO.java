@@ -17,6 +17,8 @@ public class MeterCreateUpdateDTO {
  private Integer initialReading;
  private Integer maxReference;
  private Date registeredDate;
+ private String registeredDateEthiopian;
+ private String registeredDateEthiopianAmharic;
  private String deleted;
  private UserAccount userAccount;
 
@@ -112,6 +114,35 @@ public Date getRegisteredDate() {
 }
 public void setRegisteredDate(Date registeredDate) {
 	this.registeredDate = registeredDate;
+	if (registeredDate != null) {
+		try {
+			java.time.LocalDate localDate = new java.sql.Date(registeredDate.getTime()).toLocalDate();
+			com.wbill.home.util.EthiopianCalendarConverter.EthiopianDate ethDate = 
+				com.wbill.home.util.EthiopianCalendarConverter.gregorianToEthiopian(localDate);
+			this.registeredDateEthiopian = ethDate.format("dd/MM/yyyy");
+			this.registeredDateEthiopianAmharic = ethDate.formatWithAmharicMonth();
+		} catch (Exception e) {
+			this.registeredDateEthiopian = null;
+			this.registeredDateEthiopianAmharic = null;
+		}
+	} else {
+		this.registeredDateEthiopian = null;
+		this.registeredDateEthiopianAmharic = null;
+	}
+}
+
+public String getRegisteredDateEthiopian() {
+	return registeredDateEthiopian;
+}
+public void setRegisteredDateEthiopian(String registeredDateEthiopian) {
+	this.registeredDateEthiopian = registeredDateEthiopian;
+}
+
+public String getRegisteredDateEthiopianAmharic() {
+	return registeredDateEthiopianAmharic;
+}
+public void setRegisteredDateEthiopianAmharic(String registeredDateEthiopianAmharic) {
+	this.registeredDateEthiopianAmharic = registeredDateEthiopianAmharic;
 }
 
  // getters/setters

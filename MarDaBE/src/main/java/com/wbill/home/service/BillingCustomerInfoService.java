@@ -25,6 +25,7 @@ import java.io.InputStream;
 import java.util.Date;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -126,8 +127,39 @@ public class BillingCustomerInfoService {
             customers = billingCustomerInfoRepository.findAllByOrderByIdAsc();
         }
 
+        List<BillingCustomerInfoMeter> replacementMeters = billingCustomerInfoMeterRepository.findActiveReplacementMeters();
+        Map<Integer, BillingCustomerInfoMeter> replacementMeterMap = replacementMeters.stream()
+                .filter(m -> m.getBillingCustomerInfo() != null)
+                .collect(Collectors.toMap(
+                        m -> m.getBillingCustomerInfo().getId(),
+                        m -> m,
+                        (existing, replacement) -> {
+                            if (existing.getRegisteredDate() == null) return replacement;
+                            if (replacement.getRegisteredDate() == null) return existing;
+                            return replacement.getRegisteredDate().after(existing.getRegisteredDate()) ? replacement : existing;
+                        }
+                ));
+
         return customers.stream()
-                .map(CustomerMapper::toDto)
+                .map(customer -> {
+                    BillingCustomerInfoDTO dto = CustomerMapper.toDto(customer);
+                    if (replacementMeterMap.containsKey(customer.getId())) {
+                        BillingCustomerInfoMeter replMeter = replacementMeterMap.get(customer.getId());
+                        if (replMeter.getRegisteredDate() != null) {
+                            dto.setLastMeterChangedDate(replMeter.getRegisteredDate());
+                        }
+                        String curMeter = dto.getMeterNumber();
+                        if (curMeter == null || curMeter.trim().isEmpty() || "0".equals(curMeter.trim()) || "-".equals(curMeter.trim())) {
+                            if (replMeter.getMeterNumber() != null && !replMeter.getMeterNumber().trim().isEmpty()) {
+                                dto.setMeterNumber(replMeter.getMeterNumber());
+                            }
+                        }
+                        if (dto.getMeterSizeId() == null && replMeter.getBillingMeterSize() != null) {
+                            dto.setMeterSizeId(replMeter.getBillingMeterSize().getId());
+                        }
+                    }
+                    return dto;
+                })
                 .collect(Collectors.toList());
     }
 
@@ -536,10 +568,24 @@ public class BillingCustomerInfoService {
     }
 
     public Optional<BillingCustomerInfoDTO> findById(Integer id) {
-        // 1. Fetch the entity from the repository
-        // 2. Map the entity to a DTO using our mapper
         return billingCustomerInfoRepository.findById(id)
-                .map(CustomerMapper::toDto);
+                .map(customer -> {
+                    BillingCustomerInfoDTO dto = CustomerMapper.toDto(customer);
+                    billingCustomerInfoMeterRepository.findActiveReplacementMeterByCustomerId(customer.getId())
+                            .ifPresent(m -> {
+                                dto.setLastMeterChangedDate(m.getRegisteredDate());
+                                String curMeter = dto.getMeterNumber();
+                                if (curMeter == null || curMeter.trim().isEmpty() || "0".equals(curMeter.trim()) || "-".equals(curMeter.trim())) {
+                                    if (m.getMeterNumber() != null && !m.getMeterNumber().trim().isEmpty()) {
+                                        dto.setMeterNumber(m.getMeterNumber());
+                                    }
+                                }
+                                if (dto.getMeterSizeId() == null && m.getBillingMeterSize() != null) {
+                                    dto.setMeterSizeId(m.getBillingMeterSize().getId());
+                                }
+                            });
+                    return dto;
+                });
     }
 
     /**
@@ -549,7 +595,23 @@ public class BillingCustomerInfoService {
         if (accountNumber == null || accountNumber.trim().isEmpty())
             return Optional.empty();
         return billingCustomerInfoRepository.findByAccountNumber(accountNumber.trim())
-                .map(CustomerMapper::toDto);
+                .map(customer -> {
+                    BillingCustomerInfoDTO dto = CustomerMapper.toDto(customer);
+                    billingCustomerInfoMeterRepository.findActiveReplacementMeterByCustomerId(customer.getId())
+                            .ifPresent(m -> {
+                                dto.setLastMeterChangedDate(m.getRegisteredDate());
+                                String curMeter = dto.getMeterNumber();
+                                if (curMeter == null || curMeter.trim().isEmpty() || "0".equals(curMeter.trim()) || "-".equals(curMeter.trim())) {
+                                    if (m.getMeterNumber() != null && !m.getMeterNumber().trim().isEmpty()) {
+                                        dto.setMeterNumber(m.getMeterNumber());
+                                    }
+                                }
+                                if (dto.getMeterSizeId() == null && m.getBillingMeterSize() != null) {
+                                    dto.setMeterSizeId(m.getBillingMeterSize().getId());
+                                }
+                            });
+                    return dto;
+                });
     }
 
     // Change the return type here
@@ -717,10 +779,20 @@ public class BillingCustomerInfoService {
         BillingCustomerInfoMeter savedMeter = billingCustomerInfoMeterRepository.save(newMeter);
 
         // ✅ If the newly created meter is active, deactivate all others for this
-        // customer.
+        // customer and sync customer profile.
         if (savedMeter.isActiveMeter()) {
             deactivateOtherMeters(customerId, savedMeter.getId());
             customer.setIsInitializedSecondTime(true);
+            customer.setMeterNumber(savedMeter.getMeterNumber());
+            customer.setInitialReading(savedMeter.getInitialReading());
+            customer.setMaxReference(savedMeter.getMaxReference());
+            if (savedMeter.getBillingMeterSize() != null) {
+                customer.setBillingMeterSize(savedMeter.getBillingMeterSize());
+            }
+            if (savedMeter.getBillingMeterType() != null) {
+                customer.setBillingMeterType(savedMeter.getBillingMeterType());
+            }
+            billingCustomerInfoRepository.save(customer);
         }
 
         return toDTO(savedMeter);
@@ -728,7 +800,7 @@ public class BillingCustomerInfoService {
 
     /**
      * Updates an existing meter. If its status is changed to active,
-     * it deactivates all other meters for that same customer.
+     * it deactivates all other meters for that same customer and syncs customer profile.
      */
     public MeterCreateUpdateDTO updateMeter(Integer meterId, MeterCreateUpdateDTO dto) {
         BillingCustomerInfoMeter existingMeter = billingCustomerInfoMeterRepository.findById(meterId)
@@ -739,12 +811,27 @@ public class BillingCustomerInfoService {
 
         applyDtoToEntity(dto, existingMeter);
 
-        // ✅ If the meter is being updated to be active, deactivate all others.
-        if (existingMeter.isActiveMeter()) {
-            deactivateOtherMeters(customerId, existingMeter.getId());
+        BillingCustomerInfoMeter updatedMeter = billingCustomerInfoMeterRepository.save(existingMeter);
+
+        // ✅ If the meter is active, deactivate all others and sync customer profile.
+        if (updatedMeter.isActiveMeter()) {
+            deactivateOtherMeters(customerId, updatedMeter.getId());
+            BillingCustomerInfo customer = existingMeter.getBillingCustomerInfo();
+            if (customer != null) {
+                customer.setIsInitializedSecondTime(true);
+                customer.setMeterNumber(updatedMeter.getMeterNumber());
+                customer.setInitialReading(updatedMeter.getInitialReading());
+                customer.setMaxReference(updatedMeter.getMaxReference());
+                if (updatedMeter.getBillingMeterSize() != null) {
+                    customer.setBillingMeterSize(updatedMeter.getBillingMeterSize());
+                }
+                if (updatedMeter.getBillingMeterType() != null) {
+                    customer.setBillingMeterType(updatedMeter.getBillingMeterType());
+                }
+                billingCustomerInfoRepository.save(customer);
+            }
         }
 
-        BillingCustomerInfoMeter updatedMeter = billingCustomerInfoMeterRepository.save(existingMeter);
         return toDTO(updatedMeter);
     }
 

@@ -40,4 +40,15 @@ public interface BillingCustomerInfoMeterRepository extends JpaRepository<Billin
     // Find active meters for a customer
     List<BillingCustomerInfoMeter> findByBillingCustomerInfoAndActiveMeterTrue(BillingCustomerInfo customer);
 
+    // Finds active replacement meters (where customer has a deactivated meter OR is marked with isInitializedSecondTime)
+    @Query("SELECT m FROM BillingCustomerInfoMeter m WHERE m.activeMeter = true AND (" +
+           "m.billingCustomerInfo.isInitializedSecondTime = true OR " +
+           "m.billingCustomerInfo.id IN (SELECT m2.billingCustomerInfo.id FROM BillingCustomerInfoMeter m2 WHERE m2.activeMeter = false))")
+    List<BillingCustomerInfoMeter> findActiveReplacementMeters();
+
+    // Finds the active replacement meter for a single customer (if they had a previous meter OR is marked with isInitializedSecondTime)
+    @Query("SELECT m FROM BillingCustomerInfoMeter m WHERE m.billingCustomerInfo.id = :customerId AND m.activeMeter = true AND (" +
+           "m.billingCustomerInfo.isInitializedSecondTime = true OR EXISTS " +
+           "(SELECT m2 FROM BillingCustomerInfoMeter m2 WHERE m2.billingCustomerInfo.id = :customerId AND m2.activeMeter = false))")
+    Optional<BillingCustomerInfoMeter> findActiveReplacementMeterByCustomerId(@Param("customerId") Integer customerId);
 }

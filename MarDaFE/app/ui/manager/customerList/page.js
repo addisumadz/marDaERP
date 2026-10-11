@@ -371,6 +371,12 @@ const CustomerList = () => {
     enabled: !!selectedKebeleId,
   });
 
+  const { data: allKetenas = [] } = useQuery({
+    queryKey: ["allKetenas"],
+    queryFn: () => dropdownService.getAllKetenas(),
+    staleTime: 10 * 60 * 1000,
+  });
+
   const { data: readers = [], isLoading: isReadersLoading } = useQuery({
     queryKey: ["readers", selectedBranchId || bulkBranchId],
     queryFn: () => {
@@ -1153,14 +1159,15 @@ const CustomerList = () => {
         return;
       }
       const exportData = list.map((c, idx) => {
-        const hasMeter =
-          c.meterNumber &&
-          String(c.meterNumber).trim() !== "" &&
-          String(c.meterNumber).trim() !== "-" &&
-          String(c.meterNumber).trim() !== "0" &&
-          String(c.meterNumber).trim() !== "null";
-        const isReplaced = Boolean(c.lastMeterChangedDate) || c.isInitializedSecondTime === true;
-        const meterStatusStr = !hasMeter && !isReplaced ? "Unmetered" : isReplaced ? "Replaced" : "Original";
+        const kebeleObj = (kebeles || []).find((k) => String(k.id) === String(c.addressStreetsId));
+        const kebeleStr = c.kebeleName || c.addressStreet?.name || kebeleObj?.name || "";
+
+        const ketenaObj = (allKetenas || []).find((k) => String(k.id) === String(c.addressKetenaId));
+        const ketenaStr = c.ketenaName || c.addressKetena?.name || ketenaObj?.name || "";
+
+        const customerTypeObj = (customerTypes || []).find((t) => String(t.id) === String(c.customerTypeId));
+        const customerTypeStr = c.customerTypeName || c.customerType?.name || customerTypeObj?.name || "";
+
         const meterSizeObj = (meterSizes || []).find((s) => String(s.id) === String(c.meterSizeId));
         const meterSizeStr = meterSizeObj ? (meterSizeObj.sizeName || meterSizeObj.name || "") : "";
 
@@ -1170,14 +1177,11 @@ const CustomerList = () => {
           "Full Name": c.fullName || "",
           "English Name": c.fullNameEng || "",
           "Phone Number": c.phoneNumber || "",
-          Status: c.status || "",
+          "Customer Type": customerTypeStr,
+          "Kebele": kebeleStr,
+          "Ketena": ketenaStr,
           "Meter Number": c.meterNumber || "",
-          "Meter Status": meterStatusStr,
           "Meter Size": meterSizeStr,
-          "Last Meter Change Date (EC)":
-            c.lastMeterChangedDateEthiopianAmharic ||
-            c.lastMeterChangedDateEthiopian ||
-            (isReplaced ? "Replaced" : ""),
           "Initial Reading": c.initialReading || 0,
           "Dry Waste Fee": c.additionalMonthlyPayment || 0,
           "Prepaid Balance": c.customerBalanceBirr || c.prepaidBirrCurrentBalance || 0,
@@ -1186,6 +1190,7 @@ const CustomerList = () => {
           "Has Old Penalty": c.oldHasPenalty ? "Yes" : "No",
           "Old Arrears Total": c.oldKfyaAndPenaltyTotal || 0,
           "Registered Date (EC)": c.registeredDateEthiopianAmharic || c.registeredDateEthiopian || "",
+          Status: c.status || "",
         };
       });
       const ws = XLSX.utils.json_to_sheet(exportData);
@@ -1199,7 +1204,7 @@ const CustomerList = () => {
         severity: "success",
       });
     },
-    [filteredCustomers, rowSelection, selectedCount, activeCustomerTab, meterSizes]
+    [filteredCustomers, rowSelection, selectedCount, activeCustomerTab, meterSizes, kebeles, allKetenas, customerTypes]
   );
 
   // =====================================================================

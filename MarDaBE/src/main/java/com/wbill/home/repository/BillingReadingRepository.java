@@ -403,15 +403,14 @@ public interface BillingReadingRepository extends JpaRepository<BillingReading, 
         List<Object[]> getBankPaidStats(@Param("kifyaWer") String kifyaWer);
 
         // 4. Duplicate Payment Check Counts
-        // Returns list of IDs where more than one payment flag is true (simplified
-        // check)
+        // Returns stats of bills paid through more than one external payment channel
         @Query("SELECT COUNT(b), SUM(b.tekilalaYetekefele), SUM(b.additionalHisab), SUM(b.wuzifDerekKoshasha), SUM(b.tekilalaTekefay) "
                         +
                         "FROM BillingReading b " +
                         "WHERE b.kifyaWer = :kifyaWer AND b.isVoid = false AND " +
-                        "((CASE WHEN b.kecreditYetekefele > 0 THEN 1 ELSE 0 END) + " +
-                        "(CASE WHEN b.isPaidOnFrontOffice = true THEN 1 ELSE 0 END) + " +
-                        "(CASE WHEN (b.isDerashPaid = true OR b.isUnicashPaid = true) THEN 1 ELSE 0 END)) > 1")
+                        "((CASE WHEN b.isPaidOnFrontOffice = true THEN 1 ELSE 0 END) + " +
+                        "(CASE WHEN b.isDerashPaid = true THEN 1 ELSE 0 END) + " +
+                        "(CASE WHEN b.isUnicashPaid = true THEN 1 ELSE 0 END)) > 1")
         List<Object[]> getDuplicatePaymentStats(@Param("kifyaWer") String kifyaWer);
 
         // ── Yearly Consumption Summary (grouped by kifyaWer) ──

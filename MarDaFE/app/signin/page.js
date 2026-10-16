@@ -33,7 +33,7 @@ export default function SignInPage() {
     if (roles.includes("ROLE_ADMIN") || roles.includes("admin")) {
       router.push("/ui/admin");
     } else if (normalized.length === 1 && normalized.includes("cashier")) {
-      router.push("/ui/cashier/cashier");
+      router.push("/ui/manager/cashier");
     } else if (roles.length > 0 || permittedPages.length > 0) {
       router.push("/ui/manager");
     } else {

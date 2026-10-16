@@ -33,7 +33,7 @@ export default function Home() {
         // Cashier-only → cashier page (but not if they also have manager roles)
         const cashierOnly = normalized.length === 1 && normalized.includes("cashier");
         if (cashierOnly || roles.includes("ROLE_CASHIER")) {
-            router.push("/ui/cashier/cashier");
+            router.push("/ui/manager/cashier");
             return;
         }
 

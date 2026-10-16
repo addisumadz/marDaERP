@@ -73,13 +73,6 @@ export const menuGroups = [
                 roles: ["billzgjt", "Cashier", "mobileanbabi", "M_BRANCH_STORE", "M_GEBI_OFFICER", "M_TECHNICAL_MANAGER", "M_FINANCE_HEAD", "M_PURCHASING_OFFICER", "M_BRANCH_MANAGER"],
             },
             {
-                title: "የቢል ክፍያ (Cashier)",
-                path: "/ui/manager/cashier",
-                icon: CreditCard,
-                roles: ["Cashier"],
-                excludeRoles: ["billzgjt", "systemadmin", "FNC", "mobileanbabi"],
-            },
-            {
                 title: "የደንበኛ ዝርዝር",
                 path: "/ui/manager/customerList",
                 icon: Users,
@@ -170,7 +163,7 @@ export const menuGroups = [
                 title: "Bill Preparation",
                 path: "#", // Group header
                 icon: FileText,
-                roles: ["billzgjt"],
+                roles: ["billzgjt", "Cashier", "CASHIER", "systemadmin"],
                 children: [
                     {
                         title: "ንባብ እና ደረሰኝ ዝግጅት",
@@ -191,6 +184,13 @@ export const menuGroups = [
                         title: "ቢል ማኔጅመንት",
                         path: "/ui/manager/billsupport",
                         icon: LifeBuoy,
+                    },
+                    {
+                        title: "የቢል ክፍያ (Cashier)",
+                        path: "/ui/manager/cashier",
+                        icon: CreditCard,
+                        roles: ["Cashier", "CASHIER", "billzgjt", "systemadmin"],
+                        excludeRoles: ["FNC", "mobileanbabi"],
                     },
                     {
                         title: "የቢል SMS መላኪያ",

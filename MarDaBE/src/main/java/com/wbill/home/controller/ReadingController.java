@@ -2147,7 +2147,7 @@ public class ReadingController {
      * Accept a cashier/front-office payment for a bill
      */
     @PutMapping("/{id}/cashier-payment")
-    @PreAuthorize("hasAuthority('Cashier') or hasAuthority('billzgjt')")
+    @PreAuthorize("@cashierSecurityHelper.canRecordPayment()")
     public ResponseEntity<?> updateCashierPayment(
             @PathVariable Integer id,
             @RequestBody CashierPaymentUpdateDTO updateDTO) {

@@ -2,9 +2,11 @@ package com.wbill.home.service;
 
 import com.wbill.home.dto.CashierPaymentUpdateDTO;
 import com.wbill.home.model.BillingReading;
+import com.wbill.home.model.CompanyProfile;
 import com.wbill.home.model.UserAccount;
 import com.wbill.home.repository.BillingReadingRepository;
 import com.wbill.home.repository.UserAccountRepository;
+import com.wbill.home.util.EthiopianCalendarConverter;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,13 +19,16 @@ public class FrontOfficePaymentService {
     private final BillingReadingRepository readingRepository;
     private final UserAccountRepository userRepo;
     private final BankPaymentImportService bankPaymentImportService;
+    private final CompanyProfileService companyProfileService;
 
     public FrontOfficePaymentService(BillingReadingRepository readingRepository,
                                      UserAccountRepository userRepo,
-                                     BankPaymentImportService bankPaymentImportService) {
+                                     BankPaymentImportService bankPaymentImportService,
+                                     CompanyProfileService companyProfileService) {
         this.readingRepository = readingRepository;
         this.userRepo = userRepo;
         this.bankPaymentImportService = bankPaymentImportService;
+        this.companyProfileService = companyProfileService;
     }
 
     @Transactional
@@ -40,6 +45,32 @@ public class FrontOfficePaymentService {
         }
         if (reading.isPaidOnFrontOffice() || reading.isDerashPaid() || reading.isPaidThroughBank() || reading.isUnicashPaid()) {
             throw new IllegalStateException("Record with ID " + id + " is already paid");
+        }
+
+        // Validate payment is allowed ONLY for the active billing month
+        if (companyProfileService != null) {
+            try {
+                CompanyProfile profile = companyProfileService.getLatestProfile();
+                if (profile != null && profile.getActiveBillingMonth() != null) {
+                    EthiopianCalendarConverter.EthiopianDate ethDate =
+                            EthiopianCalendarConverter.gregorianToEthiopian(profile.getActiveBillingMonth());
+                    String monthName = EthiopianCalendarConverter.getEthiopianMonthNameAmharic(ethDate.getMonth());
+                    String activeKifyaWer = monthName + ", " + ethDate.getYear();
+
+                    String billKifyaWer = reading.getKifyaWer();
+                    if (billKifyaWer != null && !billKifyaWer.trim().isEmpty()) {
+                        String normActive = activeKifyaWer.trim().replaceAll("\\s*,\\s*", ", ");
+                        String normBill = billKifyaWer.trim().replaceAll("\\s*,\\s*", ", ");
+                        if (!normActive.equalsIgnoreCase(normBill)) {
+                            throw new IllegalStateException("ክፍያ የሚፈቀደው ለአሁኑ ንቁ ወር ብቻ ነው (" + activeKifyaWer + ")። የዚህ ቢል ክፍያ ወር " + billKifyaWer + " ነው።");
+                        }
+                    }
+                }
+            } catch (IllegalStateException e) {
+                throw e;
+            } catch (Exception ex) {
+                // Ignore unexpected calendar conversion error so legitimate payment isn't blocked if profile is malformed
+            }
         }
 
         Double amount = dto.getAmount();
@@ -61,10 +92,20 @@ public class FrontOfficePaymentService {
             reading.setRemark((r != null && !r.isEmpty() ? (r + "\n") : "") + dto.getRemark().trim());
         }
 
-        // Link cashier user if provided
+        // Link cashier user if provided, or fallback to authenticated principal
         if (dto.getCashierUserId() != null) {
             Optional<UserAccount> u = userRepo.findById(dto.getCashierUserId());
             u.ifPresent(reading::setCashierUser);
+        } else {
+            try {
+                org.springframework.security.core.Authentication auth =
+                        org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+                if (auth != null && auth.isAuthenticated() && !"anonymousUser".equalsIgnoreCase(auth.getName())) {
+                    userRepo.findByUserNameAndStatusAndDeleted(auth.getName(), "active", "active")
+                            .ifPresent(reading::setCashierUser);
+                }
+            } catch (Exception ignored) {
+            }
         }
 
         BillingReading saved = readingRepository.save(reading);

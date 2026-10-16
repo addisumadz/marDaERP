@@ -55,8 +55,10 @@ public interface UserAccountRepository extends JpaRepository<UserAccount, Intege
     @Query("SELECT u FROM UserAccount u WHERE u.branch.id = :branchId AND u.status = 'active' AND u.deleted = 'active' AND LOWER(u.userRole.roleCode) = 'mobileanbabi'")
     List<UserAccount> findActiveMeterReadersByBranch(@Param("branchId") Integer branchId);
 
-    // Active cashier users by role_id = 49
-    @Query("SELECT u FROM UserAccount u WHERE u.userRole.id = 49 AND u.status = 'active' AND u.deleted = 'active'")
+    // Active cashier users by role_id = 49, roleCode = 'cashier' / 'role_cashier', or active role assignment
+    @Query("SELECT DISTINCT u FROM UserAccount u WHERE u.status = 'active' AND u.deleted = 'active' AND " +
+           "(u.userRole.id = 49 OR LOWER(u.userRole.roleCode) = 'cashier' OR LOWER(u.userRole.roleCode) = 'role_cashier' " +
+           "OR u.id IN (SELECT uar.userAccount.id FROM UserAccountRole uar WHERE uar.isActive = true AND (LOWER(uar.userRole.roleCode) = 'cashier' OR LOWER(uar.userRole.roleCode) = 'role_cashier')))")
     List<UserAccount> findActiveCashierUsers();
 
     // Employee linkage queries

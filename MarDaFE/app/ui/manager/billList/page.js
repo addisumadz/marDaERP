@@ -38,6 +38,8 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
+  ToggleButton,
+  ToggleButtonGroup,
 } from "@mui/material";
 
 import VisibilityIcon from "@mui/icons-material/Visibility";
@@ -220,6 +222,8 @@ const BillList = () => {
   const [filterPaidOnFrontOffice, setFilterPaidOnFrontOffice] = useState(false);
   const [filterUnicashPaid, setFilterUnicashPaid] = useState(false);
   const [filterPrepaid, setFilterPrepaid] = useState(false);
+  const [paymentFilterMatchMode, setPaymentFilterMatchMode] = useState("any"); // "any" (OR) | "all" (AND)
+  const [selectedBankFilter, setSelectedBankFilter] = useState("");
   const [filterMoneyCollected, setFilterMoneyCollected] = useState("all");
   const [filterSmsSent, setFilterSmsSent] = useState("all");
   const [wuzifMonthsOp, setWuzifMonthsOp] = useState("eq");
@@ -587,6 +591,33 @@ const BillList = () => {
     return "Unknown Bank";
   };
 
+  const resolveBankName = (rawKey) => {
+    if (rawKey === null || rawKey === undefined || rawKey === "") return null;
+    const resolved = getBankName(rawKey) || lookupBankName(rawKey);
+    return resolved && resolved !== "Unknown Bank" ? resolved : String(rawKey);
+  };
+
+  const getBillBankNames = (bill) => {
+    if (!bill) return [];
+    const matchedBanks = [];
+    if (bill.derashPaid) {
+      const rawKey = bill.bankPaidAgentId ?? bill.bankName ?? null;
+      const name = resolveBankName(rawKey);
+      if (name && !matchedBanks.includes(name)) matchedBanks.push(name);
+    }
+    if (bill.unicashPaid) {
+      const rawKey = bill.uBankPaidAgentId ?? bill.bankName ?? null;
+      const name = resolveBankName(rawKey);
+      if (name && !matchedBanks.includes(name)) matchedBanks.push(name);
+    }
+    if (!bill.derashPaid && !bill.unicashPaid && bill.isPaidThroughBank) {
+      const rawKey = bill.bankName ?? bill.uBankName ?? null;
+      const name = resolveBankName(rawKey);
+      if (name && !matchedBanks.includes(name)) matchedBanks.push(name);
+    }
+    return matchedBanks;
+  };
+
   const {
     data: readings = [],
     isLoading,
@@ -648,6 +679,67 @@ const BillList = () => {
       toast.error("Failed to load bills: " + error.message);
     },
   });
+
+  // Available bank options for the Paid at Bank dropdown
+  const availableBankOptions = useMemo(() => {
+    const bankSet = new Set();
+    const extractList = (src) => {
+      if (Array.isArray(src)) return src;
+      if (Array.isArray(src?.data)) return src.data;
+      return [];
+    };
+    const bankSources = [
+      ...extractList(allBillingBanks),
+      ...extractList(banks),
+    ];
+    bankSources.forEach((b) => {
+      const name = b?.bankName?.trim();
+      if (name) bankSet.add(name);
+    });
+    if (Array.isArray(readings)) {
+      readings.forEach((bill) => {
+        if (!bill.isVoid) {
+          const billBanks = getBillBankNames(bill);
+          billBanks.forEach((name) => {
+            if (name && name !== "Unknown Bank") bankSet.add(name.trim());
+          });
+        }
+      });
+    }
+    return Array.from(bankSet).sort((a, b) => a.localeCompare(b));
+  }, [allBillingBanks, banks, readings]);
+
+  // Available cashier options for the Paid to Cashier dropdown
+  const availableCashierOptions = useMemo(() => {
+    const cashierMap = new Map();
+
+    // 1. Registered active cashiers from backend (role_id = 49)
+    if (Array.isArray(cashiers)) {
+      cashiers.forEach((c) => {
+        if (c?.id !== undefined && c?.id !== null) {
+          cashierMap.set(String(c.id), c.name || `Cashier ${c.id}`);
+        }
+      });
+    }
+
+    // 2. Any cashiers present on loaded bills
+    if (Array.isArray(readings)) {
+      readings.forEach((bill) => {
+        const cId =
+          bill?.cashierUserId ??
+          bill?.cashierUser?.id ??
+          (typeof bill?.cashierUser === "number" ? bill?.cashierUser : null);
+        if (cId !== null && cId !== undefined && !cashierMap.has(String(cId))) {
+          const name = bill?.cashierFullName || `Cashier ${cId}`;
+          cashierMap.set(String(cId), name);
+        }
+      });
+    }
+
+    return Array.from(cashierMap.entries())
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [cashiers, readings]);
 
   const voidChangedComparisons = useMemo(() => {
     if (!Array.isArray(readings) || readings.length === 0) return [];
@@ -948,24 +1040,44 @@ const BillList = () => {
     }
 
     if (selectedCashierId) {
-      tempReadings = tempReadings.filter(
-        (r) =>
-          r?.cashierUserId !== undefined &&
-          String(r.cashierUserId) === String(selectedCashierId)
-      );
+      tempReadings = tempReadings.filter((bill) => {
+        const billCashierId =
+          bill?.cashierUserId ??
+          bill?.cashierUser?.id ??
+          (typeof bill?.cashierUser === "number" ? bill?.cashierUser : null);
+        return (
+          billCashierId !== null &&
+          billCashierId !== undefined &&
+          String(billCashierId) === String(selectedCashierId)
+        );
+      });
     }
 
-    // --- Payment Type Filters (OR logic) ---
+    // --- Payment Type Filters (OR vs AND logic) ---
     const paymentFiltersActive =
       filterDerashPaid || filterPaidOnFrontOffice || filterUnicashPaid || filterPrepaid;
 
     if (paymentFiltersActive) {
       const checks = [];
-      if (filterDerashPaid) checks.push((b) => b.derashPaid);
-      if (filterPaidOnFrontOffice) checks.push((b) => b.paidOnFrontOffice);
-      if (filterUnicashPaid) checks.push((b) => b.unicashPaid);
+      if (filterDerashPaid) checks.push((b) => !!b.derashPaid);
+      if (filterPaidOnFrontOffice) checks.push((b) => !!b.paidOnFrontOffice);
+      if (filterUnicashPaid) checks.push((b) => !!b.unicashPaid);
       if (filterPrepaid) checks.push((b) => (Number(b?.kecreditYetekefele) || 0) > 0);
-      tempReadings = tempReadings.filter((b) => checks.every((fn) => fn(b)));
+
+      if (paymentFilterMatchMode === "all") {
+        tempReadings = tempReadings.filter((b) => checks.every((fn) => fn(b)));
+      } else {
+        tempReadings = tempReadings.filter((b) => checks.some((fn) => fn(b)));
+      }
+    }
+
+    // --- Bank Paid Filter ---
+    if (selectedBankFilter) {
+      const filterLower = selectedBankFilter.trim().toLowerCase();
+      tempReadings = tempReadings.filter((bill) => {
+        const billBanks = getBillBankNames(bill);
+        return billBanks.some((b) => b && b.trim().toLowerCase() === filterLower);
+      });
     }
 
     // --- Money Collected Filter (applied after payment filters) ---
@@ -1038,6 +1150,9 @@ const BillList = () => {
     filterDerashPaid,
     filterPaidOnFrontOffice,
     filterUnicashPaid,
+    filterPrepaid,
+    paymentFilterMatchMode,
+    selectedBankFilter,
     filterMoneyCollected,
     filterSmsSent,
     wuzifMonthsOp,
@@ -1074,6 +1189,7 @@ const BillList = () => {
     selectedReaderId ||
     selectedCustomerTypeId ||
     selectedCashierId ||
+    selectedBankFilter ||
     filterDerashPaid ||
     filterPaidOnFrontOffice ||
     filterUnicashPaid ||
@@ -1093,10 +1209,12 @@ const BillList = () => {
     setSelectedReaderId("");
     setSelectedCustomerTypeId("");
     setSelectedCashierId("");
+    setSelectedBankFilter("");
     setFilterDerashPaid(false);
     setFilterPaidOnFrontOffice(false);
     setFilterUnicashPaid(false);
     setFilterPrepaid(false);
+    setPaymentFilterMatchMode("any");
     setFilterVoidChangedCustomers(false);
     setFilterMoneyCollected("all");
     setFilterSmsSent("all");
@@ -1501,27 +1619,16 @@ const BillList = () => {
       prepaidCheck: 0,
       officeCheck: 0,
       bankCheck: {},
+      totalPaidBillsCount: 0,
     };
 
-    // if (!readings || readings.length === 0) {
-    //   return initialSums;
-    // }
-    // >>> MODIFIED: Use filteredData instead of readings
     if (!filteredData || filteredData.length === 0) {
       return initialSums;
     }
 
-    // >>> MODIFIED: Use filteredData for the reduction
     const calculatedSums = filteredData.reduce((acc, bill) => {
-      //if (bill.moneyCollected && !bill.isVoid) {
       if (!bill.isVoid) {
         acc.yezihWerFjotaKfya += bill.yezihWerFjotaKfya || 0;
-        //console.log('Account with zero kotariKiray');
-        // Log accounts with zero kotariKiray
-        // if (bill.kotariKiray === 0) {
-        //   console.log(`Account with zero kotariKiray - Account Number: ${bill.accountNumber || 'N/A'}, Customer Name: ${bill.customerName || 'N/A'}`);
-        // }
-
         acc.kotariKiray += bill.kotariKiray || 0;
         acc.additionalHisab += bill.additionalHisab || 0;
         acc.techemariKfya += bill.techemariKfya || 0;
@@ -1550,18 +1657,29 @@ const BillList = () => {
         acc.wuzifAdditionalPayment1 += wuzifAddPay1;
         acc.wuzifAdditionalPayment2 += wuzifAddPay2;
 
-        // Local bank name resolver fallback
-        const getBankName = (key) => key;
+        const resolveBankKey = (rawKey) => {
+          if (rawKey === null || rawKey === undefined || rawKey === "") return "Unknown Bank";
+          const resolved = getBankName(rawKey) || lookupBankName(rawKey);
+          return resolved && resolved !== "Unknown Bank" ? resolved : String(rawKey);
+        };
 
-        const totalPaidAmount = bill.tekilalaYetekefele || 0;
+        const creditAmount = Number(bill.kecreditYetekefele) || 0;
+        const hasCredit = creditAmount > 0;
+        const isOfficePaid = !!bill.paidOnFrontOffice;
+        const isDerashPaid = !!bill.derashPaid;
+        const isUnicashPaid = !!bill.unicashPaid;
+        const grossBillAmount = (Number(bill.tekilalaTekefay) || 0) + creditAmount;
+
         let duplicatePaymentsIterator = 0;
-        const paymentMethodsFound = [];
+        if (isOfficePaid) duplicatePaymentsIterator++;
+        if (isDerashPaid) duplicatePaymentsIterator++;
+        if (isUnicashPaid) duplicatePaymentsIterator++;
+
         const bankKeysHandled = new Set();
 
-        // 0. pre paid Payments Check
-        if (bill.kecreditYetekefele) {
-          paymentMethodsFound.push("Prepaid");
-          acc.prepaid += bill.kecreditYetekefele;
+        // 0. Prepaid Payments Check
+        if (hasCredit) {
+          acc.prepaid += creditAmount;
           acc.prepaidCount += 1;
           acc.prepaidAdditionalHisab += bill.additionalHisab || 0;
           acc.prepaidWuzifDerekKoshasha += bill.wuzifDerekKoshasha || 0;
@@ -1571,19 +1689,20 @@ const BillList = () => {
           acc.prepaidWuzifAdditionalPayment2 += wuzifAddPay2;
           acc.prepaidTotalPayment1 += (addPay1 + wuzifAddPay1);
           acc.prepaidTotalPayment2 += (addPay2 + wuzifAddPay2);
-          acc.prepaidTekilalaTekefay += bill.tekilalaTekefay || 0;
           acc.prepaidTotalDerekKoshasha +=
             (bill.wuzifDerekKoshasha || 0) + (bill.additionalHisab || 0);
-          acc.prepaidCheck +=
-            (bill.tekilalaTekefay || 0) - (bill.kecreditYetekefele || 0);
+
+          const prepaidBilledPortion = (isOfficePaid || isDerashPaid || isUnicashPaid) ? creditAmount : grossBillAmount;
+          acc.prepaidTekilalaTekefay += prepaidBilledPortion;
+          acc.prepaidCheck += prepaidBilledPortion - creditAmount;
         }
+
         // 1. Office Payments Check
-        if (bill.paidOnFrontOffice) {
-          duplicatePaymentsIterator++;
-          paymentMethodsFound.push("Office");
-          acc.paidAtOffice += totalPaidAmount;
+        if (isOfficePaid) {
           acc.paidAtOfficeCount += 1;
-          // Add additional sums for office
+          const rawOfficePaid = Number(bill.tekilalaYetekefele) || (Number(bill.tekilalaTekefay) || 0);
+          const officeCashPaid = hasCredit ? Math.max(0, rawOfficePaid - creditAmount) : rawOfficePaid;
+          acc.paidAtOffice += officeCashPaid;
           acc.officeAdditionalHisab += bill.additionalHisab || 0;
           acc.officeWuzifDerekKoshasha += bill.wuzifDerekKoshasha || 0;
           acc.officeAdditionalPayment1 += addPay1;
@@ -1592,55 +1711,24 @@ const BillList = () => {
           acc.officeWuzifAdditionalPayment2 += wuzifAddPay2;
           acc.officeTotalPayment1 += (addPay1 + wuzifAddPay1);
           acc.officeTotalPayment2 += (addPay2 + wuzifAddPay2);
-          acc.officeTekilalaTekefay += bill.tekilalaTekefay || 0;
-          // Calculate total fields
+          const officeBilledPortion = Number(bill.tekilalaTekefay) || 0;
+          acc.officeTekilalaTekefay += officeBilledPortion;
           acc.officeTotalDerekKoshasha +=
             (bill.wuzifDerekKoshasha || 0) + (bill.additionalHisab || 0);
-          acc.officeCheck += (bill.tekilalaTekefay || 0) - totalPaidAmount;
+          acc.officeCheck += officeBilledPortion - officeCashPaid;
         }
 
         // 2. Bank Payments Check (Derash)
-        if (bill.derashPaid) {
-          duplicatePaymentsIterator++;
-          paymentMethodsFound.push("Bank");
+        if (isDerashPaid) {
           const rawDerashKey = bill.bankPaidAgentId ?? bill.bankName ?? null;
-          const normDerashKey = rawDerashKey !== null && rawDerashKey !== undefined ? String(rawDerashKey) : null;
-          const derashLookupName = normDerashKey ? getBankName(normDerashKey) : null;
-          const bankKeyForSum = derashLookupName && derashLookupName !== "Unknown Bank" ? derashLookupName : normDerashKey;
-          if (bankKeyForSum && !bankKeysHandled.has(bankKeyForSum)) {
-            bankKeysHandled.add(bankKeyForSum);
-            const bankPaid = bill.tekilalaBankYetekefele || 0;
-            acc.paidByBank[bankKeyForSum] = (acc.paidByBank[bankKeyForSum] || 0) + bankPaid;
-            acc.paidByBankCount[bankKeyForSum] = (acc.paidByBankCount[bankKeyForSum] || 0) + 1;
-            acc.bankAdditionalHisab[bankKeyForSum] = (acc.bankAdditionalHisab[bankKeyForSum] || 0) + (bill.additionalHisab || 0);
-            acc.bankWuzifDerekKoshasha[bankKeyForSum] = (acc.bankWuzifDerekKoshasha[bankKeyForSum] || 0) + (bill.wuzifDerekKoshasha || 0);
-            acc.bankAdditionalPayment1[bankKeyForSum] = (acc.bankAdditionalPayment1[bankKeyForSum] || 0) + addPay1;
-            acc.bankAdditionalPayment2[bankKeyForSum] = (acc.bankAdditionalPayment2[bankKeyForSum] || 0) + addPay2;
-            acc.bankWuzifAdditionalPayment1[bankKeyForSum] = (acc.bankWuzifAdditionalPayment1[bankKeyForSum] || 0) + wuzifAddPay1;
-            acc.bankWuzifAdditionalPayment2[bankKeyForSum] = (acc.bankWuzifAdditionalPayment2[bankKeyForSum] || 0) + wuzifAddPay2;
-            acc.bankTotalPayment1[bankKeyForSum] = (acc.bankTotalPayment1[bankKeyForSum] || 0) + addPay1 + wuzifAddPay1;
-            acc.bankTotalPayment2[bankKeyForSum] = (acc.bankTotalPayment2[bankKeyForSum] || 0) + addPay2 + wuzifAddPay2;
-            acc.bankTekilalaTekefay[bankKeyForSum] = (acc.bankTekilalaTekefay[bankKeyForSum] || 0) + (bill.tekilalaTekefay || 0);
-            acc.bankTotalDerekKoshasha[bankKeyForSum] = (acc.bankTotalDerekKoshasha[bankKeyForSum] || 0) + (bill.wuzifDerekKoshasha || 0) + (bill.additionalHisab || 0);
-            acc.bankCheck[bankKeyForSum] = (acc.bankCheck[bankKeyForSum] || 0) + (bill.tekilalaTekefay || 0) - bankPaid;
-          }
-        }
-
-        // 3. Bank Payments Check (Unicash)
-        if (bill.unicashPaid) {
-          duplicatePaymentsIterator++;
-          paymentMethodsFound.push("Bank");
-          const rawUnicashKey = bill.uBankPaidAgentId ?? bill.bankName ?? null;
-          const normUnicashKey = rawUnicashKey !== null && rawUnicashKey !== undefined ? String(rawUnicashKey) : null;
-          const unicashLookupName = normUnicashKey ? getBankName(normUnicashKey) : null;
-          const bankKeyForSum = unicashLookupName && unicashLookupName !== "Unknown Bank" ? unicashLookupName : normUnicashKey;
-          if (bankKeyForSum && !bankKeysHandled.has(bankKeyForSum)) {
+          const bankKeyForSum = resolveBankKey(rawDerashKey);
+          if (!bankKeysHandled.has(bankKeyForSum)) {
             bankKeysHandled.add(bankKeyForSum);
             let bankPaid = Number(bill.tekilalaBankYetekefele) || 0;
             if (bankPaid === 0) {
               bankPaid = Math.max(
                 0,
-                (Number(bill.tekilalaYetekefele) || 0) - (Number(bill.kecreditYetekefele) || 0)
+                (Number(bill.tekilalaYetekefele) || (Number(bill.tekilalaTekefay) || 0)) - creditAmount
               );
             }
             acc.paidByBank[bankKeyForSum] = (acc.paidByBank[bankKeyForSum] || 0) + bankPaid;
@@ -1653,15 +1741,47 @@ const BillList = () => {
             acc.bankWuzifAdditionalPayment2[bankKeyForSum] = (acc.bankWuzifAdditionalPayment2[bankKeyForSum] || 0) + wuzifAddPay2;
             acc.bankTotalPayment1[bankKeyForSum] = (acc.bankTotalPayment1[bankKeyForSum] || 0) + addPay1 + wuzifAddPay1;
             acc.bankTotalPayment2[bankKeyForSum] = (acc.bankTotalPayment2[bankKeyForSum] || 0) + addPay2 + wuzifAddPay2;
-            acc.bankTekilalaTekefay[bankKeyForSum] = (acc.bankTekilalaTekefay[bankKeyForSum] || 0) + (bill.tekilalaTekefay || 0);
+            const bankBilledPortion = Number(bill.tekilalaTekefay) || 0;
+            acc.bankTekilalaTekefay[bankKeyForSum] = (acc.bankTekilalaTekefay[bankKeyForSum] || 0) + bankBilledPortion;
             acc.bankTotalDerekKoshasha[bankKeyForSum] = (acc.bankTotalDerekKoshasha[bankKeyForSum] || 0) + (bill.wuzifDerekKoshasha || 0) + (bill.additionalHisab || 0);
-            acc.bankCheck[bankKeyForSum] = (acc.bankCheck[bankKeyForSum] || 0) + (bill.tekilalaTekefay || 0) - bankPaid;
+            acc.bankCheck[bankKeyForSum] = (acc.bankCheck[bankKeyForSum] || 0) + bankBilledPortion - bankPaid;
+          }
+        }
+
+        // 3. Bank Payments Check (Unicash)
+        if (isUnicashPaid) {
+          const rawUnicashKey = bill.uBankPaidAgentId ?? bill.bankName ?? null;
+          const bankKeyForSum = resolveBankKey(rawUnicashKey);
+          if (!bankKeysHandled.has(bankKeyForSum)) {
+            bankKeysHandled.add(bankKeyForSum);
+            let bankPaid = Number(bill.tekilalaBankYetekefele) || 0;
+            if (bankPaid === 0) {
+              bankPaid = Math.max(
+                0,
+                (Number(bill.tekilalaYetekefele) || (Number(bill.tekilalaTekefay) || 0)) - creditAmount
+              );
+            }
+            acc.paidByBank[bankKeyForSum] = (acc.paidByBank[bankKeyForSum] || 0) + bankPaid;
+            acc.paidByBankCount[bankKeyForSum] = (acc.paidByBankCount[bankKeyForSum] || 0) + 1;
+            acc.bankAdditionalHisab[bankKeyForSum] = (acc.bankAdditionalHisab[bankKeyForSum] || 0) + (bill.additionalHisab || 0);
+            acc.bankWuzifDerekKoshasha[bankKeyForSum] = (acc.bankWuzifDerekKoshasha[bankKeyForSum] || 0) + (bill.wuzifDerekKoshasha || 0);
+            acc.bankAdditionalPayment1[bankKeyForSum] = (acc.bankAdditionalPayment1[bankKeyForSum] || 0) + addPay1;
+            acc.bankAdditionalPayment2[bankKeyForSum] = (acc.bankAdditionalPayment2[bankKeyForSum] || 0) + addPay2;
+            acc.bankWuzifAdditionalPayment1[bankKeyForSum] = (acc.bankWuzifAdditionalPayment1[bankKeyForSum] || 0) + wuzifAddPay1;
+            acc.bankWuzifAdditionalPayment2[bankKeyForSum] = (acc.bankWuzifAdditionalPayment2[bankKeyForSum] || 0) + wuzifAddPay2;
+            acc.bankTotalPayment1[bankKeyForSum] = (acc.bankTotalPayment1[bankKeyForSum] || 0) + addPay1 + wuzifAddPay1;
+            acc.bankTotalPayment2[bankKeyForSum] = (acc.bankTotalPayment2[bankKeyForSum] || 0) + addPay2 + wuzifAddPay2;
+            const bankBilledPortion = Number(bill.tekilalaTekefay) || 0;
+            acc.bankTekilalaTekefay[bankKeyForSum] = (acc.bankTekilalaTekefay[bankKeyForSum] || 0) + bankBilledPortion;
+            acc.bankTotalDerekKoshasha[bankKeyForSum] = (acc.bankTotalDerekKoshasha[bankKeyForSum] || 0) + (bill.wuzifDerekKoshasha || 0) + (bill.additionalHisab || 0);
+            acc.bankCheck[bankKeyForSum] = (acc.bankCheck[bankKeyForSum] || 0) + bankBilledPortion - bankPaid;
           }
         }
 
         // 4. Duplicate Payment Check
         if (duplicatePaymentsIterator > 1) {
-          acc.duplicatePayments += totalPaidAmount;
+          const totalPaid = Number(bill.tekilalaYetekefele) || 0;
+          acc.duplicatePayments += totalPaid;
           acc.duplicatePaymentCount += 1;
           acc.duplicateAdditionalHisab += bill.additionalHisab || 0;
           acc.duplicateWuzifDerekKoshasha += bill.wuzifDerekKoshasha || 0;
@@ -1669,8 +1789,8 @@ const BillList = () => {
           acc.duplicateAdditionalPayment2 += addPay2;
           acc.duplicateWuzifAdditionalPayment1 += wuzifAddPay1;
           acc.duplicateWuzifAdditionalPayment2 += wuzifAddPay2;
-          acc.duplicateTekilalaTekefay += bill.tekilalaTekefay || 0;
-          acc.duplicateCheck += (bill.tekilalaTekefay || 0) - totalPaidAmount;
+          acc.duplicateTekilalaTekefay += Number(bill.tekilalaTekefay) || 0;
+          acc.duplicateCheck += (Number(bill.tekilalaTekefay) || 0) - totalPaid;
         }
       }
       return acc;
@@ -1679,6 +1799,11 @@ const BillList = () => {
     // Calculate Grand Total
     const totalBankPayments = Object.values(calculatedSums.paidByBank).reduce(
       (sum, amount) => sum + amount,
+      0
+    );
+
+    const totalBankCount = Object.values(calculatedSums.paidByBankCount).reduce(
+      (sum, count) => sum + count,
       0
     );
 
@@ -1748,6 +1873,12 @@ const BillList = () => {
       totalWuzifAdditionalPayment2s +
       calculatedSums.prepaidWuzifAdditionalPayment2;
 
+    calculatedSums.totalPaidBillsCount =
+      (calculatedSums.prepaidCount || 0) +
+      (calculatedSums.paidAtOfficeCount || 0) +
+      totalBankCount -
+      (calculatedSums.duplicatePaymentCount || 0);
+
     return calculatedSums;
   }, [filteredData]);
 
@@ -1755,8 +1886,8 @@ const BillList = () => {
   const kpiStats = useMemo(() => {
     const totalBills = readings?.length || 0;
     const filteredCount = filteredData?.length || 0;
-    const totalPayable = Number(summations?.tekilalaTekefay || 0);
-    const totalCollected = Number(summations?.tekilalaYetekefele || summations?.totalPaidLocationSum || 0);
+    const totalPayable = Number(summations?.tekilalaTekefay || 0) + Number(summations?.prepaid || 0);
+    const totalCollected = Number(summations?.totalPaidLocationSum || summations?.tekilalaYetekefele || 0);
     const totalUncollected = Math.max(0, totalPayable - totalCollected);
     const collectionRate = totalPayable > 0 ? Math.min(100, (totalCollected / totalPayable) * 100) : 0;
     const totalVolume = Number(summations?.consumption || 0);
@@ -1931,15 +2062,20 @@ const BillList = () => {
         doc.text(item.value, MARGIN + 8 + idx * r1ColW, sValueY1);
       });
 
-      // Row 2: 5 items evenly distributed
+      // Row 2: 4 items evenly distributed
+      const summaryNetWuzif1 = (summations.wuzifHisab || 0) - (
+        (summations.wuzifDerekKoshasha || 0) +
+        (summations.wuzifTechemariKfya || 0) +
+        wuzifPay1Val +
+        wuzifPay2Val
+      );
       const sRow2 = [
         { label: "ጠቅላላ የዚህ ወር", value: fmt(summations.yezihWer) },
-        { label: "ቅድሚያ የተከፈለ", value: fmt(summations.prepaid) },
         { label: "ጠቅላላ ተጨማሪ ክፍያ", value: fmt((summations.techemariKfya || 0) + (summations.wuzifTechemariKfya || 0)) },
         { label: "ቅጣት", value: fmt(summations.kitat) },
-        { label: "ጠቅላላ ውዝፍ", value: fmt((summations.wuzifHisab || 0) - (summations.wuzifDerekKoshasha || 0)) },
+        { label: "ጠቅላላ ውዝፍ", value: fmt(summaryNetWuzif1) },
       ];
-      const r2ColW = (fullW - 16) / 5;
+      const r2ColW = (fullW - 16) / sRow2.length;
       const sLabelY2 = summaryY + 59;
       const sValueY2 = summaryY + 74;
       sRow2.forEach((item, idx) => {
@@ -2064,10 +2200,16 @@ const BillList = () => {
       doc.rect(g1Sub2X, g1SubY, g1SubCardW, g1SubH, "FD");
       doc.setFontSize(10);
       doc.setTextColor(50, 50, 50);
-      doc.text("የዚህ ወር እና ደረቅ ቆሻሻ", g1Sub2X + 8, g1SubY + 20);
+      doc.text("የዚህ ወር ጠቅላላ", g1Sub2X + 8, g1SubY + 20);
       doc.setFontSize(13.5);
       doc.setTextColor(0, 0, 0);
-      doc.text(fmt((summations.yezihWer || 0) + (summations.additionalHisab || 0)), g1Sub2X + g1SubCardW - 8, g1SubY + 44, { align: "right" });
+      const g1FullTotal =
+        (summations.yezihWer || 0) +
+        (summations.additionalHisab || 0) +
+        (summations.techemariKfya || 0) +
+        curPay1Val +
+        curPay2Val;
+      doc.text(fmt(g1FullTotal), g1Sub2X + g1SubCardW - 8, g1SubY + 44, { align: "right" });
 
       // ── Right Box: Group 2: ውዝፍ ──
       doc.setDrawColor(0, 0, 0);
@@ -2106,7 +2248,9 @@ const BillList = () => {
         (summations.wuzifKotariKiray || 0) +
         (summations.wuzifFjotaKfya || 0) +
         (summations.wuzifDerekKoshasha || 0) +
-        (summations.wuzifTechemariKfya || 0)
+        (summations.wuzifTechemariKfya || 0) +
+        wuzifPay1Val +
+        wuzifPay2Val
       );
 
       doc.setFontSize(12);
@@ -2240,13 +2384,23 @@ const BillList = () => {
       ]);
 
       // 5. Grand Total row
+      const totPaidCount =
+        summations.totalPaidBillsCount ||
+        ((summations.prepaidCount || 0) +
+          (summations.paidAtOfficeCount || 0) +
+          totBankCount -
+          (summations.duplicatePaymentCount || 0));
+      const grandDiff =
+        (summations.totaltekelalaTekefay || 0) - (summations.totalPaidLocationSum || 0);
+      const cleanGrandDiff = Math.abs(grandDiff) < 0.01 ? 0 : grandDiff;
+
       paymentRows.push([
         "Grand Total",
-        "",
+        totPaidCount > 0 ? totPaidCount.toString() : "",
         fmt(summations.totalPaidLocationSum || 0),
         fmt((summations.totalwuzifDerekKoshasha || 0) + (summations.totaladditionalHisab || 0)),
         fmt(summations.totaltekelalaTekefay || 0),
-        fmt((summations.totaltekelalaTekefay || 0) - (summations.totalPaidLocationSum || 0))
+        fmt(cleanGrandDiff)
       ]);
 
       // 6. Duplicate Payments row (if count > 0)
@@ -2445,15 +2599,20 @@ const BillList = () => {
         doc.text(item.value, MARGIN + 10 + idx * r1ColW, sValueY1);
       });
 
-      // Row 2: 5 items evenly distributed
+      // Row 2: 4 items evenly distributed
+      const summaryNetWuzif2 = (summations.wuzifHisab || 0) - (
+        (summations.wuzifDerekKoshasha || 0) +
+        (summations.wuzifTechemariKfya || 0) +
+        wuzifPay1Val +
+        wuzifPay2Val
+      );
       const sRow2 = [
         { label: "ጠቅላላ የዚህ ወር", value: fmt(summations.yezihWer) },
-        { label: "ቅድሚያ የተከፈለ", value: fmt(summations.prepaid) },
         { label: "ጠቅላላ ተጨማሪ ክፍያ", value: fmt((summations.techemariKfya || 0) + (summations.wuzifTechemariKfya || 0)) },
         { label: "ቅጣት", value: fmt(summations.kitat) },
-        { label: "ጠቅላላ ውዝፍ", value: fmt((summations.wuzifHisab || 0) - (summations.wuzifDerekKoshasha || 0)) },
+        { label: "ጠቅላላ ውዝፍ", value: fmt(summaryNetWuzif2) },
       ];
-      const r2ColW = (fullW - 20) / 5;
+      const r2ColW = (fullW - 20) / sRow2.length;
       const sLabelY2 = summaryY + 76;
       const sValueY2 = summaryY + 93;
       sRow2.forEach((item, idx) => {
@@ -2563,7 +2722,7 @@ const BillList = () => {
       doc.setTextColor(0, 0, 0);
       doc.text(fmt(summations.yezihWer), MARGIN + 12 + g1SubW - 12, g1SubY + 44, { align: "right" });
 
-      // Right Subtotal: የዚህ ወር እና ደረቅ ቆሻሻ
+      // Right Subtotal: የዚህ ወር ጠቅላላ
       const rightSubX = MARGIN + 12 + g1SubW + 8;
       doc.setFillColor(245, 247, 250);
       doc.setDrawColor(180, 190, 205);
@@ -2571,10 +2730,16 @@ const BillList = () => {
       doc.rect(rightSubX, g1SubY, g1SubW, g1SubH, "FD");
       doc.setFontSize(11);
       doc.setTextColor(50, 50, 50);
-      doc.text("የዚህ ወር እና ደረቅ ቆሻሻ", rightSubX + 12, g1SubY + 20);
+      doc.text("የዚህ ወር ጠቅላላ", rightSubX + 12, g1SubY + 20);
       doc.setFontSize(15.5);
       doc.setTextColor(0, 0, 0);
-      doc.text(fmt((summations.yezihWer || 0) + (summations.additionalHisab || 0)), rightSubX + g1SubW - 12, g1SubY + 44, { align: "right" });
+      const g1FullTotalBasic =
+        (summations.yezihWer || 0) +
+        (summations.additionalHisab || 0) +
+        (summations.techemariKfya || 0) +
+        curPay1Val +
+        curPay2Val;
+      doc.text(fmt(g1FullTotalBasic), rightSubX + g1SubW - 12, g1SubY + 44, { align: "right" });
 
       // ─── 4. GROUP 2: ውዝፍ (Y: 434 to ~640) ────────────────────────
       const g2Y = g1Y + g1H + 10; // 434 pt
@@ -2585,7 +2750,9 @@ const BillList = () => {
         (summations.wuzifKotariKiray || 0) +
         (summations.wuzifFjotaKfya || 0) +
         (summations.wuzifDerekKoshasha || 0) +
-        (summations.wuzifTechemariKfya || 0)
+        (summations.wuzifTechemariKfya || 0) +
+        wuzifPay1Val +
+        wuzifPay2Val
       );
 
       // Determine height depending on optional Row 3
@@ -3026,6 +3193,12 @@ const BillList = () => {
     ),
   });
 
+  const selectedPaymentFiltersCount =
+    (filterPaidOnFrontOffice ? 1 : 0) +
+    (filterDerashPaid ? 1 : 0) +
+    (filterUnicashPaid ? 1 : 0) +
+    (filterPrepaid ? 1 : 0);
+
   return (
     <>
       <ToastContainer autoClose={5000} hideProgressBar theme="colored" />
@@ -3268,22 +3441,6 @@ const BillList = () => {
             </Select>
           </FormControl>
 
-          {/* Cashier */}
-          <FormControl size="small" sx={{ minWidth: 150 }}>
-            <InputLabel>Cashier</InputLabel>
-            <Select
-              value={selectedCashierId}
-              label="Cashier"
-              onChange={(e) => setSelectedCashierId(e.target.value)}
-              disabled={isCashiersLoading}
-            >
-              <MenuItem value=""><em>All Cashiers</em></MenuItem>
-              {cashiers?.map((c) => (
-                <MenuItem key={c.id} value={c.id}>{c.name || `Cashier ${c.id}`}</MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-
           {/* Customer Status Filter */}
           <FormControl size="small" sx={{ minWidth: 150 }}>
             <InputLabel>Account Status</InputLabel>
@@ -3382,6 +3539,47 @@ const BillList = () => {
             sx={{ width: 120 }}
           />
 
+          {/* Paid at Bank Dropdown Filter */}
+          <FormControl size="small" sx={{ minWidth: 170 }}>
+            <InputLabel id="bank-paid-filter-label">Paid at Bank</InputLabel>
+            <Select
+              labelId="bank-paid-filter-label"
+              value={selectedBankFilter}
+              label="Paid at Bank"
+              onChange={(e) => setSelectedBankFilter(e.target.value)}
+            >
+              <MenuItem value="">
+                <em>All Banks</em>
+              </MenuItem>
+              {availableBankOptions.map((bankName) => (
+                <MenuItem key={bankName} value={bankName}>
+                  {bankName}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+
+          {/* Paid to Cashier Dropdown Filter */}
+          <FormControl size="small" sx={{ minWidth: 170 }}>
+            <InputLabel id="cashier-paid-filter-label">Paid to Cashier</InputLabel>
+            <Select
+              labelId="cashier-paid-filter-label"
+              value={selectedCashierId}
+              label="Paid to Cashier"
+              onChange={(e) => setSelectedCashierId(e.target.value)}
+              disabled={isCashiersLoading}
+            >
+              <MenuItem value="">
+                <em>All Cashiers</em>
+              </MenuItem>
+              {availableCashierOptions.map((c) => (
+                <MenuItem key={c.id} value={c.id}>
+                  {c.name}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+
           {/* Checkboxes */}
           <FormControlLabel
             control={
@@ -3438,6 +3636,58 @@ const BillList = () => {
             }
             label={<Typography variant="body2">Prepaid</Typography>}
           />
+
+          {selectedPaymentFiltersCount >= 2 && (
+            <Box
+              sx={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 0.8,
+                bgcolor: "action.hover",
+                py: 0.3,
+                px: 1,
+                borderRadius: 1.5,
+                border: "1px solid",
+                borderColor: "divider",
+              }}
+            >
+              <Typography variant="caption" sx={{ color: "text.secondary", fontWeight: "bold" }}>
+                Match:
+              </Typography>
+              <ToggleButtonGroup
+                size="small"
+                value={paymentFilterMatchMode}
+                exclusive
+                onChange={(_, val) => val && setPaymentFilterMatchMode(val)}
+                sx={{ height: 26 }}
+              >
+                <ToggleButton
+                  value="any"
+                  sx={{
+                    px: 1,
+                    py: 0,
+                    textTransform: "none",
+                    fontSize: "0.72rem",
+                    fontWeight: paymentFilterMatchMode === "any" ? "bold" : "normal",
+                  }}
+                >
+                  Any (OR)
+                </ToggleButton>
+                <ToggleButton
+                  value="all"
+                  sx={{
+                    px: 1,
+                    py: 0,
+                    textTransform: "none",
+                    fontSize: "0.72rem",
+                    fontWeight: paymentFilterMatchMode === "all" ? "bold" : "normal",
+                  }}
+                >
+                  All (AND)
+                </ToggleButton>
+              </ToggleButtonGroup>
+            </Box>
+          )}
 
           {anyFilterSet && (
             <Button
@@ -3813,12 +4063,17 @@ const BillList = () => {
                           color: 'error.main'
                         }}
                       >
-
-                        {((summations.wuzifHisab || 0) - (summations.wuzifDerekKoshasha || 0)).toLocaleString("en-US", {
+                        {(
+                          (summations.wuzifHisab || 0) - (
+                            (summations.wuzifDerekKoshasha || 0) +
+                            (summations.wuzifTechemariKfya || 0) +
+                            wuzifPay1Val +
+                            wuzifPay2Val
+                          )
+                        ).toLocaleString("en-US", {
                           minimumFractionDigits: 2,
                           maximumFractionDigits: 2,
                         })}
-
                       </Typography>
                     </Box>
                     <Box sx={{ flex: 1, minWidth: '150px', textAlign: 'center', order: 8 }}>
@@ -3868,32 +4123,6 @@ const BillList = () => {
                         }}
                       >
                         {((summations.techemariKfya || 0) + (summations.wuzifTechemariKfya || 0)).toLocaleString("en-US", {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}
-                      </Typography>
-                    </Box>
-                    <Box sx={{ flex: 1, minWidth: '150px', textAlign: 'center', order: 6 }}>
-                      <Typography
-                        variant="body2"
-                        sx={{
-                          fontFamily: 'Nyala, serif',
-                          mb: 1,
-                          fontSize: '1.105rem',
-                          fontWeight: 'medium'
-                        }}
-                      >
-                        ቅድሚያ የተከፈለ
-                      </Typography>
-                      <Typography
-                        variant="h6"
-                        sx={{
-                          fontWeight: "bold",
-                          fontSize: '1.3rem',
-                          color: 'warning.main'
-                        }}
-                      >
-                        {(summations.prepaid || 0).toLocaleString("en-US", {
                           minimumFractionDigits: 2,
                           maximumFractionDigits: 2,
                         })}
@@ -4208,7 +4437,7 @@ const BillList = () => {
                                 fontWeight: 'medium'
                               }}
                             >
-                              የዚህ ወር አና ደረቅ ቆሻሻ
+                              የዚህ ወር ጠቅላላ (ሁሉንም ጨምሮ)
                             </Typography>
                             <Typography
                               variant="h5"
@@ -4218,7 +4447,7 @@ const BillList = () => {
                                 fontSize: '1.69rem'
                               }}
                             >
-                              {((summations.yezihWer || 0) + (summations.additionalHisab || 0)).toLocaleString("en-US", {
+                              {((summations.yezihWer || 0) + (summations.additionalHisab || 0) + (summations.techemariKfya || 0) + curPay1Val + curPay2Val).toLocaleString("en-US", {
                                 minimumFractionDigits: 2,
                                 maximumFractionDigits: 2,
                               })}
@@ -4408,7 +4637,9 @@ const BillList = () => {
                                   (summations.wuzifKotariKiray || 0) +
                                   (summations.wuzifFjotaKfya || 0) +
                                   (summations.wuzifDerekKoshasha || 0) +
-                                  (summations.wuzifTechemariKfya || 0)
+                                  (summations.wuzifTechemariKfya || 0) +
+                                  wuzifPay1Val +
+                                  wuzifPay2Val
                                 )
                               ).toLocaleString("en-US", {
                                 minimumFractionDigits: 2,
@@ -4709,12 +4940,12 @@ const BillList = () => {
                         sx={{
                           fontWeight: "bold",
                           color:
-                            summations.prepaidCheck < 0
-                              ? "error.main"
-                              : "success.main",
+                            Math.abs(summations.prepaidCheck) < 0.01
+                              ? "success.main"
+                              : (summations.prepaidCheck < 0 ? "error.main" : "info.main"),
                         }}
                       >
-                        {summations.prepaidCheck.toLocaleString("en-US", {
+                        {(Math.abs(summations.prepaidCheck) < 0.01 ? 0 : summations.prepaidCheck).toLocaleString("en-US", {
                           minimumFractionDigits: 2,
                         })}
                       </TableCell>
@@ -4762,12 +4993,12 @@ const BillList = () => {
                         sx={{
                           fontWeight: "bold",
                           color:
-                            summations.officeCheck < 0
-                              ? "error.main"
-                              : "success.main",
+                            Math.abs(summations.officeCheck) < 0.01
+                              ? "success.main"
+                              : (summations.officeCheck < 0 ? "error.main" : "info.main"),
                         }}
                       >
-                        {summations.officeCheck.toLocaleString("en-US", {
+                        {(Math.abs(summations.officeCheck) < 0.01 ? 0 : summations.officeCheck).toLocaleString("en-US", {
                           minimumFractionDigits: 2,
                         })}
                       </TableCell>
@@ -4940,7 +5171,9 @@ const BillList = () => {
                       >
                         Grand Total
                       </TableCell>
-                      <TableCell align="center"></TableCell>
+                      <TableCell align="center" sx={{ fontWeight: "bold", fontSize: "1.05em" }}>
+                        {summations.totalPaidBillsCount > 0 ? summations.totalPaidBillsCount.toLocaleString() : ""}
+                      </TableCell>
                       <TableCell
                         align="right"
                         sx={{ fontWeight: "bold", fontSize: "1.05em" }}
@@ -4996,24 +5229,23 @@ const BillList = () => {
                           }
                         )}
                       </TableCell>
-                      <TableCell
-                        align="right"
-                        sx={{
-                          fontWeight: "bold",
-                          fontSize: "1.05em",
-                          color:
-                            summations.totaltekelalaTekefay -
-                              summations.totalPaidLocationSum <
-                              0
-                              ? "error.main"
-                              : "success.main",
-                        }}
-                      >
-                        {(
-                          summations.totaltekelalaTekefay -
-                          summations.totalPaidLocationSum
-                        ).toLocaleString("en-US", { minimumFractionDigits: 2 })}
-                      </TableCell>
+                      {(() => {
+                        const grandDiff = summations.totaltekelalaTekefay - summations.totalPaidLocationSum;
+                        const cleanGrandDiff = Math.abs(grandDiff) < 0.01 ? 0 : grandDiff;
+                        const isZero = Math.abs(cleanGrandDiff) < 0.01;
+                        return (
+                          <TableCell
+                            align="right"
+                            sx={{
+                              fontWeight: "bold",
+                              fontSize: "1.05em",
+                              color: isZero ? "success.main" : (cleanGrandDiff < 0 ? "error.main" : "info.main"),
+                            }}
+                          >
+                            {cleanGrandDiff.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                          </TableCell>
+                        );
+                      })()}
                     </TableRow>
 
                     <TableRow>

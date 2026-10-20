@@ -44,6 +44,7 @@ export const databaseService = {
                     location_coordination TEXT,
                     qr_code TEXT,
                     status TEXT,
+                    tekilala_tekefay REAL DEFAULT 0,
                     wuzif_hisab REAL DEFAULT 0,
                     wuzif_remark TEXT,
                     reading_status TEXT DEFAULT 'pending',
@@ -129,6 +130,11 @@ export const databaseService = {
                 if (!columnNames.includes('additional_text')) {
                     console.log('[DB] Adding additional_text column...');
                     await database.execAsync(`ALTER TABLE customers ADD COLUMN additional_text TEXT;`);
+                }
+
+                if (!columnNames.includes('tekilala_tekefay')) {
+                    console.log('[DB] Adding tekilala_tekefay column...');
+                    await database.execAsync(`ALTER TABLE customers ADD COLUMN tekilala_tekefay REAL DEFAULT 0;`);
                 }
 
                 console.log('[DB] Migration completed successfully');
@@ -233,9 +239,10 @@ export const databaseService = {
             // Use transaction for batch insert
             await database.withTransactionAsync(async () => {
                 for (const c of customers) {
-                    // Wuzif data can now come from the customer object (merged from CSV) OR the legacy map
-                    const wuzifHisab = c.wuzif_hisab !== undefined ? c.wuzif_hisab : (wuzifMap[c.id]?.hisab || 0);
+                    // Wuzif & financial data from customer object OR legacy map
+                    const wuzifHisab = c.wuzif_hisab !== undefined ? Number(c.wuzif_hisab) || 0 : (wuzifMap[c.id]?.hisab || 0);
                     const wuzifRemark = c.wuzif_remark !== undefined ? c.wuzif_remark : (wuzifMap[c.id]?.remark || '');
+                    const tekilalaTekefay = c.tekilala_tekefay !== undefined ? Number(c.tekilala_tekefay) || 0 : wuzifHisab;
 
                     await database.runAsync(
                         `INSERT OR REPLACE INTO customers (
@@ -244,17 +251,17 @@ export const databaseService = {
                             customer_type_id, meter_size_id,
                             address_1_id, address_2_id,
                             location_coordination, qr_code, status,
-                            wuzif_hisab, wuzif_remark, reading_status,
+                            tekilala_tekefay, wuzif_hisab, wuzif_remark, reading_status,
                             previous_reading, max_reading, last_reading, 
                             reading_month, additional_text
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                         [
                             c.id, c.full_name, c.account_number, c.meter_number,
                             c.phone_number, c.house_number, c.count_number,
                             c.customer_type_id, c.meter_size_id,
                             c.address_1_id, c.address_2_id,
                             c.location_coordination, c.qr_code, c.status,
-                            wuzifHisab, wuzifRemark, 'pending',
+                            tekilalaTekefay, wuzifHisab, wuzifRemark, 'pending',
                             c.previous_reading || 0, c.max_reading || 0, c.last_reading || 0,
                             c.reading_month || '', c.additional_text || ''
                         ]

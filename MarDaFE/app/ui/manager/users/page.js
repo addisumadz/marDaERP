@@ -58,7 +58,7 @@ const UsersList = () => {
   const [statusModalOpen, setStatusModalOpen] = useState(false);
   const [statusModalMode, setStatusModalMode] = useState(null);
   const [statusUserId, setStatusUserId] = useState(null);
-  const [passwordUserId, setPasswordUserId] = useState(null);
+  const [passwordUser, setPasswordUser] = useState(null);
 
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 10 });
   const handleTabChange = (e, v) => {
@@ -243,7 +243,7 @@ const UsersList = () => {
           </IconButton>
         </Tooltip>
         <Tooltip title="Change Password">
-          <IconButton color="secondary" onClick={() => setPasswordUserId(row.original.id)}>
+          <IconButton color="secondary" onClick={() => setPasswordUser(row.original)}>
             <VpnKeyIcon />
           </IconButton>
         </Tooltip>
@@ -390,9 +390,10 @@ const UsersList = () => {
 
       {/* Change Password Modal */}
       <ChangePasswordModal
-        open={!!passwordUserId}
-        userId={passwordUserId}
-        onClose={() => setPasswordUserId(null)}
+        open={!!passwordUser}
+        user={passwordUser}
+        userId={passwordUser?.id}
+        onClose={() => setPasswordUser(null)}
       />
     </>
   );

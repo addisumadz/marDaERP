@@ -17,11 +17,14 @@ import com.wbill.home.repository.BillingCustomerTypeRepository;
 import com.wbill.home.repository.BillingCustomerInfoRepository;
 import com.wbill.home.repository.BillingMeterSizeRepository;
 import com.wbill.home.repository.BillingZeroReadingReasonRepository;
+import com.wbill.home.model.BillingReadingWuzif;
 import com.wbill.home.repository.BillingReadingRepository;
+import com.wbill.home.repository.BillingReadingWuzifRepository;
 import com.wbill.home.repository.UserAccountRepository;
 import com.wbill.home.service.BillingReadingImportService;
 import com.wbill.home.service.CompanyProfileService;
 import com.wbill.home.util.EthiopianCalendarConverter;
+import com.wbill.home.util.EthiopianCalendarUtil;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -83,6 +86,130 @@ public class LegacyMobileBillingController {
 
     @Autowired
     private BillingReadingRepository billingReadingRepository;
+
+    @Autowired
+    private BillingReadingWuzifRepository billingReadingWuzifRepository;
+
+    private static class WuzifFinancialInfo {
+        final double tekilalaTekefay;
+        final double wuzifHisab;
+        final String wuzifRemark;
+
+        WuzifFinancialInfo(double tekilalaTekefay, double wuzifHisab, String wuzifRemark) {
+            this.tekilalaTekefay = tekilalaTekefay;
+            this.wuzifHisab = wuzifHisab;
+            this.wuzifRemark = wuzifRemark != null ? wuzifRemark : "";
+        }
+    }
+
+    private Map<Integer, WuzifFinancialInfo> resolveWuzifFinancialMap(List<BillingCustomerInfo> customers, String currentReadingMonth) {
+        Map<Integer, WuzifFinancialInfo> result = new LinkedHashMap<>();
+        if (customers == null || customers.isEmpty()) {
+            return result;
+        }
+
+        CompanyProfile profile = companyProfileService.getLatestProfile();
+        String activeBillingMonthStr = "";
+        if (profile != null && profile.getActiveBillingMonth() != null) {
+            try {
+                EthiopianCalendarConverter.EthiopianDate ethDate = EthiopianCalendarConverter
+                        .gregorianToEthiopian(profile.getActiveBillingMonth());
+                String monthName = EthiopianCalendarConverter.getEthiopianMonthNameAmharic(ethDate.getMonth());
+                activeBillingMonthStr = monthName + ", " + ethDate.getYear();
+            } catch (Exception ignore) {
+            }
+        }
+        if ((activeBillingMonthStr == null || activeBillingMonthStr.isBlank()) && currentReadingMonth != null && !currentReadingMonth.isBlank()) {
+            try {
+                activeBillingMonthStr = EthiopianCalendarUtil.getPreviousBillingKifyaWer(currentReadingMonth);
+            } catch (Exception ignore) {
+            }
+        }
+
+        Map<Integer, BillingReading> billingMonthReadingsMap = new LinkedHashMap<>();
+        if (activeBillingMonthStr != null && !activeBillingMonthStr.isBlank()) {
+            List<BillingReading> billingMonthReadings = billingReadingRepository
+                    .findByKifyaWerAndCustomers(activeBillingMonthStr, customers, "active");
+            for (BillingReading r : billingMonthReadings) {
+                if (r.getBillingCustomerInfo() != null) {
+                    billingMonthReadingsMap.put(r.getBillingCustomerInfo().getId(), r);
+                }
+            }
+        }
+
+        // Fallback: fetch active unpaid records from BillingReadingWuzif
+        Map<Integer, List<BillingReadingWuzif>> fallbackWuzifMap = new LinkedHashMap<>();
+        try {
+            List<BillingReadingWuzif> fallbackWuzifs = billingReadingWuzifRepository
+                    .findUnpaidWuzifForCustomers(customers);
+            if (fallbackWuzifs != null) {
+                for (BillingReadingWuzif w : fallbackWuzifs) {
+                    if (w.getBillingReadingActualPayment() != null &&
+                        w.getBillingReadingActualPayment().getBillingCustomerInfo() != null) {
+                        int cId = w.getBillingReadingActualPayment().getBillingCustomerInfo().getId();
+                        fallbackWuzifMap.computeIfAbsent(cId, k -> new ArrayList<>()).add(w);
+                    }
+                }
+            }
+        } catch (Exception ex) {
+            logger.warn("Failed to query fallback unpaid wuzif records", ex);
+        }
+
+        for (BillingCustomerInfo c : customers) {
+            double tekilalaTekefay = 0.0;
+            double wuzifHisab = 0.0;
+            String wuzifRemark = "";
+
+            BillingReading billReading = billingMonthReadingsMap.get(c.getId());
+            if (billReading != null) {
+                boolean isPaid = billReading.isMoneyCollected() ||
+                                 billReading.isPaidOnFrontOffice() ||
+                                 billReading.isDerashPaid() ||
+                                 billReading.isUnicashPaid() ||
+                                 billReading.isPaidThroughBank();
+                if (isPaid) {
+                    tekilalaTekefay = 0.0;
+                    wuzifHisab = 0.0;
+                    wuzifRemark = "";
+                } else {
+                    double paidAmount = billReading.getTekilalaYetekefele() + billReading.getTemelashBirr();
+                    tekilalaTekefay = Math.max(0.0, billReading.getTekilalaTekefay() - paidAmount);
+                    wuzifHisab = billReading.getWuzifHisab();
+                    String remark = billReading.getWuzifKezihEske();
+                    if (remark != null && !remark.isBlank()) {
+                        wuzifRemark = remark;
+                    } else if (billReading.getKifyaWer() != null) {
+                        wuzifRemark = billReading.getKifyaWer();
+                    }
+                }
+            } else {
+                List<BillingReadingWuzif> customerWuzifs = fallbackWuzifMap.get(c.getId());
+                if (customerWuzifs != null && !customerWuzifs.isEmpty()) {
+                    double sumUnpaid = 0.0;
+                    String fromPeriod = null;
+                    String toPeriod = null;
+                    for (BillingReadingWuzif w : customerWuzifs) {
+                        BillingReading ap = w.getBillingReadingActualPayment();
+                        if (ap != null) {
+                            double paid = ap.getTekilalaYetekefele() + ap.getTemelashBirr();
+                            sumUnpaid += Math.max(0.0, ap.getTekilalaTekefay() - paid);
+                            if (fromPeriod == null) fromPeriod = ap.getKifyaWer();
+                            toPeriod = ap.getKifyaWer();
+                        }
+                    }
+                    tekilalaTekefay = sumUnpaid;
+                    wuzifHisab = sumUnpaid;
+                    if (fromPeriod != null && toPeriod != null) {
+                        wuzifRemark = fromPeriod.equalsIgnoreCase(toPeriod) ? fromPeriod : (fromPeriod + " - " + toPeriod);
+                    }
+                }
+            }
+
+            result.put(c.getId(), new WuzifFinancialInfo(tekilalaTekefay, wuzifHisab, wuzifRemark));
+        }
+
+        return result;
+    }
 
     @org.springframework.beans.factory.annotation.Value("${storage.mobile-csv-dir:src/main/resources/static/mobile-csv}")
     private String mobileCsvStorageDir;
@@ -793,6 +920,19 @@ public class LegacyMobileBillingController {
                         "active");
                 logger.info("LegacyMobileBilling: Found {} active customers for reader {}", customers.size(), username);
 
+                CompanyProfile profile = companyProfileService.getLatestProfile();
+                String kfyaworStr = "";
+                if (profile != null && profile.getActiveReadingDate() != null) {
+                    try {
+                        EthiopianCalendarConverter.EthiopianDate ethDate = EthiopianCalendarConverter
+                                .gregorianToEthiopian(profile.getActiveReadingDate());
+                        String monthName = EthiopianCalendarConverter.getEthiopianMonthNameAmharic(ethDate.getMonth());
+                        kfyaworStr = monthName + ", " + ethDate.getYear();
+                    } catch (Exception ignore) {
+                    }
+                }
+                Map<Integer, WuzifFinancialInfo> wuzifMap = resolveWuzifFinancialMap(customers, kfyaworStr);
+
                 // 4. Merge and Transform
                 for (BillingCustomerInfo c : customers) {
                     Map<String, Object> row = new LinkedHashMap<>();
@@ -837,6 +977,12 @@ public class LegacyMobileBillingController {
                     } else {
                         row.put("customer_type_id", null);
                     }
+
+                    // Financial / Wuzif Data
+                    WuzifFinancialInfo finInfo = wuzifMap.get(c.getId());
+                    row.put("tekilala_tekefay", finInfo != null ? finInfo.tekilalaTekefay : 0.0);
+                    row.put("wuzif_hisab", finInfo != null ? finInfo.wuzifHisab : 0.0);
+                    row.put("wuzif_remark", finInfo != null ? finInfo.wuzifRemark : "");
 
                     respList.add(row);
                 }
@@ -953,17 +1099,8 @@ public class LegacyMobileBillingController {
             List<BillingCustomerInfo> customers = billingCustomerInfoRepository.findByUserAccountAndStatus(reader,
                     "active");
 
-            // 3. Fetch Wuzif (Arrears) for Reader and Billing Month
-            Map<Integer, BillingReading> wuzifMap = new LinkedHashMap<>();
-            if (kifyaWerStr != null && !kifyaWerStr.isBlank()) {
-                List<BillingReading> wuzifReadings = billingReadingRepository
-                        .findWuzifByReaderAndKifyaWer(reader, kifyaWerStr, "active", 0.0d);
-                for (BillingReading r : wuzifReadings) {
-                    if (r.getBillingCustomerInfo() != null) {
-                        wuzifMap.put(r.getBillingCustomerInfo().getId(), r);
-                    }
-                }
-            }
+            // 3. Fetch Wuzif (Arrears) and Total Unpaid for Reader's Customers from Active Billing Month
+            Map<Integer, WuzifFinancialInfo> wuzifMap = resolveWuzifFinancialMap(customers, kifyaWerStr);
 
             // 4. Merge Customers with Previous Readings, Reference Limits, and Wuzif
             List<Map<String, Object>> customerList = new ArrayList<>();
@@ -1011,15 +1148,11 @@ public class LegacyMobileBillingController {
                 row.put("last_reading", 0);
                 row.put("additional_text", "");
 
-                // Wuzif Data
-                BillingReading wuzifReading = wuzifMap.get(c.getId());
-                if (wuzifReading != null) {
-                    row.put("wuzif_hisab", wuzifReading.getWuzifHisab());
-                    row.put("wuzif_remark", wuzifReading.getWuzifKezihEske() != null ? wuzifReading.getWuzifKezihEske() : "");
-                } else {
-                    row.put("wuzif_hisab", 0.0);
-                    row.put("wuzif_remark", "");
-                }
+                // Financial / Wuzif Data
+                WuzifFinancialInfo finInfo = wuzifMap.get(c.getId());
+                row.put("tekilala_tekefay", finInfo != null ? finInfo.tekilalaTekefay : 0.0);
+                row.put("wuzif_hisab", finInfo != null ? finInfo.wuzifHisab : 0.0);
+                row.put("wuzif_remark", finInfo != null ? finInfo.wuzifRemark : "");
 
                 customerList.add(row);
             }

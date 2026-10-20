@@ -81,6 +81,7 @@ const mergeCustomersWithCsv = (csvData, customers, currentReadingMonth) => {
                 reading_month: row.kifya_wer || currentReadingMonth,
                 additional_text: row.additional_text || '',
                 wuzif_hisab: parseFloat(row.wuzif_hisab) || 0,
+                tekilala_tekefay: parseFloat(row.wuzif_hisab) || 0,
                 wuzif_remark: row.wuzif_kezih_eske || '',
                 last_reading: 0
             };
@@ -105,6 +106,7 @@ const mergeCustomersWithCsv = (csvData, customers, currentReadingMonth) => {
             reading_month: currentReadingMonth,
             additional_text: '',
             wuzif_hisab: 0,
+            tekilala_tekefay: 0,
             wuzif_remark: ''
         };
     });

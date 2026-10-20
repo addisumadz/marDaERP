@@ -27,15 +27,16 @@ import { locationService } from '../services/locationService';
 import { validation } from '../utils/validation';
 
 export default function CustomerDetailScreen({ customer: propCustomer, onBack, onSave, route, navigation }) {
-    const customer = propCustomer || route?.params?.customer || {};
+    const initialCustomer = propCustomer || route?.params?.customer || {};
+    const [customer, setCustomer] = useState(initialCustomer);
     const handleBack = onBack || (() => navigation?.goBack());
     const handleSave = onSave || route?.params?.onSave || (async () => {});
 
-    const [phoneNumber, setPhoneNumber] = useState(customer.phone_number || '');
-    const [qrCode, setQrCode] = useState(customer.qr_code || '');
+    const [phoneNumber, setPhoneNumber] = useState(initialCustomer.phone_number || '');
+    const [qrCode, setQrCode] = useState(initialCustomer.qr_code || '');
     const [showQRScanner, setShowQRScanner] = useState(false);
     const [loadingLocation, setLoadingLocation] = useState(false);
-    const [locationCoords, setLocationCoords] = useState(customer.location_coordination || null);
+    const [locationCoords, setLocationCoords] = useState(initialCustomer.location_coordination || null);
 
     // Reading Modal State
     const [modalVisible, setModalVisible] = useState(false);
@@ -79,6 +80,29 @@ export default function CustomerDetailScreen({ customer: propCustomer, onBack, o
             }
         });
     };
+
+    // Refresh latest customer record from local SQLite if available
+    useEffect(() => {
+        const target = propCustomer || route?.params?.customer;
+        if (target) {
+            setCustomer(target);
+            setPhoneNumber(target.phone_number || '');
+            setQrCode(target.qr_code || '');
+            setLocationCoords(target.location_coordination || null);
+            if (target.id) {
+                databaseService.getCustomerById(target.id).then(fresh => {
+                    if (fresh) {
+                        setCustomer(prev => ({ ...prev, ...fresh }));
+                        if (fresh.phone_number !== undefined) setPhoneNumber(fresh.phone_number || '');
+                        if (fresh.qr_code !== undefined) setQrCode(fresh.qr_code || '');
+                        if (fresh.location_coordination !== undefined) setLocationCoords(fresh.location_coordination || null);
+                    }
+                }).catch(err => {
+                    console.error('Failed to load fresh customer details:', err);
+                });
+            }
+        }
+    }, [propCustomer, route?.params?.customer]);
 
     // Initialize zero reasons and encoded reading data
     useEffect(() => {
@@ -319,6 +343,7 @@ export default function CustomerDetailScreen({ customer: propCustomer, onBack, o
                         location_coordination: coordsString,
                         isModified: true
                     };
+                    setCustomer(updatedCustomer);
                     await handleSave(updatedCustomer);
                     showAlert('Success', 'GPS location saved to customer record', 'success');
                 }
@@ -348,6 +373,7 @@ export default function CustomerDetailScreen({ customer: propCustomer, onBack, o
             qr_code: qrCode,
             isModified: true
         };
+        setCustomer(updatedCustomer);
         handleSave(updatedCustomer);
         showAlert('Success', 'Customer info updated', 'success');
     };
@@ -524,7 +550,26 @@ export default function CustomerDetailScreen({ customer: propCustomer, onBack, o
                     <View style={styles.detailCard}>
                         <View style={styles.rowBetween}>
                             <Text style={styles.billLabel}>Wuzif Hisab (Unpaid):</Text>
-                            <Text style={styles.billText}>{customer.wuzif_hisab ? `${customer.wuzif_hisab} Birr` : '0.00'}</Text>
+                            <Text style={[
+                                styles.billText,
+                                {
+                                    color: ((Number(customer.tekilala_tekefay !== undefined ? customer.tekilala_tekefay : customer.wuzif_hisab) || 0) > 0 || (Number(customer.wuzif_hisab) || 0) > 0)
+                                        ? '#D32F2F'
+                                        : '#388E3C'
+                                }
+                            ]}>
+                                {(() => {
+                                    const totalUnpaid = Number(customer.tekilala_tekefay !== undefined ? customer.tekilala_tekefay : customer.wuzif_hisab) || 0;
+                                    const wuzifAmount = Number(customer.wuzif_hisab) || 0;
+                                    if (totalUnpaid > 0) {
+                                        return `${totalUnpaid.toFixed(2)} Birr (Wuzif: ${wuzifAmount.toFixed(2)} Birr)`;
+                                    }
+                                    if (wuzifAmount > 0) {
+                                        return `${wuzifAmount.toFixed(2)} Birr (Wuzif: ${wuzifAmount.toFixed(2)} Birr)`;
+                                    }
+                                    return '0.00 Birr (Paid)';
+                                })()}
+                            </Text>
                         </View>
                         {customer.wuzif_remark ? (
                             <View style={styles.remarkBox}>
@@ -799,15 +844,20 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
+        flexWrap: 'wrap',
+        gap: 6,
     },
     billLabel: {
-        fontSize: 18,
+        fontSize: 16,
         color: '#555',
+        flexShrink: 0,
     },
     billText: {
-        fontSize: 20,
+        fontSize: 16,
         fontWeight: 'bold',
         color: '#D32F2F',
+        textAlign: 'right',
+        flexShrink: 1,
     },
     remarkBox: {
         marginTop: 10,

@@ -316,6 +316,15 @@ public interface BillingReadingRepository extends JpaRepository<BillingReading, 
                         @Param("status") String status,
                         @Param("minHisab") double minHisab);
 
+        @Query("SELECT b FROM BillingReading b " +
+                        "WHERE b.kifyaWer = :kifyaWer " +
+                        "AND b.billingCustomerInfo IN :customers " +
+                        "AND b.status = :status")
+        List<BillingReading> findByKifyaWerAndCustomers(
+                        @Param("kifyaWer") String kifyaWer,
+                        @Param("customers") java.util.Collection<BillingCustomerInfo> customers,
+                        @Param("status") String status);
+
         // Updated Query for Granular Financial Summary (including Paid/Total Breakdown)
         @Query("SELECT new com.wbill.home.model.DashboardSummary(" +
         // Group 1 totals:

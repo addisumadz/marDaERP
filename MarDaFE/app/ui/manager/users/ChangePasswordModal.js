@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Dialog, DialogTitle, DialogContent, DialogActions, Button, Grid, TextField } from "@mui/material";
 import Typography from "@mui/material/Typography";
 import { UserAccountService } from "@/app/lib/userAccountService";
@@ -7,10 +7,19 @@ import { toast } from "react-toastify";
 
 const userService = new UserAccountService();
 
-export default function ChangePasswordModal({ open, onClose, userId }) {
+export default function ChangePasswordModal({ open, onClose, userId, user }) {
   const [form, setForm] = useState({ newPassword: "", confirmPassword: "" });
   const [submitting, setSubmitting] = useState(false);
   const [pwdStrength, setPwdStrength] = useState({ label: "", color: "text.secondary" });
+
+  const effectiveUserId = user?.id || userId;
+
+  useEffect(() => {
+    if (open) {
+      setForm({ newPassword: "", confirmPassword: "" });
+      setPwdStrength({ label: "", color: "text.secondary" });
+    }
+  }, [open]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -35,7 +44,7 @@ export default function ChangePasswordModal({ open, onClose, userId }) {
   };
 
   const handleSubmit = async () => {
-    if (!userId) return;
+    if (!effectiveUserId) return;
     if (!form.newPassword || !form.confirmPassword) {
       toast.error("Please enter new password in both fields");
       return;
@@ -53,7 +62,7 @@ export default function ChangePasswordModal({ open, onClose, userId }) {
     }
     try {
       setSubmitting(true);
-      await userService.changePassword(userId, { newPassword: form.newPassword });
+      await userService.changePassword(effectiveUserId, { newPassword: form.newPassword });
       toast.success("Password changed successfully");
       onClose();
     } catch (e) {
@@ -65,7 +74,9 @@ export default function ChangePasswordModal({ open, onClose, userId }) {
 
   return (
     <Dialog open={!!open} onClose={onClose} maxWidth="xs" fullWidth>
-      <DialogTitle>Change Password</DialogTitle>
+      <DialogTitle>
+        Change Password{user?.userName ? ` for "${user.userName}"` : ""}
+      </DialogTitle>
       <DialogContent dividers>
         <Grid container spacing={2} sx={{ mt: 0.5 }}>
           <Grid item xs={12}>

@@ -209,13 +209,40 @@ public class UserAccountService {
     }
     UserAccount u = repo.findById(id).orElseThrow(() -> new EntityNotFoundException("UserAccount not found: " + id));
 
-    // Verify caller privileges: Only authenticated ROLE_ADMIN can bypass currentPassword
+    // Verify caller or target privileges: admin user or systemadmin role bypasses currentPassword
     Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-    boolean isAdmin = auth != null && auth.isAuthenticated() && auth.getAuthorities().stream()
-        .anyMatch(a -> a.getAuthority().equalsIgnoreCase("ROLE_ADMIN") 
-                    || a.getAuthority().equalsIgnoreCase("ADMIN"));
+    boolean callerIsAdmin = false;
+    if (auth != null && auth.isAuthenticated() && !"anonymousUser".equalsIgnoreCase(auth.getName())) {
+      String callerUsername = auth.getName() != null ? auth.getName().trim() : "";
+      if ("admin".equalsIgnoreCase(callerUsername) || "systemadmin".equalsIgnoreCase(callerUsername)) {
+        callerIsAdmin = true;
+      } else if (auth.getAuthorities() != null) {
+        callerIsAdmin = auth.getAuthorities().stream().anyMatch(a -> {
+          if (a == null || a.getAuthority() == null) return false;
+          String norm = a.getAuthority().trim().toUpperCase().replace("ROLE_", "");
+          return "ADMIN".equals(norm) || "SYSTEMADMIN".equals(norm) || "BILLZGJT".equals(norm);
+        });
+      }
+    }
 
-    if (!isAdmin) {
+    boolean targetIsAdmin = false;
+    if (u != null) {
+      String targetUsername = u.getUserName() != null ? u.getUserName().trim() : "";
+      if ("admin".equalsIgnoreCase(targetUsername) || "systemadmin".equalsIgnoreCase(targetUsername)) {
+        targetIsAdmin = true;
+      } else if (u.getUserRole() != null) {
+        String roleCode = u.getUserRole().getRoleCode() != null ? u.getUserRole().getRoleCode().trim().toUpperCase().replace("ROLE_", "") : "";
+        String roleName = u.getUserRole().getRoleName() != null ? u.getUserRole().getRoleName().trim().toUpperCase().replace("ROLE_", "") : "";
+        if ("ADMIN".equals(roleCode) || "SYSTEMADMIN".equals(roleCode) || "BILLZGJT".equals(roleCode)
+            || "ADMIN".equals(roleName) || "SYSTEMADMIN".equals(roleName) || "BILLZGJT".equals(roleName)) {
+          targetIsAdmin = true;
+        }
+      }
+    }
+
+    boolean bypassCurrentPassword = callerIsAdmin || targetIsAdmin;
+
+    if (!bypassCurrentPassword) {
       if (payload.currentPassword == null || payload.currentPassword.isBlank()) {
         throw new IllegalArgumentException("Current password is required");
       }

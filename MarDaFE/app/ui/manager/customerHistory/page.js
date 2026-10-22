@@ -65,6 +65,7 @@ import FilterAltOffIcon from "@mui/icons-material/FilterAltOff";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import ErrorOutlineIcon from "@mui/icons-material/ErrorOutline";
 import CalculateIcon from "@mui/icons-material/Calculate";
+import TimelineIcon from "@mui/icons-material/Timeline";
 
 import {
   QueryClient,
@@ -319,6 +320,7 @@ const CustomerList = () => {
   const [snackbar, setSnackbar] = useState({ open: false, message: "", severity: "success" });
   const fileInputRef = useRef(null);
   const [viewReadingId, setViewReadingId] = useState(null);
+  const [isPreviewMode, setIsPreviewMode] = useState(false);
 
   // Generic confirm dialog state
   const [confirmState, setConfirmState] = useState({
@@ -450,6 +452,10 @@ const CustomerList = () => {
   const [validationError, setValidationError] = useState("");
   const [isEditAndGenerate, setIsEditAndGenerate] = useState(false);
   const [isEditSubmitting, setIsEditSubmitting] = useState(false);
+
+  // 2-Step Workflow States (Isolated from 1-step complaint flow, No Finance Update)
+  const [isTwoStepEditModalOpen, setIsTwoStepEditModalOpen] = useState(false);
+  const [isGeneratingSingleBill, setIsGeneratingSingleBill] = useState(false);
 
   // Stepped in-modal workflow states
   const [editModalStep, setEditModalStep] = useState("INPUT"); // 'INPUT' | 'PROCESSING' | 'JOURNAL'
@@ -952,6 +958,114 @@ const CustomerList = () => {
     setIsEditAndGenerate(false);
     setProcessingStepText("");
     setProcessingProgress(0);
+  };
+
+  // ==========================================
+  // ISOLATED 2-STEP WORKFLOW HANDLERS (ZERO FINANCE UPDATE)
+  // ==========================================
+  const handleTwoStepEditReading = (bill) => {
+    if (bill.isMoneyCollected || bill.moneyCollected) {
+      toast.error("Cannot edit reading: Money has already been collected for this bill.");
+      return;
+    }
+
+    showConfirm({
+      title: "Edit Reading (Step 1)",
+      content: "This will delete the active reading and create a new one with your inputs. Continue?",
+      confirmColor: "warning",
+      onConfirm: () => {
+        setSelectedBillForEdit(bill);
+        setEditReadingData({
+          currentReading: bill.lastReading?.toString() || "",
+          previousReading: bill.previousReading?.toString() || "",
+        });
+        setValidationError("");
+        setIsTwoStepEditModalOpen(true);
+      },
+    });
+  };
+
+  const handleCloseTwoStepEditModal = () => {
+    setIsTwoStepEditModalOpen(false);
+    setSelectedBillForEdit(null);
+    setEditReadingData({ currentReading: "", previousReading: "" });
+    setValidationError("");
+  };
+
+  const handleTwoStepEditReadingSubmit = async () => {
+    if (isEditSubmitting) return;
+    if (!selectedBillForEdit || !editReadingData.currentReading || !editReadingData.previousReading) {
+      toast.error("Please enter valid current and previous readings.");
+      return;
+    }
+
+    const newReading = parseInt(editReadingData.currentReading);
+    const prevReading = parseInt(editReadingData.previousReading);
+
+    if (isNaN(newReading) || isNaN(prevReading)) {
+      setValidationError("Please enter valid numeric values for both readings.");
+      return;
+    }
+
+    if (newReading < 0 || prevReading < 0) {
+      setValidationError("Readings cannot be negative.");
+      return;
+    }
+
+    if (newReading < prevReading) {
+      setValidationError("Current reading cannot be less than previous reading.");
+      return;
+    }
+
+    setValidationError("");
+    setIsEditSubmitting(true);
+
+    try {
+      await readingService.deleteActiveAndCreateNewReading(
+        selectedBillForEdit.id,
+        prevReading,
+        newReading
+      );
+
+      toast.success("Reading updated successfully! You can now generate the bill.");
+      queryClient.invalidateQueries(["customer-all-bill-data", selectedCustomerId]);
+      handleCloseTwoStepEditModal();
+    } catch (error) {
+      console.error("Error updating reading (2-step):", error);
+      toast.error(`Failed to update reading: ${error.message}`);
+    } finally {
+      setIsEditSubmitting(false);
+    }
+  };
+
+  const handleGenerateBill = (bill) => {
+    if (!bill || bill.isBillGenerated) {
+      toast.info("Bill is already generated.");
+      return;
+    }
+    if (bill.isMoneyCollected || bill.moneyCollected) {
+      toast.error("Cannot generate bill: Money has already been collected.");
+      return;
+    }
+
+    showConfirm({
+      title: "Generate Bill (Step 2)",
+      content: `Generate bill for reading (${bill.kifyaWer || "selected period"})?`,
+      confirmColor: "primary",
+      onConfirm: async () => {
+        try {
+          setIsGeneratingSingleBill(true);
+          await readingService.generateBills([bill.id]);
+          toast.success("Bill generated successfully!");
+          queryClient.invalidateQueries(["customer-all-bill-data", selectedCustomerId]);
+        } catch (err) {
+          console.error("Error generating bill:", err);
+          toast.error(err.message || "Failed to generate bill.");
+        } finally {
+          setIsGeneratingSingleBill(false);
+        }
+      },
+    });
   };
 
   // --- Journal Preview Push Handler ---
@@ -1526,7 +1640,7 @@ const CustomerList = () => {
       {
         id: "actions",
         header: "Actions",
-        size: 190,
+        size: 240,
         Cell: ({ row }) => {
           const bill = row.original;
           const canEditOrDelete = !bill.isMoneyCollected && !bill.moneyCollected;
@@ -1535,7 +1649,13 @@ const CustomerList = () => {
             return (
               <Box sx={{ display: "flex", gap: "0.4rem", alignItems: "center" }}>
                 <Tooltip title="View Reading Details">
-                  <IconButton size="small" onClick={() => setViewReadingId(bill.id)}>
+                  <IconButton
+                    size="small"
+                    onClick={() => {
+                      setViewReadingId(bill.id);
+                      setIsPreviewMode(false);
+                    }}
+                  >
                     <VisibilityIcon fontSize="small" />
                   </IconButton>
                 </Tooltip>
@@ -1567,22 +1687,72 @@ const CustomerList = () => {
                 )}
                 {canEditOrDelete ? (
                   <>
+                    {/* Step 2: Generate Bill & Preview (shown ONLY when bill is not yet generated) */}
+                    {!bill.isBillGenerated && (
+                      <>
+                        <Tooltip title="Preview Bill Calculation">
+                          <IconButton
+                            size="small"
+                            color="secondary"
+                            onClick={() => {
+                              setViewReadingId(bill.id);
+                              setIsPreviewMode(true);
+                            }}
+                          >
+                            <TimelineIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+
+                        <Tooltip title="Generate Bill (Step 2)">
+                          <span>
+                            <IconButton
+                              size="small"
+                              color="success"
+                              onClick={() => handleGenerateBill(bill)}
+                              disabled={isChangingStatus || isGeneratingSingleBill || isEditSubmitting}
+                            >
+                              {isGeneratingSingleBill ? (
+                                <CircularProgress size={16} color="inherit" />
+                              ) : (
+                                <ReceiptLongIcon fontSize="small" />
+                              )}
+                            </IconButton>
+                          </span>
+                        </Tooltip>
+                      </>
+                    )}
+
+                    {/* Step 1: Edit Reading (2-step flow without finance update) */}
+                    <Tooltip title="Edit Reading (Step 1)">
+                      <IconButton
+                        size="small"
+                        color="info"
+                        onClick={() => handleTwoStepEditReading(bill)}
+                        disabled={isChangingStatus || isEditSubmitting || isGeneratingSingleBill}
+                      >
+                        <EditIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+
+                    {/* Existing 1-Step Automated Complaint Correction (UNCHANGED) */}
                     <Tooltip title="Edit & Generate Bill (Complaint Correction)">
                       <IconButton
                         size="small"
                         color="warning"
                         onClick={() => handleEditAndGenerate(bill)}
-                        disabled={isChangingStatus || isEditSubmitting}
+                        disabled={isChangingStatus || isEditSubmitting || isGeneratingSingleBill}
                       >
                         <PlaylistAddCheckIcon fontSize="small" />
                       </IconButton>
                     </Tooltip>
+
+                    {/* Existing Delete Reading (UNCHANGED) */}
                     <Tooltip title={isChangingStatus ? "Deleting..." : "Delete Reading"}>
                       <IconButton
                         size="small"
                         color="error"
                         onClick={() => handleDeleteReading(bill)}
-                        disabled={isChangingStatus}
+                        disabled={isChangingStatus || isGeneratingSingleBill}
                       >
                         {isChangingStatus ? <CircularProgress size={16} color="inherit" /> : <DeleteOutlineIcon fontSize="small" />}
                       </IconButton>
@@ -1605,7 +1775,13 @@ const CustomerList = () => {
           return (
             <Box sx={{ display: "flex", gap: "0.4rem", alignItems: "center" }}>
               <Tooltip title="View Reading Details">
-                <IconButton size="small" onClick={() => setViewReadingId(bill.id)}>
+                <IconButton
+                  size="small"
+                  onClick={() => {
+                    setViewReadingId(bill.id);
+                    setIsPreviewMode(false);
+                  }}
+                >
                   <VisibilityIcon fontSize="small" />
                 </IconButton>
               </Tooltip>
@@ -2711,6 +2887,151 @@ const CustomerList = () => {
         </DialogActions>
       </Dialog>
 
+      {/* 2-Step Workflow: Step 1 Edit Reading Dialog (Zero Finance Update) */}
+      <Dialog
+        open={isTwoStepEditModalOpen}
+        onClose={handleCloseTwoStepEditModal}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            bgcolor: "#e0f2fe",
+            borderBottom: "1px solid #bae6fd",
+          }}
+        >
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+            <EditIcon sx={{ color: "#0288d1" }} />
+            <Box>
+              <Typography variant="h6" sx={{ fontWeight: 700, color: "#0369a1", lineHeight: 1.2 }}>
+                Edit Reading (Step 1)
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                Update meter reading without generating bill or pushing to finance
+              </Typography>
+            </Box>
+          </Box>
+          <IconButton size="small" onClick={handleCloseTwoStepEditModal}>
+            <CloseIcon fontSize="small" />
+          </IconButton>
+        </DialogTitle>
+
+        <DialogContent sx={{ pt: 2.5 }}>
+          <Alert severity="info" sx={{ mb: 2.5 }}>
+            This will void the active reading and save your new inputs as an unbilled reading. You can generate the bill in Step 2.
+          </Alert>
+
+          {selectedBillForEdit && (
+            <Paper elevation={0} sx={{ p: 2, bgcolor: "#f8fafc", borderRadius: 1.5, border: "1px solid #e2e8f0", mb: 2.5 }}>
+              <Grid container spacing={1}>
+                <Grid item xs={6}>
+                  <Typography variant="caption" color="text.secondary">Invoice Number:</Typography>
+                  <Typography variant="body2" sx={{ fontWeight: 600, fontFamily: "monospace" }}>
+                    {selectedBillForEdit.billingInvoiceNumber || "-"}
+                  </Typography>
+                </Grid>
+                <Grid item xs={6}>
+                  <Typography variant="caption" color="text.secondary">Billing Period:</Typography>
+                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                    {selectedBillForEdit.kifyaWer || "-"}
+                  </Typography>
+                </Grid>
+                <Grid item xs={6}>
+                  <Typography variant="caption" color="text.secondary">Current Recorded Reading:</Typography>
+                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                    {selectedBillForEdit.lastReading ?? "-"}
+                  </Typography>
+                </Grid>
+                <Grid item xs={6}>
+                  <Typography variant="caption" color="text.secondary">Recorded Consumption:</Typography>
+                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                    {selectedBillForEdit.consumption ?? "-"} m³
+                  </Typography>
+                </Grid>
+              </Grid>
+            </Paper>
+          )}
+
+          <TextField
+            autoFocus
+            margin="dense"
+            label="Previous Reading"
+            type="number"
+            fullWidth
+            variant="outlined"
+            value={editReadingData.previousReading}
+            onChange={(e) => {
+              const value = e.target.value;
+              setEditReadingData((prev) => ({ ...prev, previousReading: value }));
+            }}
+            sx={{ mb: 2 }}
+          />
+
+          <TextField
+            margin="dense"
+            label="New Current Reading"
+            type="number"
+            fullWidth
+            variant="outlined"
+            value={editReadingData.currentReading}
+            onChange={(e) => {
+              const value = e.target.value;
+              setEditReadingData((prev) => ({ ...prev, currentReading: value }));
+            }}
+            error={!!validationError}
+            helperText={validationError}
+          />
+
+          {liveConsumption !== null && (
+            <Box
+              sx={{
+                mt: 2,
+                p: 1.5,
+                borderRadius: 1.5,
+                bgcolor: liveConsumption >= 0 ? "#e8f5e9" : "#ffebee",
+                border: liveConsumption >= 0 ? "1px solid #a5d6a7" : "1px solid #ef9a9a",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+              }}
+            >
+              <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                <CalculateIcon sx={{ color: liveConsumption >= 0 ? "success.main" : "error.main" }} />
+                <Typography variant="body2" sx={{ fontWeight: 600, color: liveConsumption >= 0 ? "success.dark" : "error.dark" }}>
+                  {liveConsumption >= 0 ? "Calculated Consumption:" : "Invalid Consumption:"}
+                </Typography>
+              </Box>
+              <Chip
+                label={`${liveConsumption} m³`}
+                color={liveConsumption >= 0 ? "success" : "error"}
+                sx={{ fontWeight: 700 }}
+              />
+            </Box>
+          )}
+        </DialogContent>
+
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={handleCloseTwoStepEditModal} disabled={isEditSubmitting}>Cancel</Button>
+          <Button
+            onClick={handleTwoStepEditReadingSubmit}
+            variant="contained"
+            color="primary"
+            disabled={
+              isEditSubmitting ||
+              !editReadingData.currentReading ||
+              !editReadingData.previousReading ||
+              (liveConsumption !== null && liveConsumption < 0)
+            }
+            sx={{ fontWeight: 700, px: 3 }}
+          >
+            {isEditSubmitting ? "Updating..." : "Update Reading"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       {/* 2. Standalone Journal Preview Dialog (Used for Delete Reading) */}
       <Dialog open={journalPreviewOpen} onClose={handleCloseJournalPreview} maxWidth="md" fullWidth>
         <DialogTitle sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", bgcolor: "#f0fdf4", borderBottom: "1px solid #bbf7d0" }}>
@@ -2889,8 +3210,12 @@ const CustomerList = () => {
 
       <ReadingDetailModal
         open={!!viewReadingId}
-        onClose={() => setViewReadingId(null)}
+        onClose={() => {
+          setViewReadingId(null);
+          setIsPreviewMode(false);
+        }}
         readingId={viewReadingId}
+        isPreview={isPreviewMode}
       />
 
       {/* Import Confirmation and Results Dialogs */}

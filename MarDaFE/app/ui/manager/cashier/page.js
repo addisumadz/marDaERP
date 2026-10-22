@@ -906,6 +906,13 @@ export default function CashierPage() {
         rightY += 6;
       });
 
+      const isFrontOffice =
+        reading.isPaidOnFrontOffice === true ||
+        reading.isPaidOnFrontOffice === "true" ||
+        (bill &&
+          (bill.isPaidOnFrontOffice === true ||
+            bill.isPaidOnFrontOffice === "true"));
+
       const isDerash =
         reading.isDerashPaid === true ||
         reading.isDerashPaid === "true" ||
@@ -916,21 +923,76 @@ export default function CashierPage() {
         reading.isUnicashPaid === "true" ||
         (bill && (bill.isUnicashPaid === true || bill.isUnicashPaid === "true"));
 
-      const derashCodeVal = reading.bankPaidConfirmationCode || (bill ? bill.bankPaidConfirmationCode : null);
-      const unicashCodeVal = reading.uBankPaidConfirmationCode || (bill ? bill.uBankPaidConfirmationCode : null);
-      const derashBankName = reading.bankName || (bill ? bill.bankName : "Derash");
-      const unicashBankName = reading.uBankName || (bill ? bill.uBankName : "Unicash");
+      const isMardaArif =
+        reading.isMardaArifPaid === true ||
+        reading.isMardaArifPaid === "true" ||
+        (bill && (bill.isMardaArifPaid === true || bill.isMardaArifPaid === "true"));
 
-      if (isDerash && isUnicash && derashCodeVal && unicashCodeVal) {
-        drawBoldText(`የተከፈለበት ቦታ: ${derashBankName}: (${derashCodeVal})`, rightInnerX, rightY + 2);
-        drawBoldText(`${unicashBankName}: (${unicashCodeVal})`, rightInnerX, rightY + 6);
-      } else if (isDerash && derashCodeVal) {
-        drawBoldText(`የተከፈለበት ቦታ: ${derashBankName} (${derashCodeVal})`, rightInnerX, rightY + 2);
-      } else if (isUnicash && unicashCodeVal) {
-        drawBoldText(`የተከፈለበት ቦታ: ${unicashBankName} (${unicashCodeVal})`, rightInnerX, rightY + 2);
-      } else {
-        drawBoldText(`የተከፈለበት ቦታ: ${paymentLocation}`, rightInnerX, rightY + 2);
+      const isPaidThroughBank =
+        reading.isPaidThroughBank === true ||
+        reading.isPaidThroughBank === "true" ||
+        (bill && (bill.isPaidThroughBank === true || bill.isPaidThroughBank === "true"));
+
+      const derashBankName =
+        reading?.billingBanks?.bankName ||
+        reading?.billingBank?.bankName ||
+        reading?.bankName ||
+        (bill ? (bill.billingBanks?.bankName || bill.bankName) : null) ||
+        "ደራሽ";
+
+      const unicashBankName =
+        reading?.uBankName ||
+        reading?.UBankName ||
+        reading?.ubankName ||
+        reading?.uBillingBank?.bankName ||
+        (bill ? (bill.uBankName || bill.UBankName || bill.ubankName || bill.uBillingBank?.bankName) : null) ||
+        "ዩኒካሽ";
+
+      const mardaBankName =
+        reading?.mBillingBank?.bankName ||
+        reading?.mBankName ||
+        (bill ? bill.mBankName : null) ||
+        "ማርዳአሪፍ";
+
+      const genericBankName =
+        reading?.bankName || (bill ? bill.bankName : null) || "ባንክ";
+
+      const paymentLocations = [];
+      if (isFrontOffice) {
+        paymentLocations.push("ቢሮ");
       }
+      if (isDerash) {
+        paymentLocations.push(String(derashBankName).trim());
+      }
+      if (isUnicash) {
+        paymentLocations.push(String(unicashBankName).trim());
+      }
+      if (isMardaArif) {
+        paymentLocations.push(String(mardaBankName).trim());
+      }
+      if (!isDerash && !isUnicash && !isMardaArif && isPaidThroughBank) {
+        paymentLocations.push(String(genericBankName).trim());
+      }
+
+      const uniqueLocations = Array.from(new Set(paymentLocations.filter(Boolean)));
+      if (uniqueLocations.length === 0) {
+        if (paymentLocation && paymentLocation !== "-") {
+          uniqueLocations.push(paymentLocation);
+        } else {
+          uniqueLocations.push("-");
+        }
+      }
+
+      const locationsText = uniqueLocations.join(", ");
+      const fullLocationLine = `የተከፈለበት ቦታ: ${locationsText}`;
+
+      doc.setFontSize(uniqueLocations.length > 2 ? 11 : 12);
+      const splitLocationLines = doc.splitTextToSize(fullLocationLine, rightInnerWidth);
+      let locY = rightY + 2;
+      splitLocationLines.forEach((line) => {
+        drawBoldText(line, rightInnerX, locY);
+        locY += 4.5;
+      });
 
       if (preview) {
         const pdfBlob = doc.output("blob");

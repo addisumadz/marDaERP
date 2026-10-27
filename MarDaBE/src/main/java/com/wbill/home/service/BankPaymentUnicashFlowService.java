@@ -368,8 +368,12 @@ public class BankPaymentUnicashFlowService {
     private static Map<String,Integer> mapHeader(String[] header) {
         Map<String,Integer> m = new HashMap<>();
         for (int i=0;i<header.length;i++) {
-            String key = header[i] == null ? null : header[i].trim().toLowerCase(Locale.ROOT);
-            if (key != null && !key.isEmpty()) m.put(key, i);
+            if (header[i] == null) continue;
+            String key = header[i].trim().toLowerCase(Locale.ROOT);
+            if (key.startsWith("\uFEFF")) {
+                key = key.substring(1).trim();
+            }
+            if (!key.isEmpty()) m.put(key, i);
         }
         return m;
     }

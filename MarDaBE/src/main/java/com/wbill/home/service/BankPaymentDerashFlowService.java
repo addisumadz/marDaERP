@@ -107,15 +107,15 @@ public class BankPaymentDerashFlowService {
             while ((row = csv.readNext()) != null) {
                 totalCount++;
                 // Original CSV format:
-                // biller_id,biller_name,customer_name,bill_id,paid_amount,paid_dt,agent_id,agent_tx_code
-                String billerId = get(row, idx, "biller_id");
-                String billerName = get(row, idx, "biller_name");
-                String customerName = get(row, idx, "customer_name");
-                String billId = get(row, idx, "bill_id");
-                String paidAmountStr = get(row, idx, "paid_amount");
-                String paidDt = get(row, idx, "paid_dt");
-                String agentId = get(row, idx, "agent_id");
-                String agentTx = get(row, idx, "agent_tx_code");
+                // Support standard Derash format and general bill submission formats
+                String billerId = get(row, idx, "biller_id", "billerid");
+                String billerName = get(row, idx, "biller_name", "billername");
+                String customerName = get(row, idx, "customer_name", "customername", "name");
+                String billId = get(row, idx, "bill_id", "billid", "invoice_number", "invoicenumber", "invoice_no", "invoiceno");
+                String paidAmountStr = get(row, idx, "paid_amount", "paidamount", "amount_due", "amountdue", "amount");
+                String paidDt = get(row, idx, "paid_dt", "paiddt", "paid_date", "paiddate", "due_date", "duedate", "date");
+                String agentId = get(row, idx, "agent_id", "agentid", "bank_code", "bankcode");
+                String agentTx = get(row, idx, "agent_tx_code", "agenttxcode", "agent_confirmation_code");
                 if (billId == null || billId.isBlank())
                     continue;
 
@@ -264,11 +264,11 @@ public class BankPaymentDerashFlowService {
             while ((row = csv.readNext()) != null) {
                 processed++;
                 try {
-                    String billId = get(row, idx, "bill_id");
-                    String paidAmountStr = get(row, idx, "paid_amount");
-                    String paidDt = get(row, idx, "paid_dt");
-                    String agentId = get(row, idx, "agent_id");
-                    String agentTx = get(row, idx, "agent_tx_code");
+                    String billId = get(row, idx, "bill_id", "billid", "invoice_number", "invoicenumber", "invoice_no", "invoiceno");
+                    String paidAmountStr = get(row, idx, "paid_amount", "paidamount", "amount_due", "amountdue", "amount");
+                    String paidDt = get(row, idx, "paid_dt", "paiddt", "paid_date", "paiddate", "due_date", "duedate", "date");
+                    String agentId = get(row, idx, "agent_id", "agentid", "bank_code", "bankcode");
+                    String agentTx = get(row, idx, "agent_tx_code", "agenttxcode", "agent_confirmation_code");
                     if (billId == null || billId.isBlank()) {
                         progressService.incrementProcessed(jobId);
                         continue;
@@ -418,11 +418,11 @@ public class BankPaymentDerashFlowService {
             int totalCount = 0;
             while ((row = csv.readNext()) != null) {
                 totalCount++;
-                String billId = get(row, idx, "bill_id");
-                String paidAmountStr = get(row, idx, "paid_amount");
-                String paidDt = get(row, idx, "paid_dt");
-                String agentId = get(row, idx, "agent_id");
-                String agentTx = get(row, idx, "agent_tx_code");
+                String billId = get(row, idx, "bill_id", "billid", "invoice_number", "invoicenumber", "invoice_no", "invoiceno");
+                String paidAmountStr = get(row, idx, "paid_amount", "paidamount", "amount_due", "amountdue", "amount");
+                String paidDt = get(row, idx, "paid_dt", "paiddt", "paid_date", "paiddate", "due_date", "duedate", "date");
+                String agentId = get(row, idx, "agent_id", "agentid", "bank_code", "bankcode");
+                String agentTx = get(row, idx, "agent_tx_code", "agenttxcode", "agent_confirmation_code");
                 if (billId == null || billId.isBlank())
                     continue;
 
@@ -554,11 +554,11 @@ public class BankPaymentDerashFlowService {
                 try {
                     // Original CSV format:
                     // biller_id,biller_name,customer_name,bill_id,paid_amount,paid_dt,agent_id,agent_tx_code
-                    String billId = get(row, idx, "bill_id");
-                    String paidAmountStr = get(row, idx, "paid_amount");
-                    String paidDt = get(row, idx, "paid_dt");
-                    String agentId = get(row, idx, "agent_id");
-                    String agentTx = get(row, idx, "agent_tx_code");
+                    String billId = get(row, idx, "bill_id", "billid", "invoice_number", "invoicenumber", "invoice_no", "invoiceno");
+                    String paidAmountStr = get(row, idx, "paid_amount", "paidamount", "amount_due", "amountdue", "amount");
+                    String paidDt = get(row, idx, "paid_dt", "paiddt", "paid_date", "paiddate", "due_date", "duedate", "date");
+                    String agentId = get(row, idx, "agent_id", "agentid", "bank_code", "bankcode");
+                    String agentTx = get(row, idx, "agent_tx_code", "agenttxcode", "agent_confirmation_code");
                     if (billId == null || billId.isBlank()) {
                         // progressService.addLog(jobId, "Row " + processed + ": empty bill_id,
                         // skipped"); // disabled to reduce overhead
@@ -694,18 +694,33 @@ public class BankPaymentDerashFlowService {
     private static Map<String, Integer> mapHeader(String[] header) {
         Map<String, Integer> m = new HashMap<>();
         for (int i = 0; i < header.length; i++) {
-            String key = header[i] == null ? null : header[i].trim().toLowerCase(Locale.ROOT);
-            if (key != null && !key.isEmpty())
+            if (header[i] == null) continue;
+            String key = header[i].trim().toLowerCase(Locale.ROOT);
+            if (key.startsWith("\uFEFF")) {
+                key = key.substring(1).trim();
+            }
+            if (!key.isEmpty()) {
                 m.put(key, i);
+                String norm = key.replace("_", "").replace("-", "").replace(" ", "");
+                if (!norm.isEmpty()) {
+                    m.putIfAbsent(norm, i);
+                }
+            }
         }
         return m;
     }
 
-    private static String get(String[] row, Map<String, Integer> idx, String key) {
-        Integer i = idx.get(key);
-        if (i == null || i < 0 || i >= row.length)
-            return null;
-        return row[i];
+    private static String get(String[] row, Map<String, Integer> idx, String... keys) {
+        for (String k : keys) {
+            Integer i = idx.get(k);
+            if (i != null && i >= 0 && i < row.length) {
+                String val = row[i];
+                if (val != null && !val.trim().isEmpty()) {
+                    return val.trim();
+                }
+            }
+        }
+        return null;
     }
 
     private static Double parseDouble(String s) {

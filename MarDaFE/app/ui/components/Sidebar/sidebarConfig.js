@@ -264,6 +264,30 @@ export const menuGroups = [
                         title: "Bank Import Files",
                         path: "/ui/manager/BankImportFiles",
                         icon: FileText,
+                    },
+                    {
+                        title: "Bank Import Compare",
+                        path: "/ui/manager/BankImportCompare",
+                        icon: Scale,
+                    }
+                ]
+            },
+            {
+                title: "Arifpay",
+                path: "#",
+                icon: CreditCard,
+                roles: ["billzgjt", "Cashier", "CASHIER", "systemadmin"],
+                children: [
+                    {
+                        title: "Pay with Arifpay",
+                        path: "/ui/manager/payWithArifpay",
+                        icon: CreditCard,
+                    },
+                    {
+                        title: "Arifpay Settings",
+                        path: "/ui/manager/arifpaySetting",
+                        icon: Settings,
+                        roles: ["billzgjt", "systemadmin"],
                     }
                 ]
             }

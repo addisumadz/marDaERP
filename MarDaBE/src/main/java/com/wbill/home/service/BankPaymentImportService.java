@@ -277,7 +277,11 @@ public class BankPaymentImportService {
         Map<String, Integer> map = new HashMap<>();
         for (int i = 0; i < header.length; i++) {
             if (header[i] != null) {
-                map.put(header[i].trim().toLowerCase(Locale.ROOT), i);
+                String key = header[i].trim().toLowerCase(Locale.ROOT);
+                if (key.startsWith("\uFEFF")) {
+                    key = key.substring(1).trim();
+                }
+                map.put(key, i);
             }
         }
         return map;

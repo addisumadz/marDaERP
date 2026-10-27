@@ -170,6 +170,11 @@ public class WebSecurityConfig {
                         .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
                         // ✅ Allow all CORS preflight requests
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                        // ✅ Public ArifPay webhook callback
+                        .requestMatchers(
+                                "/api/mardaerp/payments/arifpay/callback",
+                                "/api/card_managenment/payments/arifpay/callback"
+                        ).permitAll()
                         // 🔒 SECURITY: All MardaERP business, HRMS, and legacy endpoints require JWT authentication
                         .requestMatchers("/api/mardaerp/**").authenticated()
                         .requestMatchers("/api/card_managenment/**").authenticated()

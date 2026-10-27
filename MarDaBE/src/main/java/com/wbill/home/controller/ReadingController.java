@@ -121,6 +121,9 @@ public class ReadingController {
     @Autowired
     private UserAccountRepository userAccountRepository;
 
+    @Autowired
+    private com.wbill.home.service.BankInvoiceCompareService bankInvoiceCompareService;
+
     @GetMapping
     public ResponseEntity<List<BillingReadingDTO>> getAllReadings() {
         List<BillingReadingDTO> readings = readingService.getAllReadingsForList();
@@ -1693,6 +1696,57 @@ public class ReadingController {
         } catch (Exception e) {
             return ResponseEntity.internalServerError()
                     .body(new ErrorResponse("Failed to upload CSV: " + e.getMessage()));
+        }
+    }
+
+    @PostMapping(value = "/bank-payments/compare-csv", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<?> compareCsvWithSystem(
+            @RequestParam("file") MultipartFile file,
+            @RequestParam("kifyaWer") String kifyaWer) {
+        try {
+            if (file == null || file.isEmpty()) {
+                return ResponseEntity.badRequest().body(Map.of("message", "CSV file is required"));
+            }
+            if (kifyaWer == null || kifyaWer.trim().isEmpty()) {
+                return ResponseEntity.badRequest().body(Map.of("message", "kifyaWer billing period is required"));
+            }
+            com.wbill.home.dto.BankInvoiceCompareResultDTO result = bankInvoiceCompareService.compareCsv(file, kifyaWer.trim());
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            log.error("Failed to compare bank CSV", e);
+            return ResponseEntity.internalServerError().body(Map.of("message", "Failed to compare CSV: " + e.getMessage()));
+        }
+    }
+
+    @PostMapping(value = "/bank-payments/export-corrected-csv", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<byte[]> exportCorrectedCsv(
+            @RequestParam("file") MultipartFile file,
+            @RequestParam("kifyaWer") String kifyaWer) {
+        try {
+            if (file == null || file.isEmpty()) {
+                return ResponseEntity.badRequest().build();
+            }
+            if (kifyaWer == null || kifyaWer.trim().isEmpty()) {
+                return ResponseEntity.badRequest().build();
+            }
+
+            byte[] csvBytes = bankInvoiceCompareService.generateCorrectedCsv(file, kifyaWer.trim());
+            String origName = file.getOriginalFilename() != null && !file.getOriginalFilename().isBlank()
+                    ? file.getOriginalFilename()
+                    : "bank_payments.csv";
+            String downloadName = origName.startsWith("corrected_") ? origName : "corrected_" + origName;
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.parseMediaType("text/csv; charset=UTF-8"));
+            headers.add(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + downloadName + "\"");
+            headers.setContentLength(csvBytes.length);
+
+            return ResponseEntity.ok()
+                    .headers(headers)
+                    .body(csvBytes);
+        } catch (Exception e) {
+            log.error("Failed to generate corrected bank CSV", e);
+            return ResponseEntity.internalServerError().build();
         }
     }
 

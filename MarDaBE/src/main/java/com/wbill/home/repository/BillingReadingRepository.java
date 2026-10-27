@@ -303,6 +303,16 @@ public interface BillingReadingRepository extends JpaRepository<BillingReading, 
                         "WHERE b.kifyaWer = :kifyaWer AND b.isBillGenerated = true")
         List<BillingReading> findByKifyaWerWithInvoiceNumbers(@Param("kifyaWer") String kifyaWer);
 
+        /**
+         * Fetch all readings for a given kifyaWer with billingCustomerInfo and
+         * billingInvoiceNumbers eagerly fetched, used for CSV comparison and reconciliation.
+         */
+        @Query("SELECT b FROM BillingReading b " +
+                        "LEFT JOIN FETCH b.billingCustomerInfo bc " +
+                        "LEFT JOIN FETCH b.billingInvoiceNumbers bin " +
+                        "WHERE b.kifyaWer = :kifyaWer")
+        List<BillingReading> findByKifyaWerWithCustomerAndInvoice(@Param("kifyaWer") String kifyaWer);
+
         // Legacy-style Wuzif query: fetch readings for a reader and month where
         // wuzifHisab > :minHisab
         @Query("SELECT b FROM BillingReading b " +

@@ -198,6 +198,11 @@ export const menuGroups = [
                         icon: MessageSquare,
                     },
                     {
+                        title: "የSMS ጌትዌይ መሞከሪያ",
+                        path: "/ui/manager/smsGatewayTest",
+                        icon: MessageSquare,
+                    },
+                    {
                         title: "ዓመታዊ ሪፖርት",
                         path: "/ui/manager/yearlyReport",
                         icon: BarChart3,
@@ -253,6 +258,11 @@ export const menuGroups = [
                     {
                         title: "Send Bill SMS",
                         path: "/ui/manager/SendBillSms",
+                        icon: MessageSquare,
+                    },
+                    {
+                        title: "SMS Gateway Test",
+                        path: "/ui/manager/smsGatewayTest",
                         icon: MessageSquare,
                     },
                     {

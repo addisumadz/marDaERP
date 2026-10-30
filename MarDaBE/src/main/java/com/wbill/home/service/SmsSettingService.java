@@ -85,10 +85,10 @@ public class SmsSettingService {
                     def.setProtocol("SMPP");
                     def.setSmppHost("10.204.181.70");
                     def.setSmppPort(5019);
-                    def.setSmppSystemId("8581");
-                    def.setSmppPassword("Wtw@1921");
+                    def.setSmppSystemId("228581");
+                    def.setSmppPassword("222pass@123");
                     if (def.getSenderId() == null || def.getSenderId().equalsIgnoreCase("MarDa ERP")) {
-                        def.setSenderId("WoldiaWater");
+                        def.setSenderId("testsender");
                     }
                     smsSettingRepository.save(def);
                     logger.info("Updated existing default SMS setting with Woldia SMPP credentials.");
@@ -99,15 +99,15 @@ public class SmsSettingService {
                         "Default (All Cities)",
                         "https://smsethiopia.et/api/sms/send",
                         "2NJFAWWIERUMIQNMY03D4B9O48EMOJOJ:1027",
-                        "WoldiaWater",
+                        "testsender",
                         true,
                         "Global default gateway and SMPP fallback"
                 );
                 defaultSetting.setProtocol("SMPP");
                 defaultSetting.setSmppHost("10.204.181.70");
                 defaultSetting.setSmppPort(5019);
-                defaultSetting.setSmppSystemId("8581");
-                defaultSetting.setSmppPassword("Wtw@1921");
+                defaultSetting.setSmppSystemId("228581");
+                defaultSetting.setSmppPassword("2222pass@123");
                 smsSettingRepository.save(defaultSetting);
                 logger.info("Seeded default SMS_Setting with SMPP configuration in database.");
             }

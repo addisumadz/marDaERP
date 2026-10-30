@@ -668,5 +668,5 @@ CREATE TABLE IF NOT EXISTS `sms_setting` (
 --
 
 INSERT INTO `sms_setting` (`id`, `city_id`, `city_name`, `gateway_url`, `api_key`, `sender_id`, `is_active`, `description`, `created_date`, `modified_date`, `protocol`, `smpp_host`, `smpp_port`, `smpp_system_id`, `smpp_password`) VALUES
-(1, NULL, 'Wurabie', 'https://smsethiopia.et/api/sms/send', '2NJFAWWIERUMIQNMY03D4B9O48EMOJOJ:1027', 'Wurabie', 1, 'Global fallback gateway', '2026-09-16 16:12:19', '2026-09-16 18:47:07', 'SMPP', '10.204.181.70', 5019, '8581', 'Wtw@1921');
+(1, NULL, 'Wurabie', 'https://smsethiopia.et/api/sms/send', '2NJFAWWIERUMIQNMY03D4B9O48EMOJOJ:1027', 'Wurabie', 1, 'Global fallback gateway', '2026-09-16 16:12:19', '2026-09-16 18:47:07', 'SMPP', '10.204.181.70', 5019, '8581', 'pass@123');
 COMMIT;

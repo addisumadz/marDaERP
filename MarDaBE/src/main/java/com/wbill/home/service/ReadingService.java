@@ -2353,6 +2353,19 @@ public class ReadingService {
             String smsDueDateText,
             String monthYearPart,
             java.util.List<com.wbill.home.dto.GatewayBulkSmsRequestDTO.CustomSmsItemDTO> customItems) {
+        return sendBillSmsViaGateway(readingIds, gatewayUrl, apiKey, smsDueDateText, monthYearPart, customItems, null, null);
+    }
+
+    @Transactional
+    public java.util.Map<String, Object> sendBillSmsViaGateway(
+            java.util.List<Integer> readingIds,
+            String gatewayUrl,
+            String apiKey,
+            String smsDueDateText,
+            String monthYearPart,
+            java.util.List<com.wbill.home.dto.GatewayBulkSmsRequestDTO.CustomSmsItemDTO> customItems,
+            String protocol,
+            Integer cityId) {
 
         if ((readingIds == null || readingIds.isEmpty()) && (customItems == null || customItems.isEmpty())) {
             throw new IllegalArgumentException("readingIds or customItems cannot be empty");
@@ -2360,29 +2373,15 @@ public class ReadingService {
 
         java.util.List<SmsService.BulkSmsRequest> requests = new java.util.ArrayList<>();
         java.util.Map<Integer, BillingReading> readingsById = new java.util.HashMap<>();
+        Integer detectedCityId = cityId;
 
         if (readingIds != null && !readingIds.isEmpty()) {
             java.util.List<BillingReading> readings = billingReadingRepository.findAllById(readingIds);
             for (BillingReading r : readings) {
                 if (r != null) {
                     readingsById.put(r.getId(), r);
-                }
-            }
-
-            // Auto-resolve city SMS gateway settings if not provided
-            if (apiKey == null || apiKey.trim().isEmpty()) {
-                Integer detectedCityId = null;
-                for (BillingReading r : readingsById.values()) {
-                    if (r != null && r.getBillingCustomerInfo() != null && r.getBillingCustomerInfo().getCityId() != null) {
+                    if (detectedCityId == null && r.getBillingCustomerInfo() != null && r.getBillingCustomerInfo().getCityId() != null) {
                         detectedCityId = r.getBillingCustomerInfo().getCityId();
-                        break;
-                    }
-                }
-                Optional<com.wbill.home.dto.SmsSettingDTO> optSetting = smsSettingService.getSettingForCity(detectedCityId);
-                if (optSetting.isPresent()) {
-                    apiKey = optSetting.get().getApiKey();
-                    if (gatewayUrl == null || gatewayUrl.trim().isEmpty()) {
-                        gatewayUrl = optSetting.get().getGatewayUrl();
                     }
                 }
             }
@@ -2434,7 +2433,31 @@ public class ReadingService {
             );
         }
 
-        java.util.List<SmsService.BulkSmsResult> results = smsService.sendBulkSmsViaHttpGateway(requests, gatewayUrl, apiKey);
+        // Determine effective protocol and resolve settings if needed
+        String effectiveProtocol = protocol;
+        if ((effectiveProtocol == null || effectiveProtocol.trim().isEmpty() || apiKey == null || apiKey.trim().isEmpty()) && smsSettingService != null) {
+            Optional<com.wbill.home.dto.SmsSettingDTO> optSetting = smsSettingService.getSettingForCity(detectedCityId);
+            if (optSetting.isPresent()) {
+                if (effectiveProtocol == null || effectiveProtocol.trim().isEmpty()) {
+                    effectiveProtocol = optSetting.get().getProtocol();
+                }
+                if (apiKey == null || apiKey.trim().isEmpty()) {
+                    apiKey = optSetting.get().getApiKey();
+                }
+                if (gatewayUrl == null || gatewayUrl.trim().isEmpty()) {
+                    gatewayUrl = optSetting.get().getGatewayUrl();
+                }
+            }
+        }
+
+        java.util.List<SmsService.BulkSmsResult> results;
+        if ("SMPP".equalsIgnoreCase(effectiveProtocol)) {
+            logger.info("Dispatching {} bulk SMS via SMPP protocol (cityId={})", requests.size(), detectedCityId);
+            results = smsService.sendBulkSmsSilent(requests, detectedCityId);
+        } else {
+            logger.info("Dispatching {} bulk SMS via HTTP Gateway to {}", requests.size(), gatewayUrl);
+            results = smsService.sendBulkSmsViaHttpGateway(requests, gatewayUrl, apiKey);
+        }
 
         int sent = 0;
         int failed = 0;
@@ -2483,23 +2506,65 @@ public class ReadingService {
             String message,
             String gatewayUrl,
             String apiKey) {
+        return sendSingleBillSmsViaGateway(readingId, phoneNumber, message, gatewayUrl, apiKey, null, null);
+    }
 
-        if ((apiKey == null || apiKey.trim().isEmpty()) && readingId != null) {
-            BillingReading r = billingReadingRepository.findById(readingId).orElse(null);
-            Integer cityId = (r != null && r.getBillingCustomerInfo() != null) ? r.getBillingCustomerInfo().getCityId() : null;
-            Optional<com.wbill.home.dto.SmsSettingDTO> optSetting = smsSettingService.getSettingForCity(cityId);
+    @Transactional
+    public java.util.Map<String, Object> sendSingleBillSmsViaGateway(
+            Integer readingId,
+            String phoneNumber,
+            String message,
+            String gatewayUrl,
+            String apiKey,
+            String protocol,
+            Integer cityId) {
+
+        Integer detectedCityId = cityId;
+        BillingReading r = null;
+        if (readingId != null) {
+            r = billingReadingRepository.findById(readingId).orElse(null);
+            if (detectedCityId == null && r != null && r.getBillingCustomerInfo() != null) {
+                detectedCityId = r.getBillingCustomerInfo().getCityId();
+            }
+        }
+
+        String effectiveProtocol = protocol;
+        if ((effectiveProtocol == null || effectiveProtocol.trim().isEmpty() || apiKey == null || apiKey.trim().isEmpty()) && smsSettingService != null) {
+            Optional<com.wbill.home.dto.SmsSettingDTO> optSetting = smsSettingService.getSettingForCity(detectedCityId);
             if (optSetting.isPresent()) {
-                apiKey = optSetting.get().getApiKey();
+                if (effectiveProtocol == null || effectiveProtocol.trim().isEmpty()) {
+                    effectiveProtocol = optSetting.get().getProtocol();
+                }
+                if (apiKey == null || apiKey.trim().isEmpty()) {
+                    apiKey = optSetting.get().getApiKey();
+                }
                 if (gatewayUrl == null || gatewayUrl.trim().isEmpty()) {
                     gatewayUrl = optSetting.get().getGatewayUrl();
                 }
             }
         }
 
-        SmsService.BulkSmsResult res = smsService.sendSmsViaHttpGateway(gatewayUrl, apiKey, readingId, phoneNumber, message);
+        SmsService.BulkSmsResult res;
+        if ("SMPP".equalsIgnoreCase(effectiveProtocol)) {
+            logger.info("Dispatching single SMS via SMPP to phone={} (cityId={})", phoneNumber, detectedCityId);
+            java.util.List<SmsService.BulkSmsRequest> singleReq = java.util.Collections.singletonList(
+                    new SmsService.BulkSmsRequest(readingId, phoneNumber, message)
+            );
+            java.util.List<SmsService.BulkSmsResult> smppResults = smsService.sendBulkSms(singleReq, detectedCityId);
+            if (smppResults != null && !smppResults.isEmpty()) {
+                res = smppResults.get(0);
+            } else {
+                res = new SmsService.BulkSmsResult(readingId, phoneNumber, false, "No response from SMPP SMSC");
+            }
+        } else {
+            logger.info("Dispatching single SMS via HTTP Gateway to phone={}", phoneNumber);
+            res = smsService.sendSmsViaHttpGateway(gatewayUrl, apiKey, readingId, phoneNumber, message);
+        }
 
         if (res.isSuccess() && readingId != null) {
-            BillingReading r = billingReadingRepository.findById(readingId).orElse(null);
+            if (r == null) {
+                r = billingReadingRepository.findById(readingId).orElse(null);
+            }
             if (r != null) {
                 r.setEnableEditMeneshaReading(true);
                 r.setModifiedDate(new Date());

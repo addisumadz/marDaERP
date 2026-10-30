@@ -27,6 +27,8 @@ public class SmsTestController {
 
     private final SmsService smsService;
     private final ReadingService readingService;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.wbill.home.service.SmsSettingService smsSettingService;
 
     public SmsTestController(SmsService smsService, ReadingService readingService) {
         this.smsService = smsService;
@@ -193,10 +195,12 @@ public class SmsTestController {
                 return ResponseEntity.badRequest().body("readingIds or customItems cannot be empty");
             }
 
-            logger.info("Received gateway bulk SMS request: readingIds={}, customItems={}, gatewayUrl={}",
+            logger.info("Received gateway bulk SMS request: readingIds={}, customItems={}, gatewayUrl={}, protocol={}, cityId={}",
                     hasReadings ? request.getReadingIds().size() : 0,
                     hasCustom ? request.getCustomItems().size() : 0,
-                    request.getGatewayUrl());
+                    request.getGatewayUrl(),
+                    request.getProtocol(),
+                    request.getCityId());
 
             java.util.Map<String, Object> result = readingService.sendBillSmsViaGateway(
                     request.getReadingIds(),
@@ -204,7 +208,9 @@ public class SmsTestController {
                     request.getApiKey(),
                     request.getSmsDueDateText(),
                     request.getMonthYearPart(),
-                    request.getCustomItems());
+                    request.getCustomItems(),
+                    request.getProtocol(),
+                    request.getCityId());
             return ResponseEntity.ok(result);
         } catch (Exception e) {
             logger.error("Error sending bulk SMS via gateway", e);
@@ -226,15 +232,17 @@ public class SmsTestController {
                 return ResponseEntity.badRequest().body("message cannot be empty");
             }
 
-            logger.info("Received gateway single SMS request for readingId={}, phone={}",
-                    request.getReadingId(), request.getPhoneNumber());
+            logger.info("Received gateway single SMS request for readingId={}, phone={}, protocol={}, cityId={}",
+                    request.getReadingId(), request.getPhoneNumber(), request.getProtocol(), request.getCityId());
 
             java.util.Map<String, Object> result = readingService.sendSingleBillSmsViaGateway(
                     request.getReadingId(),
                     request.getPhoneNumber(),
                     request.getMessage(),
                     request.getGatewayUrl(),
-                    request.getApiKey());
+                    request.getApiKey(),
+                    request.getProtocol(),
+                    request.getCityId());
             return ResponseEntity.ok(result);
         } catch (Exception e) {
             logger.error("Error sending single SMS via gateway", e);
@@ -253,23 +261,47 @@ public class SmsTestController {
                     ? request.getMessage()
                     : "Test SMS from MarDa ERP Gateway";
 
-            SmsService.BulkSmsResult res = smsService.sendSmsViaHttpGateway(
-                    request.getGatewayUrl(),
-                    request.getApiKey(),
-                    null,
-                    request.getPhoneNumber(),
-                    testMsg);
+            String protocol = request.getProtocol();
+            Integer cityId = request.getCityId();
+            if ((protocol == null || protocol.trim().isEmpty()) && smsSettingService != null) {
+                java.util.Optional<com.wbill.home.dto.SmsSettingDTO> opt = smsSettingService.getSettingForCity(cityId);
+                if (opt.isPresent() && opt.get().getProtocol() != null) {
+                    protocol = opt.get().getProtocol();
+                }
+            }
 
-            java.util.Map<String, Object> body = new java.util.HashMap<>();
-            body.put("success", res.isSuccess());
-            body.put("phoneNumber", res.getPhoneNumber());
-            body.put("error", res.getError());
-            body.put("message", res.isSuccess() ? "Test SMS sent successfully!" : "Failed: " + res.getError());
-            return ResponseEntity.ok(body);
+            if ("SMPP".equalsIgnoreCase(protocol)) {
+                logger.info("Testing SMPP connection to phone={} (cityId={})", request.getPhoneNumber(), cityId);
+                smsService.sendTestSms(request.getPhoneNumber(), testMsg, cityId);
+                java.util.Map<String, Object> body = new java.util.HashMap<>();
+                body.put("success", true);
+                body.put("phoneNumber", request.getPhoneNumber());
+                body.put("error", null);
+                body.put("message", "SMPP Test SMS sent successfully via SMSC!");
+                return ResponseEntity.ok(body);
+            } else {
+                logger.info("Testing HTTP Gateway connection to phone={}", request.getPhoneNumber());
+                SmsService.BulkSmsResult res = smsService.sendSmsViaHttpGateway(
+                        request.getGatewayUrl(),
+                        request.getApiKey(),
+                        null,
+                        request.getPhoneNumber(),
+                        testMsg);
+
+                java.util.Map<String, Object> body = new java.util.HashMap<>();
+                body.put("success", res.isSuccess());
+                body.put("phoneNumber", res.getPhoneNumber());
+                body.put("error", res.getError());
+                body.put("message", res.isSuccess() ? "Test SMS sent successfully!" : "Failed: " + res.getError());
+                return ResponseEntity.ok(body);
+            }
         } catch (Exception e) {
             logger.error("Error testing gateway", e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body("Failed to test gateway: " + e.getMessage());
+            java.util.Map<String, Object> body = new java.util.HashMap<>();
+            body.put("success", false);
+            body.put("error", e.getMessage());
+            body.put("message", "Failed to test gateway: " + e.getMessage());
+            return ResponseEntity.ok(body);
         }
     }
 }

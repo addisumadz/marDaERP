@@ -200,7 +200,7 @@ const SendBillSmsInner = () => {
   const [modalSmppHost, setModalSmppHost] = useState("10.204.181.70");
   const [modalSmppPort, setModalSmppPort] = useState(5019);
   const [modalSmppSystemId, setModalSmppSystemId] = useState("8581");
-  const [modalSmppPassword, setModalSmppPassword] = useState("Wtw@1921");
+  const [modalSmppPassword, setModalSmppPassword] = useState("pass@123");
   const [modalSenderId, setModalSenderId] = useState("MarDa ERP");
   const [modalIsActive, setModalIsActive] = useState(true);
   const [modalDescription, setModalDescription] = useState("");
@@ -301,9 +301,13 @@ const SendBillSmsInner = () => {
       id: null,
       cityId: null,
       cityName: "Default",
+      protocol: "SMPP",
       gatewayUrl: gatewayUrl || "https://smsethiopia.et/api/sms/send",
       apiKey: apiKey || "2NJFAWWIERUMIQNMY03D4B9O48EMOJOJ:1027",
-      senderId: "MarDa ERP",
+      smppHost: "10.204.181.70",
+      smppPort: 5019,
+      smppSystemId: "8888",
+      senderId: "testsender",
       isActive: true,
     };
   }, [selectedCityId, dbSmsSettings, gatewayUrl, apiKey]);
@@ -374,8 +378,8 @@ const SendBillSmsInner = () => {
         setModalSmppHost(defaultSetting.smppHost || "10.204.181.70");
         setModalSmppPort(defaultSetting.smppPort || 5019);
         setModalSmppSystemId(defaultSetting.smppSystemId || "8581");
-        setModalSmppPassword(defaultSetting.smppPassword || "Wtw@1921");
-        setModalSenderId(defaultSetting.senderId || (defaultSetting.protocol === "SMPP" ? "WoldiaWater" : "MarDa ERP"));
+        setModalSmppPassword(defaultSetting.smppPassword || "pass@123");
+        setModalSenderId(defaultSetting.senderId || (defaultSetting.protocol === "SMPP" ? "testsender" : "MarDa ERP"));
         setModalIsActive(defaultSetting.isActive !== false);
         setModalDescription(defaultSetting.description || "");
       } else {
@@ -386,7 +390,7 @@ const SendBillSmsInner = () => {
         setModalSmppHost("10.204.181.70");
         setModalSmppPort(5019);
         setModalSmppSystemId("8581");
-        setModalSmppPassword("Wtw@1921");
+        setModalSmppPassword("pass@123");
         setModalSenderId("MarDa ERP");
         setModalIsActive(true);
         setModalDescription("Default gateway fallback for all branches");
@@ -404,7 +408,7 @@ const SendBillSmsInner = () => {
         setModalSmppHost(existing.smppHost || "10.204.181.70");
         setModalSmppPort(existing.smppPort || 5019);
         setModalSmppSystemId(existing.smppSystemId || "8581");
-        setModalSmppPassword(existing.smppPassword || "Wtw@1921");
+        setModalSmppPassword(existing.smppPassword || "pass@123");
         setModalSenderId(existing.senderId || cName);
         setModalIsActive(existing.isActive !== false);
         setModalDescription(existing.description || "");
@@ -416,7 +420,7 @@ const SendBillSmsInner = () => {
         setModalSmppHost("10.204.181.70");
         setModalSmppPort(5019);
         setModalSmppSystemId("8581");
-        setModalSmppPassword("Wtw@1921");
+        setModalSmppPassword("pass@123");
         setModalSenderId(cName);
         setModalIsActive(true);
         setModalDescription(`SMS Gateway for ${cName}`);
@@ -434,8 +438,8 @@ const SendBillSmsInner = () => {
     setModalSmppHost(setting.smppHost || "10.204.181.70");
     setModalSmppPort(setting.smppPort || 5019);
     setModalSmppSystemId(setting.smppSystemId || "8581");
-    setModalSmppPassword(setting.smppPassword || "Wtw@1921");
-    setModalSenderId(setting.senderId || (setting.protocol === "SMPP" ? "WoldiaWater" : "MarDa ERP"));
+    setModalSmppPassword(setting.smppPassword || "pass@123");
+    setModalSenderId(setting.senderId || (setting.protocol === "SMPP" ? "testsender" : "MarDa ERP"));
     setModalIsActive(setting.isActive !== false);
     setModalDescription(setting.description || "");
   };
@@ -450,7 +454,7 @@ const SendBillSmsInner = () => {
     setModalSmppHost("10.204.181.70");
     setModalSmppPort(5019);
     setModalSmppSystemId("8581");
-    setModalSmppPassword("Wtw@1921");
+    setModalSmppPassword("pass@123");
     setModalSenderId("MarDa ERP");
     setModalIsActive(true);
     setModalDescription("");
@@ -489,8 +493,8 @@ const SendBillSmsInner = () => {
         smppHost: modalSmppHost?.trim() || "10.204.181.70",
         smppPort: modalSmppPort ? Number(modalSmppPort) : 5019,
         smppSystemId: modalSmppSystemId?.trim() || "8581",
-        smppPassword: modalSmppPassword?.trim() || "Wtw@1921",
-        senderId: modalSenderId.trim() || (modalProtocol === "SMPP" ? "WoldiaWater" : "MarDa ERP"),
+        smppPassword: modalSmppPassword?.trim() || "pass@123",
+        senderId: modalSenderId.trim() || (modalProtocol === "SMPP" ? "testsender" : "MarDa ERP"),
         isActive: modalIsActive,
         description: modalDescription.trim(),
       };
@@ -692,25 +696,35 @@ const SendBillSmsInner = () => {
       toast.warning("Please enter a test phone number.");
       return;
     }
+
+    const isSmpp = modalProtocol === "SMPP";
     const effUrl = modalGatewayUrl || activeGatewayConfig?.gatewayUrl || "https://smsethiopia.et/api/sms/send";
     const effKey = modalApiKey || activeGatewayConfig?.apiKey || "";
-    if (!effKey.trim()) {
-      toast.warning("Please enter an API Key to test the gateway.");
+
+    if (!isSmpp && !effKey.trim()) {
+      toast.warning("Please enter an API Key to test the HTTP gateway.");
+      return;
+    }
+
+    if (isSmpp && !modalSmppHost?.trim()) {
+      toast.warning("Please enter the SMPP Server Host IP.");
       return;
     }
 
     setIsTestingGateway(true);
     try {
       const res = await smsService.testGatewaySms({
+        protocol: isSmpp ? "SMPP" : "HTTP_REST",
+        cityId: modalCityId ? Number(modalCityId) : (activeGatewayConfig?.cityId ? Number(activeGatewayConfig.cityId) : null),
         gatewayUrl: effUrl.trim(),
         apiKey: effKey.trim(),
         phoneNumber: testPhone.trim(),
         message: testMsg.trim(),
       });
       if (res?.success) {
-        toast.success("Gateway Test SUCCESSFUL! Message delivered to gateway.");
+        toast.success(res?.message || (isSmpp ? "SMPP Test SUCCESSFUL! Message delivered via SMSC." : "Gateway Test SUCCESSFUL! Message delivered to gateway."));
       } else {
-        toast.error(`Gateway Test FAILED: ${res?.error || "Unknown error"}`);
+        toast.error(`Test FAILED: ${res?.error || res?.message || "Unknown error"}`);
       }
     } catch (err) {
       toast.error(err?.response?.data || err.message || "Failed to communicate with SMS gateway.");
@@ -783,10 +797,11 @@ const SendBillSmsInner = () => {
 
   // Single SMS Send
   const handleSendSingleSms = async (item) => {
+    const isSmpp = activeGatewayConfig?.protocol === "SMPP";
     const effApiKey = activeGatewayConfig?.apiKey || apiKey;
     const effGatewayUrl = activeGatewayConfig?.gatewayUrl || gatewayUrl;
 
-    if (!effApiKey || !effApiKey.trim()) {
+    if (!isSmpp && (!effApiKey || !effApiKey.trim())) {
       toast.warning("Please configure your SMS Gateway API Key first.");
       setShowConfigModal(true);
       return;
@@ -800,6 +815,8 @@ const SendBillSmsInner = () => {
         message: item.message,
         gatewayUrl: effGatewayUrl,
         apiKey: effApiKey,
+        protocol: activeGatewayConfig?.protocol || (isSmpp ? "SMPP" : "HTTP_REST"),
+        cityId: activeGatewayConfig?.cityId ? Number(activeGatewayConfig.cityId) : null,
       });
 
       if (res?.success) {
@@ -842,10 +859,11 @@ const SendBillSmsInner = () => {
       return;
     }
 
+    const isSmpp = activeGatewayConfig?.protocol === "SMPP";
     const effApiKey = activeGatewayConfig?.apiKey || apiKey;
     const effGatewayUrl = activeGatewayConfig?.gatewayUrl || gatewayUrl;
 
-    if (!effApiKey || !effApiKey.trim()) {
+    if (!isSmpp && (!effApiKey || !effApiKey.trim())) {
       toast.warning("Please configure your SMS Gateway API Key first.");
       setShowConfigModal(true);
       return;
@@ -884,6 +902,8 @@ const SendBillSmsInner = () => {
             readingIds: chunkIds,
             gatewayUrl: effGatewayUrl,
             apiKey: effApiKey,
+            protocol: activeGatewayConfig?.protocol || (isSmpp ? "SMPP" : "HTTP_REST"),
+            cityId: activeGatewayConfig?.cityId ? Number(activeGatewayConfig.cityId) : null,
             smsDueDateText,
             monthYearPart,
           });
@@ -962,10 +982,11 @@ const SendBillSmsInner = () => {
       return;
     }
 
+    const isSmpp = activeGatewayConfig?.protocol === "SMPP";
     const effApiKey = activeGatewayConfig?.apiKey || apiKey;
     const effGatewayUrl = activeGatewayConfig?.gatewayUrl || gatewayUrl;
 
-    if (!effApiKey || !effApiKey.trim()) {
+    if (!isSmpp && (!effApiKey || !effApiKey.trim())) {
       toast.warning("Please configure your SMS Gateway API Key first.");
       setShowConfigModal(true);
       return;
@@ -984,6 +1005,8 @@ const SendBillSmsInner = () => {
       const res = await smsService.sendGatewayBulkSms({
         gatewayUrl: effGatewayUrl,
         apiKey: effApiKey,
+        protocol: activeGatewayConfig?.protocol || (isSmpp ? "SMPP" : "HTTP_REST"),
+        cityId: activeGatewayConfig?.cityId ? Number(activeGatewayConfig.cityId) : null,
         customItems,
       });
 
@@ -1061,15 +1084,15 @@ const SendBillSmsInner = () => {
               <MessageIcon color="primary" /> Direct Bill SMS Gateway
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              Directly prepare, preview, and dispatch Ethio Telecom bill SMS via HTTP Gateway without manual Excel management.
+              Directly prepare, preview, and dispatch Ethio Telecom bill SMS via SMPP (SMSC) or HTTP REST Gateway without manual Excel management.
             </Typography>
           </Box>
 
           <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap">
             <Chip
               icon={<LocationCityIcon />}
-              label={`Active Gateway: ${activeGatewayConfig?.cityName || "Default"} (${activeGatewayConfig?.senderId || "MarDa ERP"})`}
-              color={activeGatewayConfig?.apiKey ? "success" : "warning"}
+              label={`Active Gateway: ${activeGatewayConfig?.cityName || "Default"} (${activeGatewayConfig?.protocol === "SMPP" ? "📡 SMPP" : "🌐 HTTP"} — ${activeGatewayConfig?.senderId || "MarDa ERP"})`}
+              color={activeGatewayConfig?.protocol === "SMPP" ? (activeGatewayConfig?.smppHost ? "success" : "warning") : (activeGatewayConfig?.apiKey ? "success" : "warning")}
               variant="outlined"
               sx={{ fontWeight: 600, bgcolor: "#f8fafc", px: 0.5 }}
             />
@@ -1903,7 +1926,7 @@ const SendBillSmsInner = () => {
                       label="Sender ID / ስም"
                       value={modalSenderId}
                       onChange={(e) => setModalSenderId(e.target.value)}
-                      placeholder="e.g. WoldiaWater"
+                      placeholder="e.g. sendername"
                       helperText="Sender Mask / Source Address"
                     />
                   </Grid>

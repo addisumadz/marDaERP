@@ -10,6 +10,8 @@ public class GatewayBulkSmsRequestDTO {
     private String smsDueDateText;
     private String monthYearPart;
     private List<CustomSmsItemDTO> customItems;
+    private String protocol;
+    private Integer cityId;
 
     public GatewayBulkSmsRequestDTO() {
     }
@@ -60,6 +62,22 @@ public class GatewayBulkSmsRequestDTO {
 
     public void setCustomItems(List<CustomSmsItemDTO> customItems) {
         this.customItems = customItems;
+    }
+
+    public String getProtocol() {
+        return protocol;
+    }
+
+    public void setProtocol(String protocol) {
+        this.protocol = protocol;
+    }
+
+    public Integer getCityId() {
+        return cityId;
+    }
+
+    public void setCityId(Integer cityId) {
+        this.cityId = cityId;
     }
 
     public static class CustomSmsItemDTO {

@@ -488,7 +488,7 @@ CREATE TABLE `sms_setting` (
 
 LOCK TABLES `sms_setting` WRITE;
 /*!40000 ALTER TABLE `sms_setting` DISABLE KEYS */;
-INSERT INTO `sms_setting` (`id`, `city_id`, `city_name`, `gateway_url`, `api_key`, `sender_id`, `is_active`, `description`, `created_date`, `modified_date`, `protocol`, `smpp_host`, `smpp_port`, `smpp_system_id`, `smpp_password`) VALUES (2,1,'Fenidika','https://smsethiopia.et/api/sms/send','fsfsdfdsfsdfsdfsf','Fenidika',1,'SMS Gateway for Fenidika','2026-09-23 10:19:01','2026-09-23 10:19:01','HTTP_REST','10.204.181.70',5019,'8581','Wtw@1921');
+INSERT INTO `sms_setting` (`id`, `city_id`, `city_name`, `gateway_url`, `api_key`, `sender_id`, `is_active`, `description`, `created_date`, `modified_date`, `protocol`, `smpp_host`, `smpp_port`, `smpp_system_id`, `smpp_password`) VALUES (2,1,'Fenidika','https://smsethiopia.et/api/sms/send','fsfsdfdsfsdfsdfsf','Fenidika',1,'SMS Gateway for Fenidika','2026-09-23 10:19:01','2026-09-23 10:19:01','HTTP_REST','10.204.181.70',5019,'8581','pass@123');
 /*!40000 ALTER TABLE `sms_setting` ENABLE KEYS */;
 UNLOCK TABLES;
 

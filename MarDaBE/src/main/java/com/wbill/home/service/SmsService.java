@@ -28,7 +28,7 @@ public class SmsService {
 
     private static final Logger logger = LoggerFactory.getLogger(SmsService.class);
 
-    private static final String DEFAULT_SENDER_NAME = "WoldiaWater";
+    private static final String DEFAULT_SENDER_NAME = "testsender";
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private SmsSettingService smsSettingService;
@@ -36,8 +36,8 @@ public class SmsService {
     public static class SmppCredentials {
         public String host = "10.204.181.70";
         public int port = 5019;
-        public String systemId = "8581";
-        public String password = "Wtw@1921";
+        public String systemId = "228581";
+        public String password = "222pass@123";
         public String senderName = DEFAULT_SENDER_NAME;
     }
 

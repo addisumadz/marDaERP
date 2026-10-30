@@ -11,9 +11,9 @@ Remove-Item "$env:APPDATA\Antigravity IDE\User\workspaceStorage\372e11b136f27441
 SmppSessionConfiguration config = new SmppSessionConfiguration();
 config.setHost("10.204.181.70");   // Ethio Telecom SMSC internal IP (requires VPN/APN)
 config.setPort(5019);              // Ethio Telecom SMPP port
-config.setSystemId("8581");        // SMPP username / System ID
-config.setPassword("Wtw@1921");    // SMPP password
-private static final String SENDER_NAME = "WoldiaWater";
+config.setSystemId("228581");        // SMPP username / System ID
+config.setPassword("22pass@123");    // SMPP password
+private static final String SENDER_NAME = "testsender";
 
 
 

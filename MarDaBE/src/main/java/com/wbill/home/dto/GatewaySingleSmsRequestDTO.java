@@ -7,6 +7,8 @@ public class GatewaySingleSmsRequestDTO {
     private String message;
     private String gatewayUrl;
     private String apiKey;
+    private String protocol;
+    private Integer cityId;
 
     public GatewaySingleSmsRequestDTO() {
     }
@@ -57,5 +59,21 @@ public class GatewaySingleSmsRequestDTO {
 
     public void setApiKey(String apiKey) {
         this.apiKey = apiKey;
+    }
+
+    public String getProtocol() {
+        return protocol;
+    }
+
+    public void setProtocol(String protocol) {
+        this.protocol = protocol;
+    }
+
+    public Integer getCityId() {
+        return cityId;
+    }
+
+    public void setCityId(Integer cityId) {
+        this.cityId = cityId;
     }
 }

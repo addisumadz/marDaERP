@@ -192,6 +192,7 @@ const CustomerList = () => {
   const [selectedKetenaId, setSelectedKetenaId] = useState("");
   const [selectedBranchId, setSelectedBranchId] = useState("");
   const [selectedReaderId, setSelectedReaderId] = useState("");
+  const [filterUnassignedReader, setFilterUnassignedReader] = useState("");
   const [filterOldPenalty, setFilterOldPenalty] = useState("");
   const [filterRegistrationDateFrom, setFilterRegistrationDateFrom] = useState("");
   const [filterRegistrationDateTo, setFilterRegistrationDateTo] = useState("");
@@ -289,6 +290,18 @@ const CustomerList = () => {
     return null;
   };
 
+  const isCustomerUnassignedReader = (c) => {
+    if (!c) return false;
+    const rId = c.assignedReaderId;
+    return (
+      !rId ||
+      rId === 0 ||
+      rId === "0" ||
+      String(rId).trim() === "" ||
+      String(rId).toLowerCase() === "null"
+    );
+  };
+
   const handleFilterChange = useCallback((filterName, value) => {
     const setters = {
       selectedCustomerTypeId: setSelectedCustomerTypeId,
@@ -296,6 +309,7 @@ const CustomerList = () => {
       selectedKetenaId: setSelectedKetenaId,
       selectedBranchId: setSelectedBranchId,
       selectedReaderId: setSelectedReaderId,
+      filterUnassignedReader: setFilterUnassignedReader,
       filterOldPenalty: setFilterOldPenalty,
       filterRegistrationDateFrom: setFilterRegistrationDateFrom,
       filterRegistrationDateTo: setFilterRegistrationDateTo,
@@ -319,6 +333,7 @@ const CustomerList = () => {
     setSelectedKetenaId("");
     setSelectedBranchId("");
     setSelectedReaderId("");
+    setFilterUnassignedReader("");
     setFilterOldPenalty("");
     setFilterRegistrationDateFrom("");
     setFilterRegistrationDateTo("");
@@ -499,7 +514,7 @@ const CustomerList = () => {
       const arrears = Number(c.oldKfyaAndPenaltyTotal || 0);
       if (arrears > 0) totalArrears += arrears;
 
-      if (!c.assignedReaderId) unassignedReaders++;
+      if (isCustomerUnassignedReader(c)) unassignedReaders++;
       if (Number(c.additionalMonthlyPayment || 0) > 0) hasDryWasteCount++;
     });
 
@@ -552,6 +567,11 @@ const CustomerList = () => {
       result = result.filter(
         (c) => c.assignedReaderId && String(c.assignedReaderId) === String(selectedReaderId)
       );
+    }
+    if (filterUnassignedReader === "true") {
+      result = result.filter((c) => isCustomerUnassignedReader(c));
+    } else if (filterUnassignedReader === "false") {
+      result = result.filter((c) => !isCustomerUnassignedReader(c));
     }
     if (filterOldPenalty === "true") {
       result = result.filter((c) => c.oldHasPenalty === true);
@@ -649,6 +669,7 @@ const CustomerList = () => {
     selectedKetenaId,
     selectedBranchId,
     selectedReaderId,
+    filterUnassignedReader,
     filterOldPenalty,
     filterRegistrationDateFrom,
     filterRegistrationDateTo,
@@ -1576,29 +1597,59 @@ const CustomerList = () => {
         </Grid>
 
         <Grid item xs={12} sm={6} md={3}>
-          <Paper
-            variant="outlined"
-            sx={{
-              p: 2,
-              borderRadius: 2,
-              bgcolor: "background.paper",
-              borderLeft: "4px solid",
-              borderColor: "warning.main",
-            }}
-          >
-            <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-                Unassigned Readers
+          <Tooltip title={filterUnassignedReader === "true" ? "Click to reset unassigned readers filter" : "Click to filter customers with unassigned readers"}>
+            <Paper
+              variant="outlined"
+              onClick={() => {
+                const nextVal = filterUnassignedReader === "true" ? "" : "true";
+                handleFilterChange("filterUnassignedReader", nextVal);
+                if (nextVal === "true") {
+                  handleFilterChange("selectedReaderId", "");
+                }
+              }}
+              sx={{
+                p: 2,
+                borderRadius: 2,
+                bgcolor:
+                  filterUnassignedReader === "true"
+                    ? (theme) =>
+                        theme.palette.mode === "dark"
+                          ? "rgba(255, 167, 38, 0.16)"
+                          : "rgba(237, 108, 2, 0.08)"
+                    : "background.paper",
+                borderLeft: "4px solid",
+                borderColor: "warning.main",
+                borderRight: filterUnassignedReader === "true" ? "2px solid" : undefined,
+                borderTop: filterUnassignedReader === "true" ? "2px solid" : undefined,
+                borderBottom: filterUnassignedReader === "true" ? "2px solid" : undefined,
+                borderRightColor: "warning.main",
+                borderTopColor: "warning.main",
+                borderBottomColor: "warning.main",
+                cursor: "pointer",
+                boxShadow: filterUnassignedReader === "true" ? 3 : 0,
+                transition: "all 0.2s ease-in-out",
+                "&:hover": {
+                  transform: "translateY(-2px)",
+                  boxShadow: 3,
+                },
+              }}
+            >
+              <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
+                  Unassigned Readers
+                </Typography>
+                <WarningIcon color="warning" />
+              </Box>
+              <Typography variant="h5" sx={{ fontWeight: 800, mt: 1, color: "warning.dark" }}>
+                {kpiStats.unassignedReaders.toLocaleString()}
               </Typography>
-              <WarningIcon color="warning" />
-            </Box>
-            <Typography variant="h5" sx={{ fontWeight: 800, mt: 1, color: "warning.dark" }}>
-              {kpiStats.unassignedReaders.toLocaleString()}
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              Requires mobile reader assignment
-            </Typography>
-          </Paper>
+              <Typography variant="caption" color="text.secondary">
+                {filterUnassignedReader === "true"
+                  ? "Filtered: Showing unassigned only (Click to reset)"
+                  : "Requires mobile reader assignment (Click to filter)"}
+              </Typography>
+            </Paper>
+          </Tooltip>
         </Grid>
       </Grid>
 
@@ -1640,6 +1691,7 @@ const CustomerList = () => {
           filterMeterChangeDateTo={filterMeterChangeDateTo}
           filterHasDryWaste={filterHasDryWaste}
           filterHasAdditionalPayment={filterHasAdditionalPayment}
+          filterUnassignedReader={filterUnassignedReader}
           assignScope={assignScope}
           onFilterChange={handleFilterChange}
           onClearAll={handleClearAllFilters}

@@ -37,6 +37,7 @@ const CustomerFilters = ({
   filterMeterChangeDateTo,
   filterHasDryWaste,
   filterHasAdditionalPayment,
+  filterUnassignedReader,
   assignScope,
   // Callbacks
   onFilterChange,
@@ -77,6 +78,7 @@ const CustomerFilters = ({
     selectedKetenaId,
     selectedBranchId,
     selectedReaderId,
+    filterUnassignedReader,
     filterOldPenalty,
     filterRegistrationDateFrom,
     filterRegistrationDateTo,
@@ -208,7 +210,12 @@ const CustomerFilters = ({
           <Select
             value={selectedReaderId}
             label="Assigned Reader"
-            onChange={(e) => onFilterChange("selectedReaderId", e.target.value)}
+            onChange={(e) => {
+              onFilterChange("selectedReaderId", e.target.value);
+              if (e.target.value) {
+                onFilterChange("filterUnassignedReader", "");
+              }
+            }}
           >
             <MenuItem value="">
               <em>All Readers</em>
@@ -394,6 +401,28 @@ const CustomerFilters = ({
             </Select>
           </FormControl>
 
+          {/* Reader Status Filter */}
+          <FormControl size="small" sx={{ minWidth: 160, flex: "1 1 150px" }}>
+            <InputLabel>Reader Status</InputLabel>
+            <Select
+              value={filterUnassignedReader || ""}
+              label="Reader Status"
+              onChange={(e) => {
+                const val = e.target.value;
+                onFilterChange("filterUnassignedReader", val);
+                if (val === "true") {
+                  onFilterChange("selectedReaderId", "");
+                }
+              }}
+            >
+              <MenuItem value="">
+                <em>All</em>
+              </MenuItem>
+              <MenuItem value="true">Unassigned Only</MenuItem>
+              <MenuItem value="false">Assigned Only</MenuItem>
+            </Select>
+          </FormControl>
+
           {/* Ethiopian Registration Date From */}
           <Box sx={{ flex: "1 1 170px", minWidth: 170 }}>
             <EtDatePicker
@@ -488,6 +517,21 @@ const CustomerFilters = ({
             color={filterHasDryWaste === "true" ? "warning" : "default"}
             variant={filterHasDryWaste === "true" ? "filled" : "outlined"}
             onClick={() => onFilterChange("filterHasDryWaste", filterHasDryWaste === "true" ? "" : "true")}
+          />
+
+          <Chip
+            label="Unassigned Readers"
+            size="small"
+            clickable
+            color={filterUnassignedReader === "true" ? "warning" : "default"}
+            variant={filterUnassignedReader === "true" ? "filled" : "outlined"}
+            onClick={() => {
+              const nextVal = filterUnassignedReader === "true" ? "" : "true";
+              onFilterChange("filterUnassignedReader", nextVal);
+              if (nextVal === "true") {
+                onFilterChange("selectedReaderId", "");
+              }
+            }}
           />
         </Box>
       </Collapse>

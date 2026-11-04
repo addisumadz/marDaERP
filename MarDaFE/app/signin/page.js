@@ -348,7 +348,41 @@ export default function SignInPage() {
               </div>
             </div>
 
-            <div className="text-blue-200 text-xs mt-auto pt-6 z-10 flex items-center justify-center gap-3">
+            {/* Developer Contact Info */}
+            <div className="z-10 mt-6 pt-4 border-t border-blue-400/30 w-full text-center">
+              <p className="text-[11px] font-semibold tracking-wider text-blue-200 uppercase mb-2">
+                Developer Support
+              </p>
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-2 sm:gap-4 text-xs text-white">
+                <a
+                  href="tel:0935981944"
+                  className="flex items-center gap-1.5 hover:text-blue-200 transition-colors"
+                  title="Call Addisu Zeleke"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5 text-blue-300" viewBox="0 0 20 20" fill="currentColor">
+                    <path d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 4V3z" />
+                  </svg>
+                  <span className="font-medium">Addisu Zeleke:</span>
+                  <span className="underline decoration-blue-300">0935981944</span>
+                </a>
+
+                <span className="hidden sm:inline text-blue-300/60">•</span>
+
+                <a
+                  href="tel:0947577300"
+                  className="flex items-center gap-1.5 hover:text-blue-200 transition-colors"
+                  title="Call Misganaw Yazie"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5 text-blue-300" viewBox="0 0 20 20" fill="currentColor">
+                    <path d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 4V3z" />
+                  </svg>
+                  <span className="font-medium">Misganaw Yazie:</span>
+                  <span className="underline decoration-blue-300">0947577300</span>
+                </a>
+              </div>
+            </div>
+
+            <div className="text-blue-200 text-xs mt-auto pt-4 z-10 flex items-center justify-center gap-3">
               <span>&copy; {new Date().getFullYear()} All Rights Reserved</span>
               <span className="px-2 py-0.5 bg-blue-500/40 rounded-full text-[10px] font-semibold tracking-wider text-blue-100 border border-blue-400/30">
                 V 5.0.1

@@ -42,6 +42,8 @@ import {
   Sparkles,
   Coins,
   Settings,
+  ExternalLink,
+  Edit3,
 } from "lucide-react";
 
 const readingService = new ReadingService();
@@ -56,7 +58,6 @@ export default function PayWithArifpayPage() {
   const [bills, setBills] = useState([]);
   const [wuzifBills, setWuzifBills] = useState([]);
   const [paidBills, setPaidBills] = useState([]);
-  const [selectedBill, setSelectedBill] = useState(null);
   const [lastCustomer, setLastCustomer] = useState(null);
   const [lastPayment, setLastPayment] = useState(null);
   const [currentKifyaWer, setCurrentKifyaWer] = useState("");
@@ -65,10 +66,17 @@ export default function PayWithArifpayPage() {
   const [activeTab, setActiveTab] = useState("unpaid"); // "unpaid" | "paid" | "wuzif"
   const [copiedAcc, setCopiedAcc] = useState(false);
 
-  // ArifPay Modal State
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  // Pre-Checkout Phone Review & Edit Dialog State
+  const [selectedBill, setSelectedBill] = useState(null);
+  const [isPhoneModalOpen, setIsPhoneModalOpen] = useState(false);
   const [phoneDigits, setPhoneDigits] = useState("");
+  const [originalPhoneDigits, setOriginalPhoneDigits] = useState("");
+  const [saveToCustomerProfile, setSaveToCustomerProfile] = useState(true);
   const [submittingPayment, setSubmittingPayment] = useState(false);
+  const [initiatingBillId, setInitiatingBillId] = useState(null);
+
+  // Return Verification State: { status: "verifying"|"pending"|"success"|"failed"|"cancelled", sessionId, pollCount, message }
+  const [verificationState, setVerificationState] = useState(null);
 
   const isTrue = (val) => val === true || val === "true" || val === 1 || val === "1";
 
@@ -148,71 +156,15 @@ export default function PayWithArifpayPage() {
     }
   }
 
-  // Handle return redirect from ArifPay gateway
-  useEffect(() => {
-    fetchActiveBillingMonth();
-    loadImageAsBase64("/images/logo/logo.png").then(setLogoBase64);
-
-    if (typeof window === "undefined") return;
-
-    const params = new URLSearchParams(window.location.search);
-    const status = params.get("status");
-    const sessionId = params.get("sessionId");
-
-    if (status) {
-      // Clear query params to prevent duplicate verification on browser reload
-      window.history.replaceState({}, document.title, window.location.pathname);
-
-      if (status === "success" && sessionId) {
-        toast.info("Verifying ArifPay payment status...", { autoClose: 4000 });
-        arifpayService
-          .checkStatus(sessionId)
-          .then(async (res) => {
-            if (res.status === "SUCCESS") {
-              toast.success("Bill payment successfully confirmed with ArifPay!", { autoClose: 7000 });
-
-              // Retrieve updated reading to prepare receipt preview
-              if (res.readingId) {
-                try {
-                  const updatedBill = await readingService.getReadingById(res.readingId);
-                  if (updatedBill) {
-                    setLastPayment({
-                      bill: updatedBill,
-                      amount: updatedBill.tekilalaYetekefele || updatedBill.tekilalaTekefay || 0,
-                      customer: {
-                        fullName: updatedBill.customerFullName || updatedBill.customerName || "-",
-                        accountNumber: updatedBill.customerAccountNumber || updatedBill.accountNumber || "-",
-                        phoneNumber: updatedBill.customerPhoneMobile || updatedBill.phoneNumber || "-",
-                        customerType: updatedBill.customerTypeName || updatedBill.customerType || "-",
-                      },
-                    });
-                  }
-                } catch (_) {}
-              }
-            } else {
-              toast.warn(`ArifPay payment status: ${res.status || "Pending"}`, { autoClose: 6000 });
-            }
-          })
-          .catch((err) => {
-            console.error("Status check error:", err);
-            toast.error(`Verification error: ${err.message || "Failed to confirm payment status"}`);
-          });
-      } else if (status === "cancel") {
-        toast.warn("Payment was cancelled by user.", { autoClose: 5000 });
-      } else if (status === "error") {
-        toast.error("An error occurred during ArifPay payment.", { autoClose: 6000 });
-      }
-    }
-  }, []);
-
-  // Main customer search by account number (cashier page strategy)
-  const handleSearch = async () => {
+  // Main customer search by account number
+  const handleSearch = async (overrideAcc) => {
     try {
       setLoading(true);
       setBills([]);
       setWuzifBills([]);
       setPaidBills([]);
 
+      const accToUse = (overrideAcc !== undefined ? overrideAcc : accountNumber).trim();
       let idToSearch = customerId;
       let customerDto = null;
 
@@ -221,9 +173,9 @@ export default function PayWithArifpayPage() {
         kifyaWerFormatted = await fetchActiveBillingMonth();
       }
 
-      if (!idToSearch && accountNumber) {
+      if (!idToSearch && accToUse) {
         try {
-          customerDto = await customerService.getCustomerByAccountNumber(accountNumber.trim());
+          customerDto = await customerService.getCustomerByAccountNumber(accToUse);
           idToSearch = customerDto?.id;
           if (!idToSearch) throw new Error("Customer not found");
           setCustomerId(String(idToSearch));
@@ -289,7 +241,6 @@ export default function PayWithArifpayPage() {
         customerType: baseCustomer.customerTypeName || baseCustomer.customerType || firstBill.customerTypeName || firstBill.customerType || "-",
       });
 
-      // Default active tab: if no current unpaid bills but arrears exist, show wuzif
       if (monthFiltered.length === 0 && unpaidWuzif.length > 0) {
         setActiveTab("wuzif");
       } else {
@@ -303,59 +254,210 @@ export default function PayWithArifpayPage() {
     }
   };
 
-  // Open ArifPay Modal
-  const handleOpenArifpayModal = (bill) => {
+  // Status check with auto-polling for pending USSD/mobile approvals
+  const checkVerificationStatus = useCallback(async (sessionId, currentPoll = 0) => {
+    if (!sessionId) return;
+
+    setVerificationState((prev) => ({
+      ...prev,
+      status: currentPoll > 0 ? "pending" : "verifying",
+      sessionId,
+      pollCount: currentPoll,
+      message:
+        currentPoll > 0
+          ? `Waiting for mobile authorization (attempt ${currentPoll} of 4)...`
+          : "Contacting ArifPay to verify payment settlement...",
+    }));
+
+    try {
+      const res = await arifpayService.checkStatus(sessionId);
+
+      if (res && (res.status === "SUCCESS" || res.status === "PAID")) {
+        setVerificationState({
+          status: "success",
+          sessionId,
+          readingId: res.readingId,
+          message: "Payment successfully confirmed and settled via ArifPay!",
+        });
+        toast.success("Bill payment successfully confirmed with ArifPay!", { autoClose: 7000 });
+
+        if (res.readingId) {
+          try {
+            const updatedBill = await readingService.getReadingById(res.readingId);
+            if (updatedBill) {
+              setLastPayment({
+                bill: updatedBill,
+                amount: updatedBill.tekilalaYetekefele || updatedBill.tekilalaTekefay || 0,
+                customer: {
+                  fullName: updatedBill.customerFullName || updatedBill.customerName || "-",
+                  accountNumber: updatedBill.customerAccountNumber || updatedBill.accountNumber || "-",
+                  phoneNumber: updatedBill.customerPhoneMobile || updatedBill.phoneNumber || "-",
+                  customerType: updatedBill.customerTypeName || updatedBill.customerType || "-",
+                },
+              });
+
+              const acc = updatedBill.customerAccountNumber || updatedBill.accountNumber;
+              if (acc) {
+                setAccountNumber(acc);
+                handleSearch(acc);
+              }
+            }
+          } catch (_) {}
+        }
+      } else if (res && (res.status === "PENDING" || res.status === "PROCESSING")) {
+        if (currentPoll < 4) {
+          setTimeout(() => {
+            checkVerificationStatus(sessionId, currentPoll + 1);
+          }, 3500);
+        } else {
+          setVerificationState({
+            status: "pending",
+            sessionId,
+            message:
+              "Payment session is currently pending on ArifPay. Once authorized on your phone or bank app, click 'Check Status Again'.",
+          });
+        }
+      } else {
+        setVerificationState({
+          status: "failed",
+          sessionId,
+          message: `ArifPay reported status: ${res?.status || "Declined / Incomplete"}`,
+        });
+        toast.warn(`ArifPay payment status: ${res?.status || "Incomplete"}`);
+      }
+    } catch (err) {
+      console.error("Status check error:", err);
+      setVerificationState({
+        status: "failed",
+        sessionId,
+        message: err.response?.data?.message || err.message || "Failed to confirm payment status with ArifPay.",
+      });
+      toast.error(`Verification error: ${err.message || "Failed to confirm payment status"}`);
+    }
+  }, []);
+
+  // Handle return redirect from ArifPay gateway
+  useEffect(() => {
+    fetchActiveBillingMonth();
+    loadImageAsBase64("/images/logo/logo.png").then(setLogoBase64);
+
+    if (typeof window === "undefined") return;
+
+    const params = new URLSearchParams(window.location.search);
+    const status = params.get("status");
+    const sessionId = params.get("sessionId") || params.get("session_id");
+
+    if (status) {
+      window.history.replaceState({}, document.title, window.location.pathname);
+
+      if (status === "success" && sessionId) {
+        checkVerificationStatus(sessionId, 0);
+      } else if (status === "cancel") {
+        setVerificationState({
+          status: "cancelled",
+          message: "Payment checkout was cancelled on the ArifPay portal.",
+        });
+        toast.warn("Payment was cancelled by user.", { autoClose: 5000 });
+      } else if (status === "error") {
+        setVerificationState({
+          status: "failed",
+          message: "An error occurred or payment was declined on ArifPay.",
+        });
+        toast.error("An error occurred during ArifPay payment.", { autoClose: 6000 });
+      }
+    }
+  }, [checkVerificationStatus]);
+
+  // Step 1: Open Pre-Checkout Phone Review Dialog
+  const handleOpenPhoneReview = (bill) => {
     if (!bill) return;
+
+    if (!isAuthorized()) {
+      toast.error("You do not have permission to initiate electronic payments.");
+      return;
+    }
+
     if (currentKifyaWer && (bill?.kifyaWer || "").trim() !== currentKifyaWer.trim()) {
       toast.error(`ክፍያ የሚፈቀደው ለአሁኑ ንቁ ወር (${currentKifyaWer}) ብቻ ነው።`);
       return;
     }
+
     setSelectedBill(bill);
 
-    // Pre-fill phone digits (last 9 digits after 251 or 09)
+    // Extract customer phone digits (last 9 digits if present)
+    const rawPhone =
+      lastCustomer?.phoneNumber || bill.customerPhoneMobile || bill.phoneNumber || "";
+    const cleaned = String(rawPhone).replace(/\D/g, "");
     let digits = "";
-    const rawPhone = lastCustomer?.phoneNumber || bill.customerPhoneMobile || bill.phoneNumber;
-    if (rawPhone) {
-      const cleaned = String(rawPhone).replace(/\D/g, "");
-      if (cleaned.length >= 9) {
-        digits = cleaned.slice(-9);
-      } else {
-        digits = cleaned;
-      }
+    if (cleaned.length >= 9) {
+      digits = cleaned.slice(-9);
+    } else {
+      digits = cleaned;
     }
+
     setPhoneDigits(digits);
+    setOriginalPhoneDigits(digits);
+    setSaveToCustomerProfile(true);
     setSubmittingPayment(false);
-    setIsModalOpen(true);
+    setIsPhoneModalOpen(true);
   };
 
-  // Submit ArifPay Checkout Session
-  const handleSubmitArifpayPayment = async (e) => {
-    e.preventDefault();
+  // Step 2: Validate Phone and Forward to ArifPay Checkout
+  const handleConfirmAndForwardToArifpay = async (e) => {
+    if (e) e.preventDefault();
     if (!selectedBill || submittingPayment) return;
 
     const trimmed = phoneDigits.trim();
-    if (!/^\d{9}$/.test(trimmed)) {
-      toast.error("Please enter exactly 9 digits after 251 (e.g. 911223344)");
+    if (!/^[97]\d{8}$/.test(trimmed)) {
+      toast.error(
+        "Please enter a valid 9-digit Ethiopian mobile number starting with 9 or 7 (e.g. 911223344 or 712345678)."
+      );
       return;
     }
 
-    const phone = "251" + trimmed;
+    const fullPhone = "+251" + trimmed;
     setSubmittingPayment(true);
+    setInitiatingBillId(selectedBill.id);
 
     try {
-      toast.info("Connecting to ArifPay checkout gateway...", { autoClose: 2500 });
-      const res = await arifpayService.initiatePayment(selectedBill.id, phone);
+      toast.info("Connecting to ArifPay secure checkout portal...", { autoClose: 2000 });
 
-      if (res && res.checkoutUrl) {
-        window.location.href = res.checkoutUrl;
+      // If cashier opted to update customer profile and phone changed
+      if (saveToCustomerProfile && lastCustomer?.id && trimmed !== originalPhoneDigits) {
+        try {
+          await customerService.updateCustomer(lastCustomer.id, {
+            ...lastCustomer,
+            phoneNumber: fullPhone,
+          });
+          setLastCustomer((prev) => (prev ? { ...prev, phoneNumber: fullPhone } : prev));
+        } catch (updateErr) {
+          console.warn("Could not save phone to customer profile:", updateErr);
+        }
+      }
+
+      const res = await arifpayService.initiatePayment(selectedBill.id, {
+        phone: fullPhone,
+        saveToCustomer: saveToCustomerProfile ? "true" : "false",
+      });
+
+      const checkoutUrl =
+        res?.checkoutUrl || res?.paymentUrl || res?.data?.paymentUrl || res?.data?.checkoutUrl;
+
+      if (checkoutUrl) {
+        // Forward directly to ArifPay checkout
+        window.location.href = checkoutUrl;
       } else {
-        toast.error("Failed to receive checkout URL from ArifPay");
+        toast.error("Failed to receive checkout gateway URL from ArifPay");
         setSubmittingPayment(false);
+        setInitiatingBillId(null);
       }
     } catch (err) {
       console.error("ArifPay initiate error:", err);
-      toast.error(err.response?.data?.message || err.message || "Failed to initiate ArifPay payment");
+      toast.error(
+        err.response?.data?.message || err.message || "Failed to initiate ArifPay payment session"
+      );
       setSubmittingPayment(false);
+      setInitiatingBillId(null);
     }
   };
 
@@ -369,7 +471,7 @@ export default function PayWithArifpayPage() {
     }
   };
 
-  // Receipt PDF Generation (adapted from cashier)
+  // Receipt PDF Generation
   const generateReceiptPDF = ({ bill, amount, customer }, preview = true) => {
     try {
       const doc = new jsPDF({
@@ -378,7 +480,6 @@ export default function PayWithArifpayPage() {
         format: [80, 150], // Receipt format
       });
 
-      // Register Amharic font
       try {
         doc.setFont("nyala-normal");
       } catch (_) {}
@@ -404,7 +505,7 @@ export default function PayWithArifpayPage() {
       row("የደንበኛ መለያ:", customer?.accountNumber || bill.accountNumber || bill.customerId);
       row("የደንበኛ ስም:", customer?.fullName || bill.customerFullName || bill.customerName);
       row("የክፍያ ወር:", bill.kifyaWer || currentKifyaWer);
-      row("የክፍያ ዓይነት:", "ArifPay (Electronic)");
+      row("የክፍያ ዓይነት:", "ArifPay (Production Gateway)");
       row("ትራንዛክሽን:", bill.mBankPaidConfirmationCode || "ARIFPAY-ELECTRONIC");
 
       const paidDate = bill.moneyCollectedDate || new Date();
@@ -457,16 +558,16 @@ export default function PayWithArifpayPage() {
 
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-2">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-indigo-500/20 text-indigo-200 border border-indigo-400/30">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-200 border border-emerald-400/30">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              ArifPay Register • አሪፍፔይ የክፍያ መስኮት
+              ArifPay Live Production • አሪፍፔይ የቀጥታ ክፍያ
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight flex items-center gap-3">
               <CreditCard className="w-8 h-8 text-indigo-400" />
               የቢል ክፍያ በአሪፍፔይ (Pay with Arifpay)
             </h1>
             <p className="text-sm text-indigo-200 max-w-xl">
-              Look up customer bills by account number, verify arrears, and initiate secure electronic payments via Telebirr, CBE, and Awash Birr through ArifPay.
+              Verify customer phone number, then forward to ArifPay where the payer chooses Telebirr, CBE Birr, Awash Birr, or debit cards directly.
             </p>
           </div>
 
@@ -508,6 +609,123 @@ export default function PayWithArifpayPage() {
           </div>
         </div>
       </div>
+
+      {/* ─── Verification & Return Notification Card ─── */}
+      {verificationState && (
+        <div
+          className={`rounded-2xl p-5 border shadow-sm transition-all ${
+            verificationState.status === "success"
+              ? "bg-gradient-to-r from-emerald-500/10 via-emerald-500/5 to-transparent border-emerald-500/30 text-emerald-950 dark:text-emerald-100"
+              : verificationState.status === "pending" || verificationState.status === "verifying"
+              ? "bg-gradient-to-r from-indigo-500/10 via-blue-500/5 to-transparent border-indigo-500/30 text-indigo-950 dark:text-indigo-100"
+              : "bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border-amber-500/30 text-amber-950 dark:text-amber-100"
+          }`}
+        >
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="flex items-start sm:items-center gap-3.5">
+              <div
+                className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                  verificationState.status === "success"
+                    ? "bg-emerald-600 text-white shadow-md shadow-emerald-600/30"
+                    : verificationState.status === "pending" || verificationState.status === "verifying"
+                    ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/30"
+                    : "bg-amber-600 text-white shadow-md shadow-amber-600/30"
+                }`}
+              >
+                {verificationState.status === "success" ? (
+                  <CheckCircle2 className="w-6 h-6" />
+                ) : verificationState.status === "pending" || verificationState.status === "verifying" ? (
+                  <RefreshCw className="w-5 h-5 animate-spin" />
+                ) : (
+                  <AlertTriangle className="w-5 h-5" />
+                )}
+              </div>
+
+              <div>
+                <div className="flex items-center gap-2">
+                  <h4 className="text-base font-bold">
+                    {verificationState.status === "success"
+                      ? "ArifPay Payment Confirmed!"
+                      : verificationState.status === "pending" || verificationState.status === "verifying"
+                      ? "Verifying ArifPay Transaction..."
+                      : "ArifPay Notice"}
+                  </h4>
+                  {verificationState.sessionId && (
+                    <span className="font-mono text-[11px] px-2 py-0.5 rounded bg-black/10 dark:bg-white/10 font-medium">
+                      Session: {verificationState.sessionId.slice(0, 16)}...
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-gray-600 dark:text-gray-300 mt-0.5">
+                  {verificationState.message}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 self-end sm:self-center">
+              {(verificationState.status === "pending" || verificationState.status === "verifying") && (
+                <button
+                  type="button"
+                  onClick={() => checkVerificationStatus(verificationState.sessionId, 1)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-sm transition active:scale-95"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  Check Status Again
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setVerificationState(null)}
+                className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors rounded-lg"
+                title="Dismiss banner"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Last Successful Payment Quick Bar ─── */}
+      {lastPayment && (
+        <div className="bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/30 dark:to-teal-950/20 border border-emerald-200 dark:border-emerald-800 rounded-2xl p-4.5 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-emerald-500 text-white flex items-center justify-center shadow-md">
+              <CheckCircle2 className="w-6 h-6" />
+            </div>
+            <div>
+              <div className="text-sm font-bold text-emerald-900 dark:text-emerald-200 flex items-center gap-2">
+                <span>Payment Confirmed via ArifPay!</span>
+                <span className="px-2 py-0.5 rounded text-xs bg-emerald-200 dark:bg-emerald-900 text-emerald-800 dark:text-emerald-200 font-mono">
+                  Bill #{lastPayment.bill?.id}
+                </span>
+              </div>
+              <div className="text-xs text-emerald-700 dark:text-emerald-300 mt-0.5">
+                Customer: <strong>{lastPayment.customer?.fullName || "-"}</strong> • Amount:{" "}
+                <strong>{(lastPayment.amount || 0).toLocaleString()} ETB</strong>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+            <button
+              onClick={() => generateReceiptPDF(lastPayment, true)}
+              className="flex-1 md:flex-none inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm transition-colors"
+            >
+              <Eye className="w-3.5 h-3.5" />
+              Preview Receipt
+            </button>
+            <button
+              onClick={() => generateReceiptPDF(lastPayment, false)}
+              className="flex-1 md:flex-none inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-white dark:bg-gray-800 hover:bg-gray-50 border border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-200 transition-colors"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Download PDF
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ─── KPI Metric Cards ─── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -723,45 +941,6 @@ export default function PayWithArifpayPage() {
         </div>
       )}
 
-      {/* ─── Last Successful Payment Quick Bar ─── */}
-      {lastPayment && (
-        <div className="bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/30 dark:to-teal-950/20 border border-emerald-200 dark:border-emerald-800 rounded-2xl p-4.5 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-emerald-500 text-white flex items-center justify-center shadow-md">
-              <CheckCircle2 className="w-6 h-6" />
-            </div>
-            <div>
-              <div className="text-sm font-bold text-emerald-900 dark:text-emerald-200 flex items-center gap-2">
-                <span>Payment Confirmed via ArifPay!</span>
-                <span className="px-2 py-0.5 rounded text-xs bg-emerald-200 dark:bg-emerald-900 text-emerald-800 dark:text-emerald-200 font-mono">
-                  Bill #{lastPayment.bill?.id}
-                </span>
-              </div>
-              <div className="text-xs text-emerald-700 dark:text-emerald-300 mt-0.5">
-                Customer: <strong>{lastPayment.customer?.fullName || "-"}</strong> • Amount: <strong>{(lastPayment.amount || 0).toLocaleString()} ETB</strong>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
-            <button
-              onClick={() => generateReceiptPDF(lastPayment, true)}
-              className="flex-1 md:flex-none inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm transition-colors"
-            >
-              <Eye className="w-3.5 h-3.5" />
-              Preview Receipt
-            </button>
-            <button
-              onClick={() => generateReceiptPDF(lastPayment, false)}
-              className="flex-1 md:flex-none inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-white dark:bg-gray-800 hover:bg-gray-50 border border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-200 transition-colors"
-            >
-              <Download className="w-3.5 h-3.5" />
-              Download PDF
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* ─── Tabs Navigation (Unpaid vs Paid History vs Wuzif Arrears) ─── */}
       <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
         <div className="flex border-b border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-850">
@@ -834,7 +1013,7 @@ export default function PayWithArifpayPage() {
                   <th className="px-6 py-3.5 text-left">Period (ክፍያ ወር)</th>
                   <th className="px-6 py-3.5 text-right">Consumption (m³)</th>
                   <th className="px-6 py-3.5 text-right">Amount (ጠቅላላ ተከፋይ)</th>
-                  <th className="px-6 py-3.5 text-center">Action</th>
+                  <th className="px-6 py-3.5 text-center">ArifPay Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -863,9 +1042,10 @@ export default function PayWithArifpayPage() {
                     </td>
                     <td className="px-6 py-4 text-center">
                       <button
-                        onClick={() => handleOpenArifpayModal(b)}
+                        onClick={() => handleOpenPhoneReview(b)}
                         disabled={
                           !isAuthorized() ||
+                          initiatingBillId === b.id ||
                           (currentKifyaWer && (b?.kifyaWer || "").trim() !== currentKifyaWer.trim())
                         }
                         title={
@@ -873,12 +1053,22 @@ export default function PayWithArifpayPage() {
                             ? "Permission required"
                             : currentKifyaWer && (b?.kifyaWer || "").trim() !== currentKifyaWer.trim()
                             ? `ክፍያ የሚፈቀደው ለአሁኑ ወር (${currentKifyaWer}) ብቻ ነው`
-                            : "Pay with ArifPay"
+                            : "Review payer phone and proceed to ArifPay checkout"
                         }
-                        className="inline-flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl shadow-md transition-all font-semibold text-xs"
+                        className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 disabled:opacity-50 text-white rounded-xl shadow-md transition-all font-semibold text-xs active:scale-95"
                       >
-                        <CreditCard className="w-3.5 h-3.5" />
-                        <span>Pay with Arifpay (በአሪፍፔይ ክፈል)</span>
+                        {initiatingBillId === b.id ? (
+                          <>
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                            <span>Forwarding...</span>
+                          </>
+                        ) : (
+                          <>
+                            <CreditCard className="w-3.5 h-3.5" />
+                            <span>Pay with Arifpay (በአሪፍፔይ ክፈል)</span>
+                            <ExternalLink className="w-3 h-3 opacity-70" />
+                          </>
+                        )}
                       </button>
                     </td>
                   </tr>
@@ -1045,30 +1235,37 @@ export default function PayWithArifpayPage() {
         )}
       </div>
 
-      {/* ─── ArifPay Payment Checkout Modal ─── */}
-      {isModalOpen && selectedBill && (
+      {/* ─── Pre-Checkout Phone Review & Confirmation Dialog ─── */}
+      {isPhoneModalOpen && selectedBill && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-150"
-          onClick={() => !submittingPayment && setIsModalOpen(false)}
+          onClick={() => !submittingPayment && setIsPhoneModalOpen(false)}
         >
           <div
-            className="w-full max-w-md rounded-2xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-2xl p-6 text-gray-900 dark:text-white"
+            className="w-full max-w-lg rounded-2xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-2xl p-6 text-gray-900 dark:text-white"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal Header */}
             <div className="flex items-center justify-between pb-4 border-b border-gray-100 dark:border-gray-700">
               <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-md shadow-indigo-600/30">
-                  <CreditCard className="w-5 h-5" />
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-blue-600 text-white flex items-center justify-center shadow-md shadow-indigo-600/30">
+                  <Phone className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold">Pay with ArifPay</h3>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">Telebirr • CBE • Awash Birr</p>
+                  <h3 className="text-base font-bold flex items-center gap-2">
+                    Confirm Payer Phone & Proceed
+                    <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+                      ArifPay Live
+                    </span>
+                  </h3>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Verify payer&apos;s phone before forwarding to ArifPay
+                  </p>
                 </div>
               </div>
               <button
                 type="button"
-                onClick={() => !submittingPayment && setIsModalOpen(false)}
+                onClick={() => !submittingPayment && setIsPhoneModalOpen(false)}
                 className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
               >
                 <X className="w-5 h-5" />
@@ -1076,32 +1273,17 @@ export default function PayWithArifpayPage() {
             </div>
 
             {/* Modal Form */}
-            <form onSubmit={handleSubmitArifpayPayment} className="mt-4 space-y-4">
-              {/* Arrears Warning Banner if applicable */}
-              {wuzifBills.length > 0 && (
-                <div className="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200 text-xs flex items-start gap-2.5">
-                  <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <strong>Outstanding Arrears (ውዝፍ) Notice:</strong> This customer has{" "}
-                    <strong>{wuzifBills.length}</strong> unpaid arrears bill(s) totaling{" "}
-                    <strong>
-                      {wuzifBills.reduce((acc, w) => acc + (w.tekilalaTekefay || 0), 0).toLocaleString()} ETB
-                    </strong>
-                    .
-                  </div>
-                </div>
-              )}
-
-              {/* Bill Summary Card */}
-              <div className="p-4 rounded-xl bg-slate-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 space-y-2">
+            <form onSubmit={handleConfirmAndForwardToArifpay} className="mt-4 space-y-4">
+              {/* Bill Details Summary Card */}
+              <div className="p-4 rounded-xl bg-slate-50 dark:bg-gray-750 border border-gray-200 dark:border-gray-700 space-y-2">
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-gray-500 dark:text-gray-400">Customer:</span>
+                  <span className="text-gray-500 dark:text-gray-400">Customer Name:</span>
                   <span className="font-semibold text-gray-900 dark:text-white">
                     {lastCustomer?.fullName || selectedBill.customerFullName || selectedBill.customerName || "-"}
                   </span>
                 </div>
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-gray-500 dark:text-gray-400">Account No:</span>
+                  <span className="text-gray-500 dark:text-gray-400">Account Number:</span>
                   <span className="font-mono text-gray-900 dark:text-white">
                     {lastCustomer?.accountNumber || selectedBill.accountNumber || selectedBill.customerId || "-"}
                   </span>
@@ -1113,13 +1295,13 @@ export default function PayWithArifpayPage() {
                   </span>
                 </div>
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-gray-500 dark:text-gray-400">Period:</span>
+                  <span className="text-gray-500 dark:text-gray-400">Period (ክፍያ ወር):</span>
                   <span className="font-semibold text-indigo-600 dark:text-indigo-400">
                     {selectedBill.kifyaWer || currentKifyaWer}
                   </span>
                 </div>
-                <div className="flex items-center justify-between text-xs pt-2 border-t border-gray-200 dark:border-gray-600">
-                  <span className="text-gray-600 dark:text-gray-300 font-semibold">Total Amount Due:</span>
+                <div className="flex items-center justify-between text-xs pt-2.5 border-t border-gray-200 dark:border-gray-700">
+                  <span className="text-gray-700 dark:text-gray-300 font-semibold">Total Amount Due:</span>
                   <span className="text-base font-extrabold text-indigo-600 dark:text-indigo-400">
                     {Number(selectedBill.tekilalaTekefay || selectedBill.totalAmount || 0).toLocaleString(undefined, {
                       minimumFractionDigits: 2,
@@ -1129,20 +1311,25 @@ export default function PayWithArifpayPage() {
                 </div>
               </div>
 
-              {/* Phone Input with 251 Prefix */}
+              {/* Phone Input with +251 Prefix */}
               <div>
-                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5 flex items-center gap-1.5">
-                  <Phone className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-                  Payer&apos;s Mobile Number (የከፋይ ስልክ ቁጥር)
+                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <Phone className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                    Payer&apos;s Mobile Phone Number (የከፋይ ስልክ ቁጥር)
+                  </span>
+                  <span className="text-[11px] text-gray-400 font-normal">
+                    Format: +251 9... or +251 7...
+                  </span>
                 </label>
-                <div className="flex items-stretch rounded-lg border border-gray-300 dark:border-gray-600 overflow-hidden focus-within:border-indigo-500 focus-within:ring-1 focus-within:ring-indigo-500 bg-white dark:bg-gray-700">
-                  <span className="flex items-center justify-center px-3.5 bg-gray-100 dark:bg-gray-600 border-r border-gray-300 dark:border-gray-600 text-xs font-bold text-gray-700 dark:text-gray-200 select-none">
-                    251
+                <div className="flex items-stretch rounded-xl border border-gray-300 dark:border-gray-600 overflow-hidden focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/20 bg-white dark:bg-gray-700 shadow-sm transition-all">
+                  <span className="flex items-center justify-center px-3.5 bg-gray-100 dark:bg-gray-600 border-r border-gray-300 dark:border-gray-600 text-xs font-bold text-gray-800 dark:text-gray-100 select-none">
+                    +251
                   </span>
                   <input
                     type="text"
                     maxLength={9}
-                    placeholder="9XXXXXXXX"
+                    placeholder="9XXXXXXXX / 7XXXXXXXX"
                     value={phoneDigits}
                     onChange={(e) => {
                       const numeric = e.target.value.replace(/\D/g, "");
@@ -1150,38 +1337,115 @@ export default function PayWithArifpayPage() {
                     }}
                     autoFocus
                     required
-                    className="flex-1 px-3 py-2 text-sm font-semibold tracking-wider bg-transparent outline-none text-gray-900 dark:text-white placeholder:text-gray-400"
+                    disabled={submittingPayment}
+                    className="flex-1 px-3 py-2.5 text-sm font-semibold tracking-wider bg-transparent outline-none text-gray-900 dark:text-white placeholder:text-gray-400"
                   />
+                  {phoneDigits && (
+                    <button
+                      type="button"
+                      onClick={() => setPhoneDigits("")}
+                      className="px-2.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
-                <span className="block text-[11px] text-gray-500 dark:text-gray-400 mt-1">
-                  Enter the 9 digits after 251 (e.g. 911223344)
-                </span>
+
+                {/* Real-time Carrier Validation Feedback */}
+                <div className="mt-1.5 flex items-center justify-between text-[11px]">
+                  {phoneDigits.length === 9 && phoneDigits.startsWith("9") ? (
+                    <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1 font-medium">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      Ethio Telecom mobile • Telebirr / CBE Birr supported
+                    </span>
+                  ) : phoneDigits.length === 9 && phoneDigits.startsWith("7") ? (
+                    <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1 font-medium">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      Safaricom Ethiopia mobile • M-Pesa / Cards supported
+                    </span>
+                  ) : phoneDigits.length > 0 && !phoneDigits.startsWith("9") && !phoneDigits.startsWith("7") ? (
+                    <span className="text-rose-600 dark:text-rose-400 flex items-center gap-1 font-medium">
+                      <AlertCircle className="w-3.5 h-3.5" />
+                      Ethiopian mobile must start with 9 (Ethio) or 7 (Safaricom)
+                    </span>
+                  ) : (
+                    <span className="text-gray-500 dark:text-gray-400">
+                      Enter the 9 digits after +251 (e.g. 911223344 or 712345678)
+                    </span>
+                  )}
+
+                  <span className="font-mono text-gray-400">{phoneDigits.length}/9</span>
+                </div>
+              </div>
+
+              {/* Checkbox to update customer profile */}
+              {lastCustomer?.id && phoneDigits.length === 9 && (
+                <div className="pt-2">
+                  <label className="flex items-center gap-2 cursor-pointer text-xs text-gray-700 dark:text-gray-300 p-2.5 rounded-lg bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 hover:bg-gray-100 transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={saveToCustomerProfile}
+                      onChange={(e) => setSaveToCustomerProfile(e.target.checked)}
+                      disabled={submittingPayment}
+                      className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
+                    />
+                    <span>
+                      Save this phone number to the customer&apos;s record ({lastCustomer.accountNumber})
+                    </span>
+                  </label>
+                </div>
+              )}
+
+              {/* Payment Methods Notice with visual chips */}
+              <div className="p-3.5 rounded-xl bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200/60 dark:border-indigo-800/60 space-y-2">
+                <div className="flex items-center gap-2 text-xs font-semibold text-indigo-950 dark:text-indigo-200">
+                  <Sparkles className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                  <span>Payment Channels on ArifPay Portal:</span>
+                </div>
+                <div className="flex flex-wrap gap-1.5 text-[11px]">
+                  <span className="px-2 py-0.5 rounded-md bg-white dark:bg-gray-800 border border-indigo-200 dark:border-indigo-800 text-indigo-900 dark:text-indigo-200 font-medium">
+                    🏦 Commercial Bank of Ethiopia (CBE / CBE Birr)
+                  </span>
+                  <span className="px-2 py-0.5 rounded-md bg-white dark:bg-gray-800 border border-indigo-200 dark:border-indigo-800 text-indigo-900 dark:text-indigo-200 font-medium">
+                    📱 Telebirr
+                  </span>
+                  <span className="px-2 py-0.5 rounded-md bg-white dark:bg-gray-800 border border-indigo-200 dark:border-indigo-800 text-indigo-900 dark:text-indigo-200 font-medium">
+                    🏦 Awash Bank (Awash Birr)
+                  </span>
+                  <span className="px-2 py-0.5 rounded-md bg-white dark:bg-gray-800 border border-indigo-200 dark:border-indigo-800 text-indigo-900 dark:text-indigo-200 font-medium">
+                    💳 Debit / ATM Cards
+                  </span>
+                </div>
+                <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                  The payer will pick their preferred bank or mobile wallet directly on the official ArifPay checkout portal.
+                </p>
               </div>
 
               {/* Modal Actions */}
               <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-100 dark:border-gray-700">
                 <button
                   type="button"
-                  onClick={() => setIsModalOpen(false)}
+                  onClick={() => setIsPhoneModalOpen(false)}
                   disabled={submittingPayment}
-                  className="px-4 py-2 text-xs font-semibold rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                  className="px-4 py-2 text-xs font-semibold rounded-xl border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
                 >
                   Cancel
                 </button>
+
                 <button
                   type="submit"
-                  disabled={submittingPayment}
-                  className="inline-flex items-center gap-2 px-5 py-2 text-xs font-semibold rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white shadow-md transition-all disabled:opacity-50"
+                  disabled={submittingPayment || !/^[97]\d{8}$/.test(phoneDigits.trim())}
+                  className="inline-flex items-center gap-2 px-5 py-2 text-xs font-semibold rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white shadow-md transition-all disabled:opacity-50 active:scale-95"
                 >
                   {submittingPayment ? (
                     <>
-                      <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      Connecting to ArifPay...
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Forwarding to ArifPay...</span>
                     </>
                   ) : (
                     <>
-                      <CreditCard className="w-3.5 h-3.5" />
-                      Pay with Arifpay (በአሪፍፔይ ክፈል)
+                      <span>Forward to ArifPay (ወደ አሪፍፔይ ቀጥል)</span>
+                      <ExternalLink className="w-3.5 h-3.5" />
                     </>
                   )}
                 </button>

@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
@@ -34,7 +34,10 @@ import {
   RefreshCw,
   X,
   Coins,
+  ChevronLeft,
   ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
   Printer,
   Sparkles
 } from "lucide-react";
@@ -62,6 +65,9 @@ export default function CashierPage() {
   const [changeToReturn, setChangeToReturn] = useState(0);
   const [activeTab, setActiveTab] = useState("unpaid"); // "unpaid" | "wuzif" | "paid"
   const [copiedAcc, setCopiedAcc] = useState(false);
+  const [paidCurrentPage, setPaidCurrentPage] = useState(1);
+  const [paidPageSize, setPaidPageSize] = useState(10);
+  const [paidSearchQuery, setPaidSearchQuery] = useState("");
 
   // Hybrid Authorization: Check if user has 'cashier' permittedPage or a recognized role
   const isAuthorizedCashier = () => {
@@ -126,6 +132,7 @@ export default function CashierPage() {
       setBills([]);
       setWuzifBills([]);
       setPaidBills([]);
+      setPaidCurrentPage(1);
 
       let idToSearch = customerId;
       let customerDto = null;
@@ -178,7 +185,7 @@ export default function CashierPage() {
       );
       setWuzifBills(unpaidWuzif);
 
-      // 4) Get paid bills for reprint functionality (last 10 paid bills)
+      // 4) Get paid bills for reprint functionality (all paid bills, sorted newest first)
       const paidOnly = (Array.isArray(regular) ? regular : []).filter(
         (b) =>
           Boolean(b?.isBillGenerated) &&
@@ -187,12 +194,29 @@ export default function CashierPage() {
       );
       const sortedPaid = paidOnly
         .sort((a, b) => {
-          const dateA = new Date(a.moneyCollectedDate || a.collectionDate || 0);
-          const dateB = new Date(b.moneyCollectedDate || b.collectionDate || 0);
-          return dateB - dateA;
-        })
-        .slice(0, 10);
+          const dateA = new Date(
+            a.moneyCollectedDate ||
+            a.uMoneyCollectedDate ||
+            a.UMoneyCollectedDate ||
+            a.collectionDate ||
+            a.modifiedDate ||
+            a.registeredDate ||
+            0
+          );
+          const dateB = new Date(
+            b.moneyCollectedDate ||
+            b.uMoneyCollectedDate ||
+            b.UMoneyCollectedDate ||
+            b.collectionDate ||
+            b.modifiedDate ||
+            b.registeredDate ||
+            0
+          );
+          if (dateB - dateA !== 0) return dateB - dateA;
+          return (b.id || 0) - (a.id || 0);
+        });
       setPaidBills(sortedPaid);
+      setPaidCurrentPage(1);
 
       // Customer cache
       const baseCustomer = customerDto || {};
@@ -234,6 +258,38 @@ export default function CashierPage() {
     (b?.status || "").toLowerCase() === "active" &&
     !normalizeMoneyCollected(b) &&
     (!currentKifyaWer || (b?.kifyaWer || "").trim() === currentKifyaWer.trim());
+
+  // Filter and pagination for Paid History tab
+  const filteredPaidBills = useMemo(() => {
+    if (!paidSearchQuery.trim()) return paidBills;
+    const q = paidSearchQuery.trim().toLowerCase();
+    return paidBills.filter((b) => {
+      const idStr = String(b.id || "").toLowerCase();
+      const invStr = String(b.billingInvoiceNumber || b.invoiceNumber || "").toLowerCase();
+      const periodStr = String(b.kifyaWer || "").toLowerCase();
+      const amtStr = String(b.tekilalaYetekefele || b.tekilalaTekefay || "").toLowerCase();
+      const bankStr = String(
+        b.bankName ||
+        b.uBankName ||
+        b.UBankName ||
+        b.billingBank?.bankName ||
+        b.bankPaidAgentId ||
+        ""
+      ).toLowerCase();
+      return (
+        idStr.includes(q) ||
+        invStr.includes(q) ||
+        periodStr.includes(q) ||
+        amtStr.includes(q) ||
+        bankStr.includes(q)
+      );
+    });
+  }, [paidBills, paidSearchQuery]);
+
+  const totalPaidPages = Math.max(1, Math.ceil(filteredPaidBills.length / paidPageSize));
+  const safePaidPage = Math.min(Math.max(1, paidCurrentPage), totalPaidPages);
+  const paidStartIndex = (safePaidPage - 1) * paidPageSize;
+  const paginatedPaidBills = filteredPaidBills.slice(paidStartIndex, paidStartIndex + paidPageSize);
 
   async function loadImageAsBase64(path) {
     try {
@@ -1495,119 +1551,326 @@ export default function CashierPage() {
 
         {/* ─── TAB 2: Paid Bills & Reprints (Moved to 2nd next to unpaid) ─── */}
         {activeTab === "paid" && (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 dark:bg-gray-700/50 text-gray-600 dark:text-gray-300 uppercase text-xs tracking-wider border-b border-gray-200 dark:border-gray-700">
-                <tr>
-                  <th className="px-5 py-3.5 text-left">Bill ID</th>
-                  <th className="px-5 py-3.5 text-left">Invoice No</th>
-                  <th className="px-5 py-3.5 text-left">Period</th>
-                  <th className="px-5 py-3.5 text-right">Amount Paid</th>
-                  <th className="px-5 py-3.5 text-left">Payment Date</th>
-                  <th className="px-5 py-3.5 text-center">Method</th>
-                  <th className="px-5 py-3.5 text-left">Location</th>
-                  <th className="px-5 py-3.5 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                {paidBills.map((b) => {
-                  const dateHtml =
-                    b.moneyCollectedDate ||
-                    b.uMoneyCollectedDate ||
-                    b.UMoneyCollectedDate ||
-                    b.collectionDate ||
-                    b.modifiedDate ||
-                    b.registeredDate;
+          <div>
+            {/* Toolbar: Search filter, rows-per-page, count badge */}
+            <div className="p-3.5 sm:p-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-800/60 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2 flex-1 min-w-[220px] max-w-sm">
+                <div className="relative w-full">
+                  <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={paidSearchQuery}
+                    onChange={(e) => {
+                      setPaidSearchQuery(e.target.value);
+                      setPaidCurrentPage(1);
+                    }}
+                    placeholder="Search invoice, period (ክፍያ ወር), ID..."
+                    className="w-full pl-9 pr-8 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-sm"
+                  />
+                  {paidSearchQuery && (
+                    <button
+                      onClick={() => {
+                        setPaidSearchQuery("");
+                        setPaidCurrentPage(1);
+                      }}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                      title="Clear search"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
 
-                  let ethDateText = "—";
-                  if (dateHtml) {
-                    try {
-                      const ethDate = EthiopianCalendarConverterPure.gregorianToEthiopian(new Date(dateHtml));
-                      ethDateText = EthiopianCalendarConverterPure.formatEthiopianDateWithAmharicMonth(ethDate);
-                    } catch (_) { }
-                  }
+              <div className="flex items-center gap-3 text-xs text-gray-600 dark:text-gray-300">
+                <span className="font-medium">
+                  {paidSearchQuery ? (
+                    <>
+                      Found <strong className="text-emerald-600 dark:text-emerald-400">{filteredPaidBills.length}</strong> of {paidBills.length}
+                    </>
+                  ) : (
+                    <>
+                      Total: <strong className="text-emerald-600 dark:text-emerald-400">{paidBills.length}</strong> bill(s)
+                    </>
+                  )}
+                </span>
 
-                  const isOffice =
-                    isTrue(b.isPaidOnFrontOffice) ||
-                    (b.moneyCollector && b.moneyCollector !== "") ||
-                    (b.cashierUser && b.cashierUser !== null) ||
-                    (b.cashierFullName && b.cashierFullName !== "");
+                <div className="flex items-center gap-1.5">
+                  <label htmlFor="paidPageSize" className="text-gray-500 dark:text-gray-400 font-medium">Rows:</label>
+                  <select
+                    id="paidPageSize"
+                    value={paidPageSize}
+                    onChange={(e) => {
+                      setPaidPageSize(Number(e.target.value));
+                      setPaidCurrentPage(1);
+                    }}
+                    className="px-2 py-1 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium cursor-pointer shadow-sm"
+                  >
+                    <option value={10}>10</option>
+                    <option value={20}>20</option>
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                  </select>
+                </div>
+              </div>
+            </div>
 
-                  const bankLocName =
-                    b.bankName ||
-                    b.uBankName ||
-                    b.UBankName ||
-                    b.billingBank?.bankName ||
-                    b.bankPaidAgentId ||
-                    (isOffice ? "Front Office" : "Bank");
+            {/* Table */}
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 dark:bg-gray-700/50 text-gray-600 dark:text-gray-300 uppercase text-xs tracking-wider border-b border-gray-200 dark:border-gray-700">
+                  <tr>
+                    <th className="px-5 py-3.5 text-left">Bill ID</th>
+                    <th className="px-5 py-3.5 text-left">Invoice No</th>
+                    <th className="px-5 py-3.5 text-left">Period</th>
+                    <th className="px-5 py-3.5 text-right">Amount Paid</th>
+                    <th className="px-5 py-3.5 text-left">Payment Date</th>
+                    <th className="px-5 py-3.5 text-center">Method</th>
+                    <th className="px-5 py-3.5 text-left">Location</th>
+                    <th className="px-5 py-3.5 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                  {paginatedPaidBills.map((b) => {
+                    const dateHtml =
+                      b.moneyCollectedDate ||
+                      b.uMoneyCollectedDate ||
+                      b.UMoneyCollectedDate ||
+                      b.collectionDate ||
+                      b.modifiedDate ||
+                      b.registeredDate;
 
-                  return (
-                    <tr key={`paid-${b.id}`} className="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
-                      <td className="px-5 py-3.5 font-mono font-semibold text-emerald-600 dark:text-emerald-400">
-                        #{b.id}
+                    let ethDateText = "—";
+                    if (dateHtml) {
+                      try {
+                        const ethDate = EthiopianCalendarConverterPure.gregorianToEthiopian(new Date(dateHtml));
+                        ethDateText = EthiopianCalendarConverterPure.formatEthiopianDateWithAmharicMonth(ethDate);
+                      } catch (_) { }
+                    }
+
+                    const isOffice =
+                      isTrue(b.isPaidOnFrontOffice) ||
+                      (b.moneyCollector && b.moneyCollector !== "") ||
+                      (b.cashierUser && b.cashierUser !== null) ||
+                      (b.cashierFullName && b.cashierFullName !== "");
+
+                    const bankLocName =
+                      b.bankName ||
+                      b.uBankName ||
+                      b.UBankName ||
+                      b.billingBank?.bankName ||
+                      b.bankPaidAgentId ||
+                      (isOffice ? "Front Office" : "Bank");
+
+                    return (
+                      <tr key={`paid-${b.id}`} className="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                        <td className="px-5 py-3.5 font-mono font-semibold text-emerald-600 dark:text-emerald-400">
+                          #{b.id}
+                        </td>
+                        <td className="px-5 py-3.5 font-mono text-gray-700 dark:text-gray-300">
+                          {b.billingInvoiceNumber || b.invoiceNumber || "—"}
+                        </td>
+                        <td className="px-5 py-3.5 font-medium text-gray-900 dark:text-white">
+                          {b.kifyaWer || "—"}
+                        </td>
+                        <td className="px-5 py-3.5 text-right font-bold text-gray-900 dark:text-white">
+                          {(b.tekilalaYetekefele || b.tekilalaTekefay || 0).toLocaleString()}{" "}
+                          <span className="text-xs text-gray-400 font-normal">ETB</span>
+                        </td>
+                        <td className="px-5 py-3.5 text-xs text-gray-600 dark:text-gray-400">
+                          {ethDateText}
+                        </td>
+                        <td className="px-5 py-3.5 text-center">
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${isOffice
+                              ? "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300"
+                              : "bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300"
+                            }`}>
+                            {isOffice ? "Office" : "Bank"}
+                          </span>
+                        </td>
+                        <td className="px-5 py-3.5 text-xs text-gray-600 dark:text-gray-400">
+                          {bankLocName}
+                        </td>
+                        <td className="px-5 py-3.5 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              onClick={() => handleReprintReceipt(b, true)}
+                              className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-indigo-600 dark:text-indigo-400"
+                              title="Preview PDF Receipt"
+                            >
+                              <Eye className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleReprintReceipt(b, false)}
+                              className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-emerald-600 dark:text-emerald-400"
+                              title="Download PDF Receipt"
+                            >
+                              <Download className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDetailedReceipt(b, true)}
+                              className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-purple-600 dark:text-purple-400"
+                              title="Detailed Consumption Breakdown"
+                            >
+                              <FileText className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+
+                  {paidBills.length === 0 && (
+                    <tr>
+                      <td colSpan={8} className="px-6 py-12 text-center text-gray-400">
+                        <div className="flex flex-col items-center gap-2">
+                          <Receipt className="w-10 h-10 text-gray-300 dark:text-gray-600" />
+                          <p className="text-sm font-medium">No paid bills found for this customer.</p>
+                        </div>
                       </td>
-                      <td className="px-5 py-3.5 font-mono text-gray-700 dark:text-gray-300">
-                        {b.billingInvoiceNumber || b.invoiceNumber || "—"}
-                      </td>
-                      <td className="px-5 py-3.5 font-medium text-gray-900 dark:text-white">
-                        {b.kifyaWer || "—"}
-                      </td>
-                      <td className="px-5 py-3.5 text-right font-bold text-gray-900 dark:text-white">
-                        {(b.tekilalaYetekefele || b.tekilalaTekefay || 0).toLocaleString()}{" "}
-                        <span className="text-xs text-gray-400 font-normal">ETB</span>
-                      </td>
-                      <td className="px-5 py-3.5 text-xs text-gray-600 dark:text-gray-400">
-                        {ethDateText}
-                      </td>
-                      <td className="px-5 py-3.5 text-center">
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${isOffice
-                            ? "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300"
-                            : "bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300"
-                          }`}>
-                          {isOffice ? "Office" : "Bank"}
-                        </span>
-                      </td>
-                      <td className="px-5 py-3.5 text-xs text-gray-600 dark:text-gray-400">
-                        {bankLocName}
-                      </td>
-                      <td className="px-5 py-3.5 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
+                    </tr>
+                  )}
+
+                  {paidBills.length > 0 && filteredPaidBills.length === 0 && (
+                    <tr>
+                      <td colSpan={8} className="px-6 py-12 text-center text-gray-400">
+                        <div className="flex flex-col items-center gap-2">
+                          <Search className="w-8 h-8 text-gray-300 dark:text-gray-600" />
+                          <p className="text-sm font-medium">
+                            No paid bills found matching &ldquo;{paidSearchQuery}&rdquo;
+                          </p>
                           <button
-                            onClick={() => handleReprintReceipt(b, true)}
-                            className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-indigo-600 dark:text-indigo-400"
-                            title="Preview PDF Receipt"
+                            onClick={() => {
+                              setPaidSearchQuery("");
+                              setPaidCurrentPage(1);
+                            }}
+                            className="mt-1 text-xs text-emerald-600 dark:text-emerald-400 hover:underline font-semibold"
                           >
-                            <Eye className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleReprintReceipt(b, false)}
-                            className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-emerald-600 dark:text-emerald-400"
-                            title="Download PDF Receipt"
-                          >
-                            <Download className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleDetailedReceipt(b, true)}
-                            className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-purple-600 dark:text-purple-400"
-                            title="Detailed Consumption Breakdown"
-                          >
-                            <FileText className="w-4 h-4" />
+                            Clear search filter
                           </button>
                         </div>
                       </td>
                     </tr>
-                  );
-                })}
+                  )}
+                </tbody>
+              </table>
+            </div>
 
-                {paidBills.length === 0 && (
-                  <tr>
-                    <td colSpan={8} className="px-6 py-12 text-center text-gray-400">
-                      No recent paid bills found for this customer.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+            {/* Pagination Controls */}
+            {filteredPaidBills.length > 0 && (
+              <div className="px-5 py-3.5 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex flex-wrap items-center justify-between gap-3 text-xs text-gray-600 dark:text-gray-300">
+                <div>
+                  Showing{" "}
+                  <strong className="text-gray-900 dark:text-white">{paidStartIndex + 1}</strong>{" "}
+                  to{" "}
+                  <strong className="text-gray-900 dark:text-white">
+                    {Math.min(paidStartIndex + paidPageSize, filteredPaidBills.length)}
+                  </strong>{" "}
+                  of{" "}
+                  <strong className="text-gray-900 dark:text-white">{filteredPaidBills.length}</strong>{" "}
+                  paid bill(s)
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <button
+                    disabled={safePaidPage <= 1}
+                    onClick={() => setPaidCurrentPage(1)}
+                    className="p-1.5 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                    title="First Page"
+                  >
+                    <ChevronsLeft className="w-4 h-4" />
+                  </button>
+                  <button
+                    disabled={safePaidPage <= 1}
+                    onClick={() => setPaidCurrentPage((p) => Math.max(1, p - 1))}
+                    className="p-1.5 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                    title="Previous Page"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+
+                  <div className="flex items-center gap-1 px-1">
+                    {(() => {
+                      const delta = 1;
+                      const range = [];
+                      for (
+                        let i = Math.max(1, safePaidPage - delta);
+                        i <= Math.min(totalPaidPages, safePaidPage + delta);
+                        i++
+                      ) {
+                        range.push(i);
+                      }
+                      return (
+                        <>
+                          {range[0] > 1 && (
+                            <>
+                              <button
+                                onClick={() => setPaidCurrentPage(1)}
+                                className={`px-2.5 py-1 rounded-lg border text-xs font-semibold ${
+                                  safePaidPage === 1
+                                    ? "bg-emerald-600 text-white border-emerald-600"
+                                    : "border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700"
+                                }`}
+                              >
+                                1
+                              </button>
+                              {range[0] > 2 && <span className="px-1 text-gray-400">...</span>}
+                            </>
+                          )}
+                          {range.map((pageNumber) => (
+                            <button
+                              key={pageNumber}
+                              onClick={() => setPaidCurrentPage(pageNumber)}
+                              className={`px-2.5 py-1 rounded-lg border text-xs font-semibold transition-colors ${
+                                safePaidPage === pageNumber
+                                  ? "bg-emerald-600 text-white border-emerald-600 shadow-sm"
+                                  : "border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700"
+                              }`}
+                            >
+                              {pageNumber}
+                            </button>
+                          ))}
+                          {range[range.length - 1] < totalPaidPages && (
+                            <>
+                              {range[range.length - 1] < totalPaidPages - 1 && (
+                                <span className="px-1 text-gray-400">...</span>
+                              )}
+                              <button
+                                onClick={() => setPaidCurrentPage(totalPaidPages)}
+                                className={`px-2.5 py-1 rounded-lg border text-xs font-semibold ${
+                                  safePaidPage === totalPaidPages
+                                    ? "bg-emerald-600 text-white border-emerald-600"
+                                    : "border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700"
+                                }`}
+                              >
+                                {totalPaidPages}
+                              </button>
+                            </>
+                          )}
+                        </>
+                      );
+                    })()}
+                  </div>
+
+                  <button
+                    disabled={safePaidPage >= totalPaidPages}
+                    onClick={() => setPaidCurrentPage((p) => Math.min(totalPaidPages, p + 1))}
+                    className="p-1.5 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                    title="Next Page"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                  <button
+                    disabled={safePaidPage >= totalPaidPages}
+                    onClick={() => setPaidCurrentPage(totalPaidPages)}
+                    className="p-1.5 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                    title="Last Page"
+                  >
+                    <ChevronsRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

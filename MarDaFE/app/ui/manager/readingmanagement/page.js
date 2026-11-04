@@ -814,25 +814,33 @@ const ReadingManagement = () => {
     groups.forEach((bills) => {
       if (!Array.isArray(bills) || bills.length < 2) return;
 
-      const sorted = bills
-        .filter((b) => b && b.id != null)
-        .sort((a, b) => Number(a.id) - Number(b.id));
+      // Filter out voided or null records
+      const validBills = bills.filter(
+        (b) => b && b.id != null && !b.isVoid && !b.void
+      );
+      if (validBills.length < 2) return;
 
-      if (sorted.length < 2) return;
+      const isPaid = (b) => Boolean(b.isMoneyCollected || b.moneyCollected);
+      const paidBills = validBills.filter(isPaid);
+      const unpaidBills = validBills.filter((b) => !isPaid(b));
 
-      const [, ...rest] = sorted; // keep the smallest id (first element), process the rest
-
-      rest.forEach((bill) => {
-        if (!bill || bill.id == null) return;
-
-        // Respect money collected and void guards
-        if (bill.isMoneyCollected || bill.moneyCollected) return;
-        if (bill.isVoid || bill.void) return;
-
-        if (!candidateMap.has(bill.id)) {
-          candidateMap.set(bill.id, bill);
-        }
-      });
+      if (paidBills.length > 0) {
+        // Priority Rule: If one or more bills are paid, keep the paid bill(s) and mark all unpaid duplicates for removal
+        unpaidBills.forEach((bill) => {
+          if (!candidateMap.has(bill.id)) {
+            candidateMap.set(bill.id, bill);
+          }
+        });
+      } else {
+        // Fallback Rule: All are unpaid — keep the earliest (smallest ID) and mark the rest for removal
+        const sorted = unpaidBills.sort((a, b) => Number(a.id) - Number(b.id));
+        const [, ...rest] = sorted;
+        rest.forEach((bill) => {
+          if (!candidateMap.has(bill.id)) {
+            candidateMap.set(bill.id, bill);
+          }
+        });
+      }
     });
 
     const candidates = Array.from(candidateMap.values());
@@ -843,7 +851,11 @@ const ReadingManagement = () => {
     }
 
     const confirmed = window.confirm(
-      `Found ${candidates.length} duplicate bill(s). The earliest bill (smallest ID) in each duplicate group will be kept and the others will be marked as deleted. Continue?`
+      `Found ${candidates.length} duplicate bill(s) to remove.\n\n` +
+      `Selection rules:\n` +
+      `• If a duplicate bill is paid, the paid bill is kept and unpaid duplicates are marked for deletion.\n` +
+      `• If all duplicate bills are unpaid, the earliest bill (smallest ID) is kept.\n\n` +
+      `Continue?`
     );
 
     if (!confirmed) return;

@@ -91,7 +91,9 @@ public class WebSecurityConfig {
                     "http://196.190.220.35:3001",
                     "http://10.116.212.31:9000",
                     "http://196.189.236.14:3000",
-                    "http://196.189.236.14");
+                    "http://196.189.236.14",
+                    "http://192.168.0.105",
+                    "http://192.168.0.105:9000");
         }
         configuration.setAllowedOriginPatterns(origins);
         // Allow any public IP, LAN address, or domain while preserving allowCredentials(true)

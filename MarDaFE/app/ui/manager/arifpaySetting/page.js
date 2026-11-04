@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import Breadcrumb from "@/app/ui/components/Breadcrumbs/Breadcrumb";
@@ -19,21 +19,37 @@ import {
   Copy,
   Check,
   CheckCircle2,
-  AlertTriangle,
   ShieldCheck,
   Zap,
   Info,
   Server,
-  ArrowRight,
   ExternalLink,
   Sparkles,
 } from "lucide-react";
+
+// Official Ethiopian Bank SWIFT/BIC codes supported by ArifPay Gateway
+const ARIFPAY_SUPPORTED_BANKS = [
+  { code: "CBETETAA", name: "Commercial Bank of Ethiopia (CBE)", short: "CBE" },
+  { code: "AWINETAA", name: "Awash International Bank", short: "Awash" },
+  { code: "ABYSETAA", name: "Bank of Abyssinia", short: "Abyssinia" },
+  { code: "DASHETAA", name: "Dashen Bank", short: "Dashen" },
+  { code: "CBORETAA", name: "Cooperative Bank of Oromia", short: "Coop / Coopay" },
+  { code: "HIBRETAA", name: "Hibret Bank (United Bank)", short: "Hibret" },
+  { code: "NIBIETAA", name: "Nib International Bank", short: "Nib" },
+  { code: "WGINETAA", name: "Wegagen Bank", short: "Wegagen" },
+  { code: "BUNAETAA", name: "Bunna International Bank", short: "Bunna" },
+  { code: "BERHETAA", name: "Berhan Bank", short: "Berhan" },
+  { code: "ABAYETAA", name: "Abay Bank", short: "Abay" },
+  { code: "ENATETAA", name: "Enat Bank", short: "Enat" },
+  { code: "TELEBIRR", name: "Telebirr SuperApp / Mobile Money", short: "Telebirr" },
+];
 
 export default function ArifpaySettingPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showApiKey, setShowApiKey] = useState(false);
   const [copiedField, setCopiedField] = useState(null);
+  const [customBankMode, setCustomBankMode] = useState(false);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -45,7 +61,7 @@ export default function ArifpaySettingPage() {
     cancelUrl: "",
     errorUrl: "",
     notifyUrl: "",
-    beneficiaryBank: "Commercial Bank of Ethiopia",
+    beneficiaryBank: "CBETETAA",
     beneficiaryAccount: "",
     updatedAt: null,
   });
@@ -53,16 +69,25 @@ export default function ArifpaySettingPage() {
   // Track original loaded state for dirty-check / cancel
   const [originalData, setOriginalData] = useState(null);
 
-  // Popular Ethiopian banks for 1-click select
-  const bankPresets = [
-    "Commercial Bank of Ethiopia",
-    "Awash Bank",
-    "Dashen Bank",
-    "Bank of Abyssinia",
-    "Cooperative Bank of Oromia",
-    "Hibret Bank",
-    "Telebirr",
-  ];
+  // Helper to normalize legacy bank names to SWIFT/BIC codes
+  const normalizeBankCode = (val) => {
+    if (!val) return "CBETETAA";
+    const upper = String(val).trim().toUpperCase();
+    if (upper === "COMMERCIAL BANK OF ETHIOPIA" || upper === "CBE") return "CBETETAA";
+    if (upper.includes("AWASH")) return "AWINETAA";
+    if (upper.includes("ABYSSINIA") || upper === "BOA") return "ABYSETAA";
+    if (upper.includes("DASHEN")) return "DASHETAA";
+    if (upper.includes("OROMIA") || upper.includes("COOP")) return "CBORETAA";
+    if (upper.includes("HIBRET") || upper.includes("UNITED BANK")) return "HIBRETAA";
+    if (upper.includes("NIB")) return "NIBIETAA";
+    if (upper.includes("WEGAGEN")) return "WGINETAA";
+    if (upper.includes("BUNNA")) return "BUNAETAA";
+    if (upper.includes("BERHAN")) return "BERHETAA";
+    if (upper.includes("ABAY")) return "ABAYETAA";
+    if (upper.includes("ENAT")) return "ENATETAA";
+    if (upper.includes("TELEBIRR")) return "TELEBIRR";
+    return val;
+  };
 
   // Fetch current config from backend
   const fetchConfig = useCallback(async () => {
@@ -70,14 +95,24 @@ export default function ArifpaySettingPage() {
     try {
       const data = await arifpayService.getConfig();
       if (data) {
-        setFormData(data);
-        setOriginalData(data);
+        const normalizedBank = normalizeBankCode(data.beneficiaryBank);
+        const resolved = {
+          ...data,
+          apiUrl: data.apiUrl || "https://gateway.arifpay.net/api/checkout/session",
+          beneficiaryBank: normalizedBank,
+        };
+        setFormData(resolved);
+        setOriginalData(resolved);
+
+        // Check if bank code is custom (not in predefined list)
+        const inList = ARIFPAY_SUPPORTED_BANKS.some((b) => b.code === normalizedBank);
+        if (!inList && normalizedBank) {
+          setCustomBankMode(true);
+        }
       }
     } catch (err) {
       console.error("[ArifpaySetting] Failed to load config:", err);
-      toast.error(
-        err?.response?.data?.message || "Failed to load ArifPay settings"
-      );
+      toast.error(err?.response?.data?.message || "Failed to load ArifPay settings");
     } finally {
       setLoading(false);
     }
@@ -100,9 +135,6 @@ export default function ArifpaySettingPage() {
     setTimeout(() => setCopiedField(null), 2500);
   };
 
-  const isMockMode =
-    !formData.apiKey || formData.apiKey === "test_api_key_123456789";
-
   // Pre-fill Production Defaults
   const handleLoadProductionDefaults = () => {
     const origin =
@@ -118,32 +150,9 @@ export default function ArifpaySettingPage() {
       cancelUrl: `${origin}/ui/manager/payWithArifpay?status=cancel`,
       errorUrl: `${origin}/ui/manager/payWithArifpay?status=error`,
       notifyUrl: `${beOrigin}/api/mardaerp/payments/arifpay/callback`,
-      beneficiaryBank: prev.beneficiaryBank || "Commercial Bank of Ethiopia",
+      beneficiaryBank: prev.beneficiaryBank || "CBETETAA",
     }));
-    toast.info("Applied production URL defaults. Enter your live API Key & Merchant ID.");
-  };
-
-  // Pre-fill Sandbox Defaults
-  const handleLoadSandboxDefaults = () => {
-    const origin =
-      typeof window !== "undefined"
-        ? window.location.origin
-        : "http://localhost:9000";
-    const beOrigin = origin.replace(":9000", ":9092");
-
-    setFormData((prev) => ({
-      ...prev,
-      apiKey: "test_api_key_123456789",
-      merchantId: "test_merchant_id",
-      apiUrl: "https://gateway.arifpay.net/api/checkout/session",
-      successUrl: `${origin}/ui/manager/payWithArifpay?status=success`,
-      cancelUrl: `${origin}/ui/manager/payWithArifpay?status=cancel`,
-      errorUrl: `${origin}/ui/manager/payWithArifpay?status=error`,
-      notifyUrl: `${beOrigin}/api/mardaerp/payments/arifpay/callback`,
-      beneficiaryBank: "Commercial Bank of Ethiopia",
-      beneficiaryAccount: "1000123456789",
-    }));
-    toast.info("Loaded sandbox / mock test template.");
+    toast.info("Applied live production redirect and webhook URLs.");
   };
 
   // Discard changes
@@ -158,13 +167,12 @@ export default function ArifpaySettingPage() {
   const handleSubmit = async (e) => {
     e?.preventDefault();
 
-    // Basic client validation
     if (!formData.apiKey?.trim()) {
-      toast.error("API Key is required");
+      toast.error("ArifPay Production API Key is required");
       return;
     }
     if (!formData.merchantId?.trim()) {
-      toast.error("Merchant ID is required");
+      toast.error("ArifPay Merchant ID is required");
       return;
     }
     if (!formData.apiUrl?.trim()) {
@@ -172,11 +180,11 @@ export default function ArifpaySettingPage() {
       return;
     }
     if (!formData.beneficiaryBank?.trim()) {
-      toast.error("Beneficiary Bank Name is required");
+      toast.error("Beneficiary Bank SWIFT/BIC Code is required");
       return;
     }
     if (!formData.beneficiaryAccount?.trim()) {
-      toast.error("Beneficiary Account Number is required");
+      toast.error("Beneficiary Settlement Account Number is required");
       return;
     }
 
@@ -185,7 +193,7 @@ export default function ArifpaySettingPage() {
       const saved = await arifpayService.saveConfig(formData);
       setFormData(saved);
       setOriginalData(saved);
-      toast.success("ArifPay settings successfully saved!");
+      toast.success("Live production ArifPay settings successfully saved!");
     } catch (err) {
       console.error("[ArifpaySetting] Save error:", err);
       toast.error(
@@ -196,6 +204,10 @@ export default function ArifpaySettingPage() {
     }
   };
 
+  const selectedBankObj = useMemo(() => {
+    return ARIFPAY_SUPPORTED_BANKS.find((b) => b.code === formData.beneficiaryBank);
+  }, [formData.beneficiaryBank]);
+
   return (
     <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
       <ToastContainer position="top-right" autoClose={3000} theme="colored" />
@@ -203,8 +215,8 @@ export default function ArifpaySettingPage() {
       {/* Breadcrumb Navigation */}
       <Breadcrumb pageName="ArifPay Production Settings" />
 
-      {/* Header Banner */}
-      <div className="mb-6 overflow-hidden rounded-2xl bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 p-6 text-white shadow-xl border border-indigo-500/20">
+      {/* Header Banner - Strictly Production */}
+      <div className="mb-6 overflow-hidden rounded-2xl bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 p-6 text-white shadow-xl border border-indigo-500/30">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div className="space-y-1">
             <div className="flex items-center gap-2">
@@ -213,13 +225,13 @@ export default function ArifpaySettingPage() {
               </span>
               <div>
                 <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
-                  ArifPay Production & API Settings
+                  ArifPay Production Settings
                   <span className="text-xs font-normal text-indigo-300">
-                    • የአሪፍፔይ ማስተካከያ
+                    • የአሪፍፔይ የቀጥታ ምርት ማስተካከያ
                   </span>
                 </h1>
                 <p className="text-sm text-slate-300">
-                  Configure live production gateway credentials, merchant bank settlement accounts, and webhook redirects.
+                  Configure live merchant API credentials, settlement destination bank accounts, and production webhook endpoints.
                 </p>
               </div>
             </div>
@@ -227,17 +239,10 @@ export default function ArifpaySettingPage() {
 
           {/* Environment Status Badge */}
           <div className="flex flex-wrap items-center gap-2">
-            {isMockMode ? (
-              <div className="inline-flex items-center gap-2 rounded-full border border-amber-500/30 bg-amber-500/10 px-4 py-1.5 text-xs font-semibold text-amber-300 shadow-sm backdrop-blur-md">
-                <span className="h-2 w-2 rounded-full bg-amber-400 animate-pulse"></span>
-                <span>SANDBOX / MOCK MODE</span>
-              </div>
-            ) : (
-              <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-4 py-1.5 text-xs font-semibold text-emerald-300 shadow-sm backdrop-blur-md">
-                <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                <span>LIVE PRODUCTION GATEWAY</span>
-              </div>
-            )}
+            <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-4 py-1.5 text-xs font-semibold text-emerald-300 shadow-sm backdrop-blur-md">
+              <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
+              <span>LIVE PRODUCTION GATEWAY</span>
+            </div>
 
             <button
               onClick={fetchConfig}
@@ -252,61 +257,38 @@ export default function ArifpaySettingPage() {
           </div>
         </div>
 
-        {/* Mode Notification Banner */}
+        {/* Live Gateway Callout */}
         <div className="mt-4 border-t border-white/10 pt-4">
-          {isMockMode ? (
-            <div className="flex items-start gap-3 rounded-xl bg-amber-500/10 p-3.5 text-xs text-amber-200 border border-amber-500/20">
-              <AlertTriangle className="h-4 w-4 shrink-0 text-amber-400 mt-0.5" />
-              <div>
-                <span className="font-semibold text-amber-300">
-                  Development Mock Mode is currently active:
-                </span>{" "}
-                Payment sessions will simulate instant approvals locally without charging customer bank accounts.
-                To go live, enter your live production ArifPay API Key and Merchant ID provided by ArifPay onboarding.
-              </div>
+          <div className="flex items-start gap-3 rounded-xl bg-emerald-500/10 p-3.5 text-xs text-emerald-200 border border-emerald-500/20">
+            <ShieldCheck className="h-4 w-4 shrink-0 text-emerald-400 mt-0.5" />
+            <div>
+              <span className="font-semibold text-emerald-300">
+                Direct Hosted Checkout:
+              </span>{" "}
+              When cashiers initiate payments, MarDa ERP forwards payers directly to the official ArifPay checkout portal (
+              <code className="bg-black/30 px-1 py-0.5 rounded text-emerald-300 font-mono">
+                {formData.apiUrl || "https://gateway.arifpay.net/api/checkout/session"}
+              </code>
+              ). Payers choose their preferred method (Telebirr, CBE Birr, Awash Birr, cards) directly on ArifPay.
             </div>
-          ) : (
-            <div className="flex items-start gap-3 rounded-xl bg-emerald-500/10 p-3.5 text-xs text-emerald-200 border border-emerald-500/20">
-              <ShieldCheck className="h-4 w-4 shrink-0 text-emerald-400 mt-0.5" />
-              <div>
-                <span className="font-semibold text-emerald-300">
-                  Production Mode Connected:
-                </span>{" "}
-                All checkout sessions are securely generated through ArifPay gateway (
-                <code className="bg-black/30 px-1 py-0.5 rounded text-emerald-300 font-mono">
-                  {formData.apiUrl}
-                </code>
-                ) and funds are deposited into your registered settlement bank account.
-              </div>
-            </div>
-          )}
+          </div>
         </div>
       </div>
 
-      {/* Preset Quick Fill Bar */}
+      {/* Quick Fill Action Bar */}
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-slate-50 p-3.5 text-sm dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
         <div className="flex items-center gap-2 text-slate-600 dark:text-slate-300 font-medium">
           <Sparkles className="h-4 w-4 text-indigo-500" />
-          <span>Quick Setup Templates:</span>
+          <span>Production Quick Setup:</span>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={handleLoadProductionDefaults}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100 dark:border-emerald-700/50 dark:bg-emerald-950/40 dark:text-emerald-300"
-          >
-            <Zap className="h-3.5 w-3.5" />
-            Apply Live Production URLs
-          </button>
-          <button
-            type="button"
-            onClick={handleLoadSandboxDefaults}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700 transition hover:bg-amber-100 dark:border-amber-700/50 dark:bg-amber-950/40 dark:text-amber-300"
-          >
-            <Server className="h-3.5 w-3.5" />
-            Load Sandbox / Mock Template
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={handleLoadProductionDefaults}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3.5 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100 dark:border-emerald-700/50 dark:bg-emerald-950/40 dark:text-emerald-300"
+        >
+          <Zap className="h-3.5 w-3.5" />
+          Apply Live Production URLs
+        </button>
       </div>
 
       {/* Main Settings Form */}
@@ -320,10 +302,10 @@ export default function ArifpaySettingPage() {
               </span>
               <div>
                 <h2 className="text-base font-semibold text-slate-900 dark:text-white">
-                  API Gateway Credentials
+                  Live API Credentials
                 </h2>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Authentication tokens issued by ArifPay merchant portal
+                  Authentication tokens issued by the official ArifPay Merchant Portal
                 </p>
               </div>
             </div>
@@ -332,7 +314,7 @@ export default function ArifpaySettingPage() {
               {/* API Key */}
               <div>
                 <label className="mb-1 block text-xs font-medium text-slate-700 dark:text-slate-300">
-                  ArifPay API Key (Header: x-arifpay-key){" "}
+                  Live API Key (Header: x-arifpay-key){" "}
                   <span className="text-rose-500">*</span>
                 </label>
                 <div className="relative flex items-center">
@@ -373,10 +355,7 @@ export default function ArifpaySettingPage() {
                   </div>
                 </div>
                 <p className="mt-1 text-[11px] text-slate-500">
-                  Keep this confidential. In sandbox mock mode, use:{" "}
-                  <code className="text-indigo-600 dark:text-indigo-400">
-                    test_api_key_123456789
-                  </code>
+                  Issued under your ArifPay live production contract.
                 </p>
               </div>
 
@@ -385,33 +364,46 @@ export default function ArifpaySettingPage() {
                 <label className="mb-1 block text-xs font-medium text-slate-700 dark:text-slate-300">
                   Merchant ID <span className="text-rose-500">*</span>
                 </label>
-                <input
-                  type="text"
-                  name="merchantId"
-                  value={formData.merchantId || ""}
-                  onChange={handleChange}
-                  placeholder="e.g. MERCH_12345678"
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2.5 text-sm font-mono text-slate-900 transition focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                  required
-                />
+                <div className="relative flex items-center">
+                  <input
+                    type="text"
+                    name="merchantId"
+                    value={formData.merchantId || ""}
+                    onChange={handleChange}
+                    placeholder="e.g. APMG:001084"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2.5 pr-10 text-sm font-mono text-slate-900 transition focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleCopy(formData.merchantId, "Merchant ID")}
+                    className="absolute right-2 rounded p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                    title="Copy Merchant ID"
+                  >
+                    {copiedField === "Merchant ID" ? (
+                      <Check className="h-4 w-4 text-emerald-500" />
+                    ) : (
+                      <Copy className="h-4 w-4" />
+                    )}
+                  </button>
+                </div>
                 <p className="mt-1 text-[11px] text-slate-500">
-                  Your registered ArifPay Merchant account identifier.
+                  Your official registered ArifPay merchant identifier.
                 </p>
               </div>
 
-              {/* Gateway API URL */}
+              {/* Gateway API URL (Locked to production) */}
               <div>
                 <label className="mb-1 block text-xs font-medium text-slate-700 dark:text-slate-300">
-                  Gateway Checkout Endpoint URL{" "}
+                  Production Gateway Checkout Endpoint{" "}
                   <span className="text-rose-500">*</span>
                 </label>
                 <div className="relative flex items-center">
                   <input
                     type="url"
                     name="apiUrl"
-                    value={formData.apiUrl || ""}
+                    value={formData.apiUrl || "https://gateway.arifpay.net/api/checkout/session"}
                     onChange={handleChange}
-                    placeholder="https://gateway.arifpay.net/api/checkout/session"
                     className="w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2.5 pr-10 text-sm font-mono text-slate-900 transition focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                     required
                   />
@@ -419,7 +411,7 @@ export default function ArifpaySettingPage() {
                     type="button"
                     onClick={() => handleCopy(formData.apiUrl, "API URL")}
                     className="absolute right-2 rounded p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-                    title="Copy API URL"
+                    title="Copy Gateway Endpoint"
                   >
                     {copiedField === "API URL" ? (
                       <Check className="h-4 w-4 text-emerald-500" />
@@ -429,7 +421,7 @@ export default function ArifpaySettingPage() {
                   </button>
                 </div>
                 <p className="mt-1 text-[11px] text-slate-500">
-                  Default ArifPay session creation endpoint:{" "}
+                  Standard production session endpoint:{" "}
                   <code className="text-indigo-600 dark:text-indigo-400">
                     https://gateway.arifpay.net/api/checkout/session
                   </code>
@@ -438,7 +430,7 @@ export default function ArifpaySettingPage() {
             </div>
           </div>
 
-          {/* Card 2: Settlement Bank Account */}
+          {/* Card 2: Settlement Bank Account & SWIFT/BIC Code (Reference) */}
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
             <div className="mb-4 flex items-center gap-2.5 border-b border-slate-100 pb-3 dark:border-slate-800">
               <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-400">
@@ -446,52 +438,68 @@ export default function ArifpaySettingPage() {
               </span>
               <div>
                 <h2 className="text-base font-semibold text-slate-900 dark:text-white">
-                  Settlement & Beneficiary Account
+                  Merchant Settlement Account (Reference)
                 </h2>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Designate where customer payments are deposited
+                  Your registered bank account on file with ArifPay where collected utility revenues are settled
                 </p>
               </div>
             </div>
 
             <div className="space-y-4">
-              {/* Beneficiary Bank Name */}
+              {/* Beneficiary Bank Code Selection */}
               <div>
-                <label className="mb-1 block text-xs font-medium text-slate-700 dark:text-slate-300">
-                  Beneficiary Bank Name <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  name="beneficiaryBank"
-                  value={formData.beneficiaryBank || ""}
-                  onChange={handleChange}
-                  placeholder="e.g. Commercial Bank of Ethiopia"
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-900 transition focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                  required
-                />
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
+                    Settlement Bank (SWIFT/BIC Code){" "}
+                    <span className="text-rose-500">*</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setCustomBankMode(!customBankMode)}
+                    className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 hover:underline"
+                  >
+                    {customBankMode ? "Choose from List" : "Enter Custom Code"}
+                  </button>
+                </div>
 
-                {/* Bank Presets Chips */}
-                <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                  <span className="text-[11px] text-slate-400">Presets:</span>
-                  {bankPresets.map((bank) => (
-                    <button
-                      key={bank}
-                      type="button"
-                      onClick={() =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          beneficiaryBank: bank,
-                        }))
-                      }
-                      className={`rounded-md px-2 py-0.5 text-[11px] font-medium transition ${
-                        formData.beneficiaryBank === bank
-                          ? "bg-indigo-600 text-white"
-                          : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
-                      }`}
-                    >
-                      {bank}
-                    </button>
-                  ))}
+                {!customBankMode ? (
+                  <select
+                    name="beneficiaryBank"
+                    value={formData.beneficiaryBank || "CBETETAA"}
+                    onChange={handleChange}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-900 transition focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-white font-medium"
+                    required
+                  >
+                    {ARIFPAY_SUPPORTED_BANKS.map((b) => (
+                      <option key={b.code} value={b.code}>
+                        {b.name} ({b.code})
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    name="beneficiaryBank"
+                    value={formData.beneficiaryBank || ""}
+                    onChange={handleChange}
+                    placeholder="Enter ArifPay SWIFT/BIC code (e.g. CBETETAA)"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2.5 text-sm font-mono text-slate-900 transition focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                    required
+                  />
+                )}
+
+                {/* Selected Bank Confirmation Badge */}
+                <div className="mt-2 flex items-center gap-2 text-xs">
+                  <span className="text-slate-500 dark:text-slate-400">Selected Code:</span>
+                  <span className="px-2 py-0.5 rounded font-mono font-bold bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                    {formData.beneficiaryBank || "Not selected"}
+                  </span>
+                  {selectedBankObj && (
+                    <span className="text-slate-500 dark:text-slate-400 text-[11px]">
+                      • {selectedBankObj.short}
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -511,17 +519,17 @@ export default function ArifpaySettingPage() {
                   required
                 />
                 <p className="mt-1 text-[11px] text-slate-500">
-                  Target bank account number registered with your ArifPay merchant contract.
+                  The verified bank account registered with your ArifPay merchant onboarding contract.
                 </p>
               </div>
 
-              {/* Informational callout */}
-              <div className="mt-4 rounded-xl bg-slate-50 p-3.5 text-xs text-slate-600 dark:bg-slate-800/60 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+              {/* Settlement Callout */}
+              <div className="rounded-xl bg-slate-50 p-3.5 text-xs text-slate-600 dark:bg-slate-800/60 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
                 <div className="flex items-center gap-2 font-semibold text-slate-800 dark:text-slate-200 mb-1">
                   <Building2 className="h-3.5 w-3.5 text-indigo-500" />
-                  Settlement Verification
+                  Direct Merchant Settlement
                 </div>
-                During payment initiation, ArifPay validates that the beneficiary bank and account correspond to your merchant onboarding credentials.
+                In standard C2B utility collections, customer payments are automatically deposited into your ArifPay-registered bank account. Customers freely select their payment channel (CBE, Telebirr, Awash, Card) directly on the official ArifPay portal.
               </div>
             </div>
           </div>
@@ -535,10 +543,10 @@ export default function ArifpaySettingPage() {
             </span>
             <div>
               <h2 className="text-base font-semibold text-slate-900 dark:text-white">
-                Customer Return & Redirect URLs
+                Browser Redirect & Return URLs
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Where customer browsers are redirected when completing, canceling, or failing a payment
+                Where the payer is redirected once payment is completed, cancelled, or declined on ArifPay
               </p>
             </div>
           </div>
@@ -559,7 +567,7 @@ export default function ArifpaySettingPage() {
                 required
               />
               <p className="mt-1 text-[11px] text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                <CheckCircle2 className="h-3 w-3" /> Returns with sessionId & nonce
+                <CheckCircle2 className="h-3 w-3" /> ArifPay appends ?sessionId=...
               </p>
             </div>
 
@@ -612,10 +620,10 @@ export default function ArifpaySettingPage() {
               </span>
               <div>
                 <h2 className="text-base font-semibold text-slate-900 dark:text-white">
-                  Webhook Notification Callback URL (notifyUrl)
+                  Server Webhook Notification Callback URL (notifyUrl)
                 </h2>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  ArifPay backend dispatches asynchronous transaction confirmations to this URL
+                  ArifPay backend asynchronously dispatches transaction confirmations to this endpoint
                 </p>
               </div>
             </div>
@@ -632,7 +640,7 @@ export default function ArifpaySettingPage() {
                 name="notifyUrl"
                 value={formData.notifyUrl || ""}
                 onChange={handleChange}
-                placeholder="http://localhost:9092/api/mardaerp/payments/arifpay/callback"
+                placeholder="http://YOUR_PUBLIC_DOMAIN:9092/api/mardaerp/payments/arifpay/callback"
                 className="w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2.5 pr-10 text-sm font-mono text-slate-900 transition focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
               />
               <button
@@ -652,11 +660,11 @@ export default function ArifpaySettingPage() {
             <div className="flex items-start gap-2.5 rounded-xl bg-violet-50/70 p-3 text-xs text-violet-800 dark:bg-violet-950/30 dark:text-violet-200 border border-violet-100 dark:border-violet-900/40">
               <Info className="h-4 w-4 shrink-0 text-violet-500 mt-0.5" />
               <div>
-                <strong>Webhook Security Notice:</strong> The Spring Boot backend permits incoming HTTP POST calls at{" "}
+                <strong>Webhook Routing:</strong> The Spring Boot backend permits incoming HTTP POST calls at{" "}
                 <code className="bg-violet-100 dark:bg-violet-900/60 px-1 py-0.5 rounded font-mono">
                   /api/mardaerp/payments/arifpay/callback
                 </code>{" "}
-                without session cookies so ArifPay can post instantaneous receipt confirmations. In production, ensure this URL is exposed via your public domain or reverse proxy.
+                without session cookies so ArifPay can post real-time receipt confirmations. In production, ensure this URL resolves through your public domain or reverse proxy.
               </div>
             </div>
           </div>

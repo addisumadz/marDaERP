@@ -11,14 +11,20 @@ export class ArifpayService {
   /**
    * Initiate an ArifPay payment checkout session for a bill reading
    * @param {number|string} readingId
-   * @param {string} phone - Payer's phone in format 251XXXXXXXXX
+   * @param {string|object} phoneOrOptions - Payer's phone (+2519...) or options object { phone, saveToCustomer }
    * @returns {Promise<{ sessionId: string, checkoutUrl: string }>}
    */
-  async initiatePayment(readingId, phone) {
+  async initiatePayment(readingId, phoneOrOptions) {
     const token = getAccesToken();
+    let body = {};
+    if (typeof phoneOrOptions === "string") {
+      body.phone = phoneOrOptions;
+    } else if (phoneOrOptions && typeof phoneOrOptions === "object") {
+      body = { ...phoneOrOptions };
+    }
     const res = await axios.post(
       `${commonUrl}payments/arifpay/initiate/${readingId}`,
-      { phone: phone || undefined },
+      body,
       { headers: authHeader(token) }
     );
     return res.data;

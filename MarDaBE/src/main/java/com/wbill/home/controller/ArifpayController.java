@@ -122,15 +122,32 @@ public class ArifpayController {
 
         // Extract phone number
         BillingCustomerInfo customer = reading.getBillingCustomerInfo();
-        String rawPhone = (body != null && body.get("phone") != null) ? body.get("phone")
+        String rawPhone = (body != null && body.get("phone") != null && !body.get("phone").trim().isEmpty())
+                ? body.get("phone")
                 : (customer != null ? customer.getPhoneNumber() : null);
         String phone = normalizePhone(rawPhone);
+
+        if (phone == null || !phone.matches("^\\+251[97]\\d{8}$")) {
+            logger.warn("[ArifpayController] Invalid Ethiopian mobile phone for reading ID={}: raw='{}', normalized='{}'",
+                    readingId, rawPhone, phone);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("message", "A valid 9-digit Ethiopian mobile number is required (+2519XXXXXXXX or +2517XXXXXXXX)"));
+        }
         payload.put("phone", phone);
 
-        String email = "customer@example.com";
+        // Update customer phone in session if requested
+        if (customer != null && body != null && "true".equalsIgnoreCase(body.get("saveToCustomer"))) {
+            try {
+                customer.setPhoneNumber(phone);
+            } catch (Exception e) {
+                logger.warn("[ArifpayController] Could not update customer phone in session: {}", e.getMessage());
+            }
+        }
+
+        String email = (body != null && body.get("email") != null && !body.get("email").trim().isEmpty())
+                ? body.get("email").trim() : "customer@example.com";
         payload.put("email", email);
         payload.put("nonce", nonce);
-        payload.put("paymentMethods", Arrays.asList("TELEBIRR_USSD", "CBE", "AWASH_BIRR"));
 
         // Expiration in 24 hours
         String expireDateStr = LocalDateTime.now().plusDays(1).toString();
@@ -144,13 +161,8 @@ public class ArifpayController {
         item.put("description", "Bill ID: " + reading.getId() + (reading.getInvoiceNumber() != null ? " Inv: " + reading.getInvoiceNumber() : ""));
         payload.put("items", Collections.singletonList(item));
 
-        Map<String, Object> beneficiary = new LinkedHashMap<>();
-        beneficiary.put("accountNumber", config.getBeneficiaryAccount());
-        beneficiary.put("bank", config.getBeneficiaryBank());
-        beneficiary.put("amount", amountDue);
-        payload.put("beneficiaries", Collections.singletonList(beneficiary));
-
-        payload.put("lang", "EN");
+        String lang = (body != null && body.get("lang") != null) ? body.get("lang") : "EN";
+        payload.put("lang", lang);
 
         try {
             HttpHeaders headers = new HttpHeaders();
@@ -361,23 +373,26 @@ public class ArifpayController {
     }
 
     /**
-     * Normalize phone number to ArifPay format: 251XXXXXXXXX
+     * Normalize phone number to ArifPay E.164 format: +251XXXXXXXXX
      */
     private String normalizePhone(String phone) {
-        if (phone == null || phone.isEmpty()) {
-            return "251900000000";
+        if (phone == null || phone.trim().isEmpty()) {
+            return null;
         }
-        phone = phone.trim().replaceAll("[\\s\\-]", "");
-        if (phone.startsWith("+")) {
-            phone = phone.substring(1);
+        phone = phone.trim().replaceAll("[\\s\\-\\(\\)]", "");
+        if (phone.startsWith("+251")) {
+            return phone;
+        }
+        if (phone.startsWith("251")) {
+            return "+" + phone;
         }
         if (phone.startsWith("0")) {
-            phone = "251" + phone.substring(1);
+            return "+251" + phone.substring(1);
         }
-        if (!phone.startsWith("251")) {
-            phone = "251" + phone;
+        if (phone.length() == 9 && (phone.startsWith("9") || phone.startsWith("7"))) {
+            return "+251" + phone;
         }
-        return phone;
+        return phone.startsWith("+") ? phone : "+" + phone;
     }
 
     private String getDirectWebhookUrl() {

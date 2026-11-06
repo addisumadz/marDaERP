@@ -121,6 +121,8 @@ const BillList = () => {
     String(ethYear) || ""
   );
 
+  const [isPeriodInitialized, setIsPeriodInitialized] = useState(false);
+
   // Load company profile to detect active reading date cycle
   const { data: profileData } = useQuery({
     queryKey: ["companyProfileActive"],
@@ -149,6 +151,7 @@ const BillList = () => {
           setCurrentCycleYear(String(eYear));
           setSelectedKifyaWerMonth(cycleMonth);
           setSelectedKifyaWerYear(String(eYear));
+          setIsPeriodInitialized(true);
           return;
         } catch (e) {
           console.error("Error parsing activeReadingDate:", e);
@@ -160,6 +163,9 @@ const BillList = () => {
     const cycleMonth = ETH_MONTHS_AM[monthIndex];
     setCurrentCycleMonth(cycleMonth);
     setCurrentCycleYear(String(ethYear));
+    setSelectedKifyaWerMonth(cycleMonth);
+    setSelectedKifyaWerYear(String(ethYear));
+    setIsPeriodInitialized(true);
   }, [profileData, ethYear, ethMonth]);
 
   // Distinct billing periods in database for indicator dots
@@ -232,7 +238,6 @@ const BillList = () => {
   const [zeroReadingMonthsOp, setZeroReadingMonthsOp] = useState("eq");
   const [zeroReadingMonthsVal, setZeroReadingMonthsVal] = useState("");
 
-  const [filterVoidChangedCustomers, setFilterVoidChangedCustomers] = useState(false);
   const [isBulkKitatTransferring, setIsBulkKitatTransferring] = useState(false);
   const [isBulkSmsSending, setIsBulkSmsSending] = useState(false);
   const [isBulkSmsSendingJasmin, setIsBulkSmsSendingJasmin] = useState(false);
@@ -628,28 +633,23 @@ const BillList = () => {
     queryFn: async () => {
       if (selectedKifyaWerMonth && selectedKifyaWerYear) {
         const kifyaWerFormatted = `${selectedKifyaWerMonth}, ${selectedKifyaWerYear}`;
-        const [activeList, deletedBillFiltered, deletedFiltered] = await Promise.all([
-          readingService.getBillFilteredReadings("ACTIVE", kifyaWerFormatted).catch(() => []),
-          readingService.getBillFilteredReadings("DELETED", kifyaWerFormatted).catch(() => []),
-          readingService.getFilteredReadings("DELETED", kifyaWerFormatted).catch(() => []),
-        ]);
-        const merged = [...(activeList || []), ...(deletedBillFiltered || []), ...(deletedFiltered || [])];
-        const byId = new Map();
-        merged.forEach((it) => {
-          const key = it?.id ?? it?.billingInvoiceNumber ?? it?.invoiceNumber ?? Math.random();
-          if (!byId.has(key)) byId.set(key, it);
-        });
-        const arr = Array.from(byId.values());
-        return arr.map((it) => {
-          const isVoid = !!(it?.isVoid || it?.void || String(it?.status).toLowerCase() === "deleted");
-          return { ...it, isVoid: isVoid, void: isVoid || it?.void };
-        });
+        const activeList = await readingService.getBillFilteredReadings("ACTIVE", kifyaWerFormatted);
+        const list = Array.isArray(activeList) ? activeList : (activeList?.data || []);
+        return list.map((it) => ({
+          ...it,
+          isVoid: false,
+          void: false,
+        }));
       }
       return [];
     },
-    // Auto-fetch when month and year are selected; Filter Bills button also calls refetch()
-    enabled: !!selectedKifyaWerMonth && !!selectedKifyaWerYear,
+    // Auto-fetch only after period initialized from profile; Filter Bills button also calls refetch()
+    enabled: isPeriodInitialized && !!selectedKifyaWerMonth && !!selectedKifyaWerYear,
     staleTime: 5 * 60 * 1000,
+    keepPreviousData: true,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
     onSuccess: (data) => {
       try {
         if (Array.isArray(data) && data.length > 0) {
@@ -740,207 +740,6 @@ const BillList = () => {
       .map(([id, name]) => ({ id, name }))
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [cashiers, readings]);
-
-  const voidChangedComparisons = useMemo(() => {
-    if (!Array.isArray(readings) || readings.length === 0) return [];
-
-    let items = [...readings];
-
-    const matchesAnyKey = (obj, keys, value) =>
-      keys.some((k) => obj?.[k] !== undefined && String(obj[k]) === String(value));
-
-    if (selectedKebeleId) {
-      const kebeleKeys = ["addressStreetsId", "kebeleId", "customerKebeleId"];
-      items = items.filter((r) => matchesAnyKey(r, kebeleKeys, selectedKebeleId));
-    }
-    if (selectedKetenaId) {
-      const ketenaKeys = ["addressKetenaId", "ketenaId"];
-      items = items.filter((r) => matchesAnyKey(r, ketenaKeys, selectedKetenaId));
-    }
-    if (selectedBranchId) {
-      const branchKeys = ["branchsId", "branchId"];
-      items = items.filter((r) => matchesAnyKey(r, branchKeys, selectedBranchId));
-    }
-    if (selectedReaderId) {
-      const readerKeys = ["assignedReaderId", "readerId"];
-      items = items.filter((r) => matchesAnyKey(r, readerKeys, selectedReaderId));
-    }
-    if (selectedCustomerTypeId) {
-      items = items.filter(
-        (r) => r?.customerTypeId !== undefined && String(r.customerTypeId) === String(selectedCustomerTypeId)
-      );
-    }
-
-    const getAcct = (b) => b?.customerAccountNumber ?? b?.accountNumber ?? b?.customerId ?? null;
-    const getId = (b) => (b?.id !== undefined ? Number(b.id) : NaN);
-    const getInv = (b) => b?.billingInvoiceNumber ?? b?.invoiceNumber ?? "";
-    const getTekefay = (b) => Number(b?.tekilalaTekefay ?? 0) || 0;
-    const getCreatedTs = (b) => {
-      const d = b?.createdAt || b?.createdDate || b?.registeredDate || b?.created_on || b?.createdOn || b?.created;
-      const t = d ? Date.parse(d) : NaN;
-      return Number.isNaN(t) ? null : t;
-    };
-    const isBillGeneratedTrue = (b) =>
-      b?.isBillGenerated === true ||
-      b?.isBillGenerated === 1 ||
-      (typeof b?.isBillGenerated === "string" && b?.isBillGenerated.toLowerCase() === "true");
-
-    const groups = new Map();
-    items.forEach((b) => {
-      const acct = getAcct(b);
-      const kifya = b?.kifyaWer ?? "";
-      if (!acct) return;
-      const key = `${acct}__${kifya}`;
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key).push(b);
-    });
-
-    const result = [];
-    groups.forEach((list) => {
-      const voids = list.filter((x) => (x?.isVoid || x?.void) && isBillGeneratedTrue(x));
-      if (voids.length === 0) return;
-      let oldVoid = voids[0];
-      voids.forEach((v) => {
-        const tv = getCreatedTs(v);
-        const to = getCreatedTs(oldVoid);
-        if (tv !== null && (to === null || tv < to)) {
-          oldVoid = v;
-          return;
-        }
-        if (tv === null && to === null) {
-          const idv = getId(v);
-          const ido = getId(oldVoid);
-          if (!Number.isNaN(idv) && (Number.isNaN(ido) || idv < ido)) oldVoid = v;
-        }
-      });
-
-      const actives = list.filter((x) => !(x?.isVoid || x?.void));
-      let current = actives.length > 0 ? actives[0] : null;
-      if (current && actives.length > 1) {
-        actives.forEach((a) => {
-          const ida = getId(a);
-          const idc = getId(current);
-          if (!Number.isNaN(ida) && (Number.isNaN(idc) || ida > idc)) current = a;
-        });
-      }
-
-      result.push({
-        accountNumber: getAcct(oldVoid),
-        voidInvoice: getInv(oldVoid),
-        voidTotal: getTekefay(oldVoid),
-        newInvoice: current ? getInv(current) : "",
-        newTotal: current ? getTekefay(current) : 0,
-        diff: getTekefay(oldVoid) - (current ? getTekefay(current) : 0),
-      });
-    });
-
-    result.sort((a, b) => String(a.accountNumber).localeCompare(String(b.accountNumber)));
-    return result;
-  }, [readings, selectedKebeleId, selectedKetenaId, selectedBranchId, selectedReaderId, selectedCustomerTypeId]);
-
-  const handleExportVoidChangedReportPDF = async (preview = false) => {
-    try {
-      if (!Array.isArray(voidChangedComparisons) || voidChangedComparisons.length === 0) {
-        toast.info("No void/changed comparisons to export.");
-        return;
-      }
-
-      const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "A4" });
-      try { doc.setFont("nyala", "normal"); } catch (_) { }
-
-      const pageWidth = doc.internal.pageSize.getWidth();
-      const MARGIN = 30;
-
-      const titleLeftAmh = companyProfile?.companyNameAmh || "";
-      const rightTopLocationAmh = companyProfile?.locationAmh || "";
-      const logoBase64 = await loadImageAsBase64("/images/logo/logo.png");
-      const logoW = 50, logoH = 50;
-      if (logoBase64) {
-        try { doc.addImage(logoBase64, "PNG", pageWidth - MARGIN - logoW, MARGIN, logoW, logoH); } catch (_) { }
-      }
-
-      doc.setFont("nyala", "normal");
-      doc.setFontSize(16);
-      doc.text(titleLeftAmh, MARGIN, MARGIN + 15);
-      doc.setFontSize(12);
-
-      if (rightTopLocationAmh) {
-        doc.setFontSize(11);
-        doc.text(rightTopLocationAmh, pageWidth - MARGIN - logoW, MARGIN + logoH + 15);
-      }
-
-      const subTitle = `የተቋረጡ/ተቀየሩ ደረሰኞች ማነጻጸር - ${selectedKifyaWerMonth || ""} ${selectedKifyaWerYear || ""}`;
-      doc.setFont("nyala", "normal");
-      doc.setFontSize(14);
-      doc.text(subTitle, pageWidth / 2, MARGIN + 90, { align: "center" });
-
-      const head = [[
-        "ተ.ቁ.",
-        "መለያ ቁጥር",
-        "ነባር ደረሰኝ",
-        "ነባር ክፍያ (በብር)",
-        "አዲስ ደረሰኝ",
-        "አዲስ ክፍያ (በብር)",
-        "ልዩነት (በብር)",
-      ]];
-      const body = voidChangedComparisons.map((r, idx) => [
-        idx + 1,
-        r.accountNumber || "",
-        r.voidInvoice || "",
-        (r.voidTotal || 0).toLocaleString("en-US", { minimumFractionDigits: 2 }),
-        r.newInvoice || "",
-        (r.newTotal || 0).toLocaleString("en-US", { minimumFractionDigits: 2 }),
-        (r.diff || 0).toLocaleString("en-US", { minimumFractionDigits: 2 }),
-      ]);
-
-      // Totals for money columns
-      const sumVoid = voidChangedComparisons.reduce((a, r) => a + (Number(r.voidTotal) || 0), 0);
-      const sumNew = voidChangedComparisons.reduce((a, r) => a + (Number(r.newTotal) || 0), 0);
-      const sumDiff = sumVoid - sumNew;
-      const foot = [[
-        "",
-        "ጠቅላላ",
-        "",
-        sumVoid.toLocaleString("en-US", { minimumFractionDigits: 2 }),
-        "",
-        sumNew.toLocaleString("en-US", { minimumFractionDigits: 2 }),
-        sumDiff.toLocaleString("en-US", { minimumFractionDigits: 2 }),
-      ]];
-
-      autoTable(doc, {
-        head,
-        body,
-        foot,
-        startY: MARGIN + 110,
-        margin: { left: MARGIN, right: MARGIN },
-        styles: { font: "nyala", fontSize: 10, cellPadding: 4, overflow: "linebreak" },
-        tableWidth: pageWidth - 2 * MARGIN,
-        showFoot: "lastPage",
-        headStyles: { fillColor: [33, 150, 243] },
-        columnStyles: {
-          // Column widths sum to available width (A4 portrait ~595pt, margins 30pt -> 535pt)
-          0: { halign: "center", cellWidth: 30 },   // #
-          1: { cellWidth: 80 },                       // account
-          2: { cellWidth: 90 },                       // void invoice
-          3: { halign: "right", cellWidth: 90 },     // void total
-          4: { cellWidth: 90 },                       // new invoice
-          5: { halign: "right", cellWidth: 90 },     // new total
-          6: { halign: "right", cellWidth: 65 },     // diff
-        },
-      });
-
-      const now = new Date();
-      const fileName = `VoidChanged_Comparison_${selectedKifyaWerMonth || ""}_${selectedKifyaWerYear || ""}_${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}.pdf`;
-      if (preview) {
-        openPdfPreviewModal(doc, fileName, `Void / Changed Bills Comparison - ${selectedKifyaWerMonth || ""} ${selectedKifyaWerYear || ""}`);
-      } else {
-        doc.save(fileName);
-      }
-    } catch (err) {
-      console.error("Failed to export Void/Changed report PDF", err);
-      toast.error("Failed to export comparison PDF");
-    }
-  };
 
   const handleExtraClick = (event) => {
     setAnchorElExtra(event.currentTarget);
@@ -1122,27 +921,6 @@ const BillList = () => {
       });
     }
 
-    if (filterVoidChangedCustomers) {
-      const getAcct = (b) =>
-        b?.customerAccountNumber ?? b?.accountNumber ?? b?.customerId ?? null;
-
-      // Build the set of accounts that have any void/changed bill
-      const voidAccounts = new Set();
-      (Array.isArray(readings) ? readings : []).forEach((b) => {
-        if (b?.isVoid || b?.void) {
-          const a = getAcct(b);
-          if (a) voidAccounts.add(String(a));
-        }
-      });
-
-      // Then, on the main dataset (already non-void), keep only rows
-      // whose account appears in that void/changed account set
-      tempReadings = tempReadings.filter((b) => {
-        const a = getAcct(b);
-        return a && voidAccounts.has(String(a));
-      });
-    }
-
     return tempReadings; // Return the calculated array
   }, [
     readings,
@@ -1159,7 +937,6 @@ const BillList = () => {
     wuzifMonthsVal,
     zeroReadingMonthsOp,
     zeroReadingMonthsVal,
-    filterVoidChangedCustomers,
     // dropdown filters
     selectedKebeleId,
     selectedKetenaId,
@@ -1194,7 +971,6 @@ const BillList = () => {
     filterPaidOnFrontOffice ||
     filterUnicashPaid ||
     filterPrepaid ||
-    filterVoidChangedCustomers ||
     filterMoneyCollected !== "all" ||
     filterSmsSent !== "all" ||
     wuzifMonthsVal ||
@@ -1215,7 +991,6 @@ const BillList = () => {
     setFilterUnicashPaid(false);
     setFilterPrepaid(false);
     setPaymentFilterMatchMode("any");
-    setFilterVoidChangedCustomers(false);
     setFilterMoneyCollected("all");
     setFilterSmsSent("all");
     setWuzifMonthsVal("");
@@ -3618,17 +3393,6 @@ const BillList = () => {
             control={
               <Checkbox
                 size="small"
-                checked={filterVoidChangedCustomers}
-                onChange={(e) => setFilterVoidChangedCustomers(e.target.checked)}
-                name="voidChanged"
-              />
-            }
-            label={<Typography variant="body2">Have Void</Typography>}
-          />
-          <FormControlLabel
-            control={
-              <Checkbox
-                size="small"
                 checked={filterPrepaid}
                 onChange={(e) => setFilterPrepaid(e.target.checked)}
                 name="prepaid"
@@ -3768,12 +3532,6 @@ const BillList = () => {
                   disabled={!selectedKifyaWerMonth || !selectedKifyaWerYear || filteredData.length === 0}
                 >
                   Import Unicash Payments
-                </MenuItem>
-                <MenuItem onClick={() => { handleExportVoidChangedReportPDF(true); handleExtraClose(); }}>
-                  Preview Void/Changed Report
-                </MenuItem>
-                <MenuItem onClick={() => { handleExportVoidChangedReportPDF(false); handleExtraClose(); }}>
-                  Export Void/Changed PDF
                 </MenuItem>
                 <MenuItem
                   onClick={() => { handleSendSmsForFilteredBills(); handleExtraClose(); }}

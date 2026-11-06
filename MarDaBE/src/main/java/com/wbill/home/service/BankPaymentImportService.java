@@ -12,6 +12,7 @@ import com.wbill.home.dto.BulkUnicashPaymentUpdateRequestDTO;
 import com.wbill.home.model.BillingCustomerInfo;
 import com.wbill.home.model.BillingReading;
 import com.wbill.home.model.BillingBanks;
+import com.wbill.home.util.FlexibleDateDeserializer;
 import com.wbill.home.repository.BillingCustomerInfoRepository;
 import com.wbill.home.repository.BillingReadingRepository;
 import com.wbill.home.repository.BillingBanksRepository;
@@ -375,23 +376,7 @@ public class BankPaymentImportService {
     }
 
     private static Date parseDateFlexible(String s) {
-        if (isBlank(s))
-            return null;
-        List<String> patterns = Arrays.asList(
-                "yyyy-MM-dd",
-                "dd/MM/yyyy",
-                "MM/dd/yyyy",
-                "yyyy/MM/dd",
-                "dd-MM-yyyy");
-        for (String p : patterns) {
-            try {
-                SimpleDateFormat sdf = new SimpleDateFormat(p);
-                sdf.setLenient(false);
-                return sdf.parse(s.trim());
-            } catch (ParseException ignored) {
-            }
-        }
-        return null;
+        return FlexibleDateDeserializer.parseDate(s);
     }
 
     /**

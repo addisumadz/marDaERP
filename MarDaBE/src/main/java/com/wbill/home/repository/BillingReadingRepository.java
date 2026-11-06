@@ -85,14 +85,14 @@ public interface BillingReadingRepository extends JpaRepository<BillingReading, 
         // Example 3: Fetch readings as DTOs based on status AND kifyaWer (single
         // string)
         @Query("SELECT " + BILLING_READING_DTO_CONSTRUCTOR + JOINS_FOR_DTO +
-                        "WHERE LOWER(b.status) = LOWER(:status) AND b.kifyaWer = :kifyaWer AND b.isBillGenerated = true AND b.isVoid = false")
+                        "WHERE b.status = :status AND b.kifyaWer = :kifyaWer AND b.isBillGenerated = true AND b.isVoid = false")
         List<BillingReadingDTO> findReadingDTOsByStatusAndKifyaWer(
                         @Param("status") String status,
                         @Param("kifyaWer") String kifyaWer);
 
         // New: Fetch readings including VOID for Bill Support Page
         @Query("SELECT " + BILLING_READING_DTO_CONSTRUCTOR + JOINS_FOR_DTO +
-                        "WHERE LOWER(b.status) = LOWER(:status) AND b.kifyaWer = :kifyaWer AND b.isBillGenerated = true")
+                        "WHERE b.status = :status AND b.kifyaWer = :kifyaWer AND b.isBillGenerated = true")
         List<BillingReadingDTO> findSupportPageReadingsByStatusAndKifyaWer(
                         @Param("status") String status,
                         @Param("kifyaWer") String kifyaWer);
@@ -100,7 +100,7 @@ public interface BillingReadingRepository extends JpaRepository<BillingReading, 
         // New: Fetch ALL readings (skip isBillGenerated check) for Reading Management
         // Page
         @Query("SELECT " + BILLING_READING_DTO_CONSTRUCTOR + JOINS_FOR_DTO +
-                        "WHERE LOWER(b.status) = LOWER(:status) AND b.kifyaWer = :kifyaWer")
+                        "WHERE b.status = :status AND b.kifyaWer = :kifyaWer")
         List<BillingReadingDTO> findReadingManagementByStatusAndKifyaWer(
                         @Param("status") String status,
                         @Param("kifyaWer") String kifyaWer);

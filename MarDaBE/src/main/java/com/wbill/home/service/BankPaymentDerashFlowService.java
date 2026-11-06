@@ -8,6 +8,7 @@ import com.wbill.home.model.BillingBanks;
 import com.wbill.home.model.BillingReading;
 import com.wbill.home.repository.BillingBanksRepository;
 import com.wbill.home.repository.BillingReadingRepository;
+import com.wbill.home.util.FlexibleDateDeserializer;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -133,6 +134,9 @@ public class BankPaymentDerashFlowService {
                 }
                 BillingReading r = opt.get();
 
+                String normalizedPaidDate = FlexibleDateDeserializer.normalizeToIso(paidDt);
+                String displayPaidDate = normalizedPaidDate != null ? normalizedPaidDate : paidDt;
+
                 // Lookup agent_id against BillingBanks.bankCode
                 BillingBanks bank = (agentId != null && !agentId.isBlank()) ? bankCodeMap.get(agentId.trim()) : null;
                 if (agentId != null && !agentId.isBlank() && bank == null) {
@@ -143,7 +147,7 @@ public class BankPaymentDerashFlowService {
                     skipped.customerAccountNumber = r.getBillingCustomerInfo() != null ? r.getBillingCustomerInfo().getAccountNumber() : null;
                     skipped.agentId = agentId;
                     skipped.paidAmount = parseDouble(paidAmountStr);
-                    skipped.paidDate = paidDt;
+                    skipped.paidDate = displayPaidDate;
                     skipped.reason = "Bank not found: agent_id \"" + agentId + "\" does not match any bankCode in database";
                     result.getSkippedBills().add(skipped);
                     continue;
@@ -167,7 +171,7 @@ public class BankPaymentDerashFlowService {
                 view.bankPaidAgentId = agentId;
                 view.bankName = bank != null ? bank.getBankName() : agentId;
                 view.bankPaidConfirmationCode = agentTx;
-                view.moneyCollectedDate = paidDt;
+                view.moneyCollectedDate = displayPaidDate;
 
                 // For Derash import, treat a bill as already paid based solely on the Derash
                 // flag
@@ -297,6 +301,9 @@ public class BankPaymentDerashFlowService {
                         r = opt.get();
                     }
 
+                    String normalizedPaidDate = FlexibleDateDeserializer.normalizeToIso(paidDt);
+                    String displayPaidDate = normalizedPaidDate != null ? normalizedPaidDate : paidDt;
+
                     // Lookup agent_id against BillingBanks.bankCode
                     BillingBanks bank = (agentId != null && !agentId.isBlank()) ? bankCodeMap.get(agentId.trim()) : null;
                     if (agentId != null && !agentId.isBlank() && bank == null) {
@@ -306,7 +313,7 @@ public class BankPaymentDerashFlowService {
                         skipped.customerAccountNumber = r.getBillingCustomerInfo() != null ? r.getBillingCustomerInfo().getAccountNumber() : null;
                         skipped.agentId = agentId;
                         skipped.paidAmount = parseDouble(paidAmountStr);
-                        skipped.paidDate = paidDt;
+                        skipped.paidDate = displayPaidDate;
                         skipped.reason = "Bank not found: agent_id \"" + agentId + "\" does not match any bankCode in database";
                         result.getSkippedBills().add(skipped);
                         progressService.incrementProcessed(jobId);
@@ -331,7 +338,7 @@ public class BankPaymentDerashFlowService {
                     view.bankPaidAgentId = agentId;
                     view.bankName = bank != null ? bank.getBankName() : agentId;
                     view.bankPaidConfirmationCode = agentTx;
-                    view.moneyCollectedDate = paidDt;
+                    view.moneyCollectedDate = displayPaidDate;
 
                     // For Derash import, rely only on the Derash-specific flag when deciding
                     // already-paid status
@@ -447,6 +454,9 @@ public class BankPaymentDerashFlowService {
                     r = opt.get();
                 }
 
+                String normalizedPaidDate = FlexibleDateDeserializer.normalizeToIso(paidDt);
+                String displayPaidDate = normalizedPaidDate != null ? normalizedPaidDate : paidDt;
+
                 // Lookup agent_id against BillingBanks.bankCode
                 BillingBanks bank = (agentId != null && !agentId.isBlank()) ? bankCodeMap.get(agentId.trim()) : null;
                 if (agentId != null && !agentId.isBlank() && bank == null) {
@@ -456,7 +466,7 @@ public class BankPaymentDerashFlowService {
                     skipped.customerAccountNumber = r.getBillingCustomerInfo() != null ? r.getBillingCustomerInfo().getAccountNumber() : null;
                     skipped.agentId = agentId;
                     skipped.paidAmount = parseDouble(paidAmountStr);
-                    skipped.paidDate = paidDt;
+                    skipped.paidDate = displayPaidDate;
                     skipped.reason = "Bank not found: agent_id \"" + agentId + "\" does not match any bankCode in database";
                     result.getSkippedBills().add(skipped);
                     continue;
@@ -480,7 +490,7 @@ public class BankPaymentDerashFlowService {
                 view.bankPaidAgentId = agentId;
                 view.bankName = bank != null ? bank.getBankName() : agentId;
                 view.bankPaidConfirmationCode = agentTx;
-                view.moneyCollectedDate = paidDt;
+                view.moneyCollectedDate = displayPaidDate;
 
                 // Use only isDerashPaid to determine already-paid status for Derash gateway
                 if (r.isVoid()) {
@@ -581,6 +591,9 @@ public class BankPaymentDerashFlowService {
                     }
                     BillingReading r = opt.get();
 
+                    String normalizedPaidDate = FlexibleDateDeserializer.normalizeToIso(paidDt);
+                    String displayPaidDate = normalizedPaidDate != null ? normalizedPaidDate : paidDt;
+
                     // Lookup agent_id against BillingBanks.bankCode
                     BillingBanks bank = (agentId != null && !agentId.isBlank()) ? bankCodeMap.get(agentId.trim()) : null;
                     if (agentId != null && !agentId.isBlank() && bank == null) {
@@ -590,7 +603,7 @@ public class BankPaymentDerashFlowService {
                         skipped.customerAccountNumber = r.getBillingCustomerInfo() != null ? r.getBillingCustomerInfo().getAccountNumber() : null;
                         skipped.agentId = agentId;
                         skipped.paidAmount = parseDouble(paidAmountStr);
-                        skipped.paidDate = paidDt;
+                        skipped.paidDate = displayPaidDate;
                         skipped.reason = "Bank not found: agent_id \"" + agentId + "\" does not match any bankCode in database";
                         result.getSkippedBills().add(skipped);
                         progressService.incrementProcessed(jobId);
@@ -615,7 +628,7 @@ public class BankPaymentDerashFlowService {
                     view.bankPaidAgentId = agentId;
                     view.bankName = bank != null ? bank.getBankName() : agentId;
                     view.bankPaidConfirmationCode = agentTx;
-                    view.moneyCollectedDate = paidDt;
+                    view.moneyCollectedDate = displayPaidDate;
 
                     // For Derash, classification of already-paid rows is based only on isDerashPaid
                     if (r.isVoid()) {
@@ -734,17 +747,6 @@ public class BankPaymentDerashFlowService {
     }
 
     private static Date parseDateFlexible(String s) {
-        if (s == null || s.isBlank())
-            return null;
-        List<String> patterns = Arrays.asList("yyyy-MM-dd", "dd/MM/yyyy", "MM/dd/yyyy", "yyyy/MM/dd", "dd-MM-yyyy");
-        for (String p : patterns) {
-            try {
-                SimpleDateFormat sdf = new SimpleDateFormat(p);
-                sdf.setLenient(false);
-                return sdf.parse(s.trim());
-            } catch (ParseException ignored) {
-            }
-        }
-        return null;
+        return FlexibleDateDeserializer.parseDate(s);
     }
 }

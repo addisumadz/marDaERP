@@ -387,24 +387,17 @@ public class ReadingService {
 
     @Transactional(readOnly = true)
     public List<BillingReadingDTO> getBillReadingsByStatusAndKifyaWerForList(String status, String kifyaWer) {
-        List<BillingReadingDTO> list = billingReadingRepository.findReadingDTOsByStatusAndKifyaWerWithLog(status,
-                kifyaWer);
-        try {
-            long nativeCount = billingReadingRepository.countBaseReadingsByStatusAndKifyaWerNative(status, kifyaWer);
-            System.out.println("[ReadingService] Native base count status=" + status + ", kifyaWer=" + kifyaWer
-                    + ", count=" + nativeCount);
-        } catch (Exception ex) {
-            System.out.println("[ReadingService] Native count failed: " + ex.getMessage());
-        }
-        return list;
+        String cleanStatus = status != null ? status.trim() : null;
+        String cleanKifyaWer = kifyaWer != null ? kifyaWer.trim() : null;
+        return billingReadingRepository.findReadingDTOsByStatusAndKifyaWer(cleanStatus, cleanKifyaWer);
     }
 
     // New: Fetch readings including VOID for Bill Support Page
     @Transactional(readOnly = true)
     public List<BillingReadingDTO> getSupportPageReadingsByStatusAndKifyaWerList(String status, String kifyaWer) {
-        List<BillingReadingDTO> list = billingReadingRepository.findSupportPageReadingsByStatusAndKifyaWer(status,
-                kifyaWer);
-        return list;
+        String cleanStatus = status != null ? status.trim() : null;
+        String cleanKifyaWer = kifyaWer != null ? kifyaWer.trim() : null;
+        return billingReadingRepository.findSupportPageReadingsByStatusAndKifyaWer(cleanStatus, cleanKifyaWer);
     }
 
     // New: Fetch ALL readings (skip isBillGenerated) for Reading Management Page

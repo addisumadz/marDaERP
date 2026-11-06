@@ -196,6 +196,7 @@ const BillSupport = () => {
   const [selectedCashierId, setSelectedCashierId] = useState("");
 
 
+  const [filterBillStatus, setFilterBillStatus] = useState("active"); // "active" | "void" | "all"
   const [filterVoidChangedCustomers, setFilterVoidChangedCustomers] = useState(false);
   const [showDuplicatesOnly, setShowDuplicatesOnly] = useState(false);
 
@@ -579,11 +580,18 @@ const BillSupport = () => {
     selectedCustomerTypeId,
     selectedCashierId,
     filterVoidChangedCustomers,
+    filterBillStatus,
   ]);
 
   const filteredData = useMemo(() => {
-    return filteredReadingsWithVoids.filter((b) => !b?.isVoid && !b?.void);
-  }, [filteredReadingsWithVoids]);
+    if (filterBillStatus === "active") {
+      return filteredReadingsWithVoids.filter((b) => !b?.isVoid && !b?.void);
+    }
+    if (filterBillStatus === "void") {
+      return filteredReadingsWithVoids.filter((b) => b?.isVoid || b?.void);
+    }
+    return filteredReadingsWithVoids;
+  }, [filteredReadingsWithVoids, filterBillStatus]);
 
   const displayData = useMemo(() => {
     if (!Array.isArray(filteredData)) return [];
@@ -676,6 +684,7 @@ const BillSupport = () => {
     if (consumptionVal !== "") count++;
     if (additionalHisabVal !== "") count++;
     if (filterVoidChangedCustomers) count++;
+    if (filterBillStatus !== "active") count++;
     return count;
   }, [
     selectedKebeleId,
@@ -692,6 +701,7 @@ const BillSupport = () => {
     consumptionVal,
     additionalHisabVal,
     filterVoidChangedCustomers,
+    filterBillStatus,
   ]);
 
   const handleClearAllFilters = useCallback(() => {
@@ -713,6 +723,7 @@ const BillSupport = () => {
     setAdditionalHisabOp("eq");
     setAdditionalHisabVal("");
     setFilterVoidChangedCustomers(false);
+    setFilterBillStatus("active");
   }, []);
 
   const handleFilterClick = () => {
@@ -1738,7 +1749,7 @@ const BillSupport = () => {
 
     result.sort((a, b) => String(a.accountNumber).localeCompare(String(b.accountNumber)));
     return result;
-  }, [filteredReadingsWithVoids]);
+  }, [filteredReadingsWithVoids, filterBillStatus]);
 
   const handleExportVoidChangedReportPDF = async (preview = false) => {
     try {
@@ -2235,6 +2246,22 @@ const BillSupport = () => {
         Cell: ({ cell }) => cell.getValue()?.toFixed(2),
       },
       { accessorKey: "customerType", header: "Customer Type" },
+      {
+        accessorKey: "isVoid",
+        header: "Bill Status",
+        size: 130,
+        Cell: ({ row }) => {
+          const isVoid = !!(row.original?.isVoid || row.original?.void || String(row.original?.status).toLowerCase() === "deleted");
+          return (
+            <Chip
+              size="small"
+              label={isVoid ? "VOID" : "ACTIVE"}
+              color={isVoid ? "error" : "success"}
+              variant="outlined"
+            />
+          );
+        },
+      },
     ],
     [transferKitatMutation]
   );
@@ -2248,7 +2275,9 @@ const BillSupport = () => {
     state: { isLoading, showAlertBanner: isError, showProgressBars: isLoading, rowSelection },
     muiTableBodyRowProps: ({ row }) => ({
       sx: {
-        backgroundColor: row.original?.moneyCollected ? "lightgreen" : "lightyellow",
+        backgroundColor: (row.original?.isVoid || row.original?.void || String(row.original?.status).toLowerCase() === "deleted")
+          ? "#ffebee"
+          : (row.original?.moneyCollected ? "lightgreen" : "lightyellow"),
       },
     }),
     muiToolbarAlertBannerProps: isError
@@ -2697,16 +2726,32 @@ const BillSupport = () => {
                   <Typography variant="body2" sx={{ fontWeight: "bold", mb: 1, color: "primary.main" }}>
                     Bill Corrections & Status:
                   </Typography>
-                  <FormControlLabel
-                    control={
-                      <Checkbox
-                        checked={filterVoidChangedCustomers}
-                        onChange={(e) => setFilterVoidChangedCustomers(e.target.checked)}
-                        name="voidChanged"
-                      />
-                    }
-                    label="Void/Changed Acc."
-                  />
+                  <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 2 }}>
+                    <FormControl size="small" sx={{ minWidth: 200, bgcolor: "#f8fafc", borderRadius: 2 }}>
+                      <InputLabel id="bill-status-filter-label">Bill Status</InputLabel>
+                      <Select
+                        labelId="bill-status-filter-label"
+                        value={filterBillStatus}
+                        label="Bill Status"
+                        onChange={(e) => setFilterBillStatus(e.target.value)}
+                      >
+                        <MenuItem value="active">Active Bills Only</MenuItem>
+                        <MenuItem value="void">Void / Deleted Bills Only</MenuItem>
+                        <MenuItem value="all">All Bills (Active + Void)</MenuItem>
+                      </Select>
+                    </FormControl>
+
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          checked={filterVoidChangedCustomers}
+                          onChange={(e) => setFilterVoidChangedCustomers(e.target.checked)}
+                          name="voidChanged"
+                        />
+                      }
+                      label="Void/Changed Acc."
+                    />
+                  </Box>
                 </Grid>
               </Grid>
             </AccordionDetails>

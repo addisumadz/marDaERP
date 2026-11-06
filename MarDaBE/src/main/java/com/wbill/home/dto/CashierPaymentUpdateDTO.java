@@ -1,10 +1,16 @@
 package com.wbill.home.dto;
 
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.wbill.home.util.FlexibleDateDeserializer;
+
 import java.util.Date;
 
 public class CashierPaymentUpdateDTO {
     private Double amount; // amount collected at front office
+
+    @JsonDeserialize(using = FlexibleDateDeserializer.class)
     private Date moneyCollectedDate; // optional; defaults to now if null
+
     private String remark; // optional cashier remark or receipt number
     private Integer cashierUserId; // optional; to link cashier user
 

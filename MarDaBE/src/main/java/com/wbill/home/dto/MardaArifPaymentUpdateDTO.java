@@ -1,5 +1,8 @@
 package com.wbill.home.dto;
 
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.wbill.home.util.FlexibleDateDeserializer;
+
 import java.util.Date;
 
 /**
@@ -9,7 +12,10 @@ public class MardaArifPaymentUpdateDTO {
     private Double tekilalaYetekefele;
     private Double tekilalaBankYetekefele;
     private Boolean isMardaArifPaid;
+
+    @JsonDeserialize(using = FlexibleDateDeserializer.class)
     private Date moneyCollectedDate;
+
     private String mBankPaidConfirmationCode;
     private String mBankPaidAgentId;
 

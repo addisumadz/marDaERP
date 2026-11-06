@@ -41,6 +41,69 @@ var ethiopianDate = require("ethiopian-date");
 const readingService = new ReadingService();
 const companyProfileService = new CampanyProfileService();
 
+/**
+ * Flexible Date parser supporting ISO-8601, dd/MM/yyyy HH:mm, MM/dd/yyyy HH:mm,
+ * and standard date representations.
+ */
+const parseFlexibleDate = (val) => {
+  if (!val) return null;
+  if (val instanceof Date) return isNaN(val.getTime()) ? null : val;
+  if (typeof val !== "string") return null;
+  const s = val.trim();
+  if (!s || s.toLowerCase() === "null") return null;
+
+  // 1. If not starting with dd/MM/yyyy or MM/dd/yyyy, try standard Date constructor (handles ISO-8601, yyyy-MM-dd)
+  if (!/^\d{1,2}\/\d{1,2}\/\d{4}/.test(s)) {
+    const directDate = new Date(s);
+    if (!isNaN(directDate.getTime())) {
+      return directDate;
+    }
+  }
+
+  // 2. Handle slash formats: dd/MM/yyyy or MM/dd/yyyy with optional time
+  const slashMatch = s.match(
+    /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[\sT]+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/
+  );
+  if (slashMatch) {
+    const p1 = parseInt(slashMatch[1], 10);
+    const p2 = parseInt(slashMatch[2], 10);
+    const year = parseInt(slashMatch[3], 10);
+    const hour = slashMatch[4] ? parseInt(slashMatch[4], 10) : 0;
+    const min = slashMatch[5] ? parseInt(slashMatch[5], 10) : 0;
+    const sec = slashMatch[6] ? parseInt(slashMatch[6], 10) : 0;
+
+    let day, month;
+    if (p1 > 12) {
+      // Must be dd/MM/yyyy
+      day = p1;
+      month = p2;
+    } else if (p2 > 12) {
+      // Must be MM/dd/yyyy
+      month = p1;
+      day = p2;
+    } else {
+      // Ambiguous: default to dd/MM/yyyy (Ethiopian standard notation)
+      day = p1;
+      month = p2;
+    }
+
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      const d = new Date(year, month - 1, day, hour, min, sec);
+      if (!isNaN(d.getTime())) return d;
+    }
+  }
+
+  // 3. Fallback direct parse
+  const fallback = new Date(s);
+  return isNaN(fallback.getTime()) ? null : fallback;
+};
+
+const formatDisplayDate = (val) => {
+  if (!val) return "";
+  const d = parseFlexibleDate(val);
+  return d ? d.toLocaleDateString() : String(val);
+};
+
 const BankImportDerash = () => {
   // State for Derash bank payment flow
   const [bankProcessResult, setBankProcessResult] = useState(null);
@@ -331,18 +394,21 @@ const BankImportDerash = () => {
         return;
       }
 
-      const updates = bankProcessResult.newPayments.map(p => ({
-        id: p.id,
-        updates: {
-          tekilalaYetekefele: p.tekilalaYetekefele,
-          tekilalaBankYetekefele: p.tekilalaBankYetekefele,
-          isPaidThroughBank: true,
-          isDerashPaid: true,
-          moneyCollectedDate: p.moneyCollectedDate,
-          bankPaidConfirmationCode: p.bankPaidConfirmationCode,
-          bankPaidAgentId: p.bankPaidAgentId,
-        }
-      }));
+      const updates = bankProcessResult.newPayments.map(p => {
+        const parsedDate = parseFlexibleDate(p.moneyCollectedDate);
+        return {
+          id: p.id,
+          updates: {
+            tekilalaYetekefele: p.tekilalaYetekefele,
+            tekilalaBankYetekefele: p.tekilalaBankYetekefele,
+            isPaidThroughBank: true,
+            isDerashPaid: true,
+            moneyCollectedDate: parsedDate ? parsedDate.toISOString() : p.moneyCollectedDate,
+            bankPaidConfirmationCode: p.bankPaidConfirmationCode,
+            bankPaidAgentId: p.bankPaidAgentId,
+          }
+        };
+      });
 
       const totalCount = updates.length;
       setApplying(true);
@@ -477,10 +543,7 @@ const BankImportDerash = () => {
       accessorKey: "moneyCollectedDate",
       header: "Payment Date",
       size: 120,
-      Cell: ({ cell }) => {
-        const value = cell.getValue();
-        return value ? new Date(value).toLocaleDateString() : "";
-      },
+      Cell: ({ cell }) => formatDisplayDate(cell.getValue()),
     },
   ], []);
 
@@ -560,10 +623,7 @@ const BankImportDerash = () => {
       accessorKey: "paidDate",
       header: "Payment Date",
       size: 120,
-      Cell: ({ cell }) => {
-        const v = cell.getValue();
-        return v ? new Date(v).toLocaleDateString() : "";
-      },
+      Cell: ({ cell }) => formatDisplayDate(cell.getValue()),
     },
     { accessorKey: "reason", header: "Skip Reason", size: 350 },
   ], []);

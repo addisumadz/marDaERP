@@ -1912,29 +1912,20 @@ const BillList = () => {
               <Button
                 size="small"
                 variant="contained"
-                color="info"
-                onClick={() => exportReadingsToExcel(finalFilteredReadings, "Filtered_Readings")}
-              >
-                Export Filtered Excel
-              </Button>
-              <Button
-                size="small"
-                variant="contained"
                 color="error"
-                startIcon={<PictureAsPdfIcon />}
-                onClick={() => exportReadingsToPDF({
-                  data: finalFilteredReadings,
-                  selectedKifyaWerMonth,
-                  selectedKifyaWerYear,
-                  companyProfile: profileData,
-                  filterContext: currentFilterContext,
-                  customerByAccount,
-                  preparerName: getPreparerName(),
-                  toast,
-                  filenamePrefix: "Filtered_Readings",
-                })}
+                onClick={() => {
+                  const selectedIds = Object.keys(rowSelection);
+                  if (selectedIds.length === 0) {
+                    toast.warn("Select at least one reading to delete.");
+                    return;
+                  }
+                  if (window.confirm(`Are you sure you want to delete ${selectedIds.length} selected reading(s)?`)) {
+                    selectedIds.forEach((id) => deleteReadingMutation.mutate(id));
+                  }
+                }}
+                disabled={Object.keys(rowSelection).length === 0}
               >
-                Export Filtered PDF
+                Delete Reading
               </Button>
               <Button
                 size="small"

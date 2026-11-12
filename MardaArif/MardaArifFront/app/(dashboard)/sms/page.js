@@ -27,7 +27,7 @@ export default function SmsPage() {
   // Configuration Modal & State
   const [showConfigModal, setShowConfigModal] = useState(false);
   const [gatewayUrl, setGatewayUrl] = useState("https://smsethiopia.et/api/sms/send");
-  const [apiKey, setApiKey] = useState("2NJFAWWIERUMIQNMY03D4B9O48EMOJOJ:1027");
+  const [apiKey, setApiKey] = useState("apitest");
 
   // Selection
   const [selectedSmsIds, setSelectedSmsIds] = useState(new Set());
@@ -537,12 +537,12 @@ export default function SmsPage() {
                         <td>
                           <span
                             className={`badge ${log.status === "SENT"
-                                ? "badge-success"
-                                : log.status === "FAILED"
-                                  ? "badge-danger"
-                                  : log.status === "SENDING"
-                                    ? "badge-info"
-                                    : "badge-warning"
+                              ? "badge-success"
+                              : log.status === "FAILED"
+                                ? "badge-danger"
+                                : log.status === "SENDING"
+                                  ? "badge-info"
+                                  : "badge-warning"
                               }`}
                             title={log.errorMessage || ""}
                             style={{ cursor: log.errorMessage ? "help" : "default" }}

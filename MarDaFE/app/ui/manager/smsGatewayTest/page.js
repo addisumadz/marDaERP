@@ -167,7 +167,7 @@ const SmsGatewayTestInner = () => {
   const [modalCityName, setModalCityName] = useState("Default");
   const [modalProtocol, setModalProtocol] = useState("SMPP");
   const [modalGatewayUrl, setModalGatewayUrl] = useState("https://smsethiopia.et/api/sms/send");
-  const [modalApiKey, setModalApiKey] = useState("2NJFAWWIERUMIQNMY03D4B9O48EMOJOJ:1027");
+  const [modalApiKey, setModalApiKey] = useState("apitest");
   const [modalSmppHost, setModalSmppHost] = useState("10.204.181.70");
   const [modalSmppPort, setModalSmppPort] = useState(5019);
   const [modalSmppSystemId, setModalSmppSystemId] = useState("8581");
@@ -180,7 +180,7 @@ const SmsGatewayTestInner = () => {
 
   // Local fallback
   const [gatewayUrl, setGatewayUrl] = useState("https://smsethiopia.et/api/sms/send");
-  const [apiKey, setApiKey] = useState("2NJFAWWIERUMIQNMY03D4B9O48EMOJOJ:1027");
+  const [apiKey, setApiKey] = useState("apitest");
 
   // Company Profile
   const { data: companyProfile } = useQuery({
@@ -245,7 +245,7 @@ const SmsGatewayTestInner = () => {
       cityName: "Default",
       protocol: "SMPP",
       gatewayUrl: gatewayUrl || "https://smsethiopia.et/api/sms/send",
-      apiKey: apiKey || "2NJFAWWIERUMIQNMY03D4B9O48EMOJOJ:1027",
+      apiKey: apiKey || "apitest",
       smppHost: "10.204.181.70",
       smppPort: 5019,
       smppSystemId: "85819",
@@ -449,7 +449,7 @@ const SmsGatewayTestInner = () => {
         setModalSettingId(null);
         setModalProtocol("SMPP");
         setModalGatewayUrl("https://smsethiopia.et/api/sms/send");
-        setModalApiKey("2NJFAWWIERUMIQNMY03D4B9O48EMOJOJ:1027");
+        setModalApiKey("apitest");
         setModalSmppHost("10.204.181.70");
         setModalSmppPort(5019);
         setModalSmppSystemId("858122");
@@ -513,7 +513,7 @@ const SmsGatewayTestInner = () => {
     setModalCityName("Default");
     setModalProtocol("SMPP");
     setModalGatewayUrl("https://smsethiopia.et/api/sms/send");
-    setModalApiKey("2NJFAWWIERUMIQNMY03D4B9O48EMOJOJ:1027");
+    setModalApiKey("apitest");
     setModalSmppHost("10.204.181.70");
     setModalSmppPort(5019);
     setModalSmppSystemId("858122");
@@ -1196,7 +1196,7 @@ const SmsGatewayTestInner = () => {
                       label="API Key / Token"
                       value={modalApiKey}
                       onChange={(e) => setModalApiKey(e.target.value)}
-                      placeholder="e.g. 2NJFAWWIERUMIQNMY03D4B9O48EMOJOJ:1027"
+                      placeholder="e.g. apitest"
                       helperText="Authorization token sent in KEY header"
                     />
                   </Grid>

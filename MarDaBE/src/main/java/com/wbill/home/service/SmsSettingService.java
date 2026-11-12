@@ -98,7 +98,7 @@ public class SmsSettingService {
                         null,
                         "Default (All Cities)",
                         "https://smsethiopia.et/api/sms/send",
-                        "2NJFAWWIERUMIQNMY03D4B9O48EMOJOJ:1027",
+                        "apitest",
                         "testsender",
                         true,
                         "Global default gateway and SMPP fallback"

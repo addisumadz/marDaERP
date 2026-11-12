@@ -273,17 +273,31 @@ export default function PayWithArifpayPage() {
       const res = await arifpayService.checkStatus(sessionId);
 
       if (res && (res.status === "SUCCESS" || res.status === "PAID")) {
+        // Extract extended payment details from ArifPay status response
+        const paymentChannel = res.paymentChannel || res.paymentMethod || res.channel || null;
+        const transactionRef = res.transactionId || res.transactionRef || res.confirmationCode || null;
+        const payerPhone = res.payerPhone || res.phone || null;
+        const bankName = res.bankName || res.bank || null;
+        const paidAmount = res.amount || res.paidAmount || null;
+        const paidAt = res.paidAt || res.paymentDate || res.completedAt || null;
+
         setVerificationState({
           status: "success",
           sessionId,
           readingId: res.readingId,
           message: "Payment successfully confirmed and settled via ArifPay!",
+          paymentChannel,
+          transactionRef,
+          payerPhone,
+          bankName,
+          paidAmount,
+          paidAt,
         });
         toast.success("Bill payment successfully confirmed with ArifPay!", { autoClose: 7000 });
 
         if (res.readingId) {
           try {
-            const updatedBill = await readingService.getReadingById(res.readingId);
+            const updatedBill = await readingService.getReadingDetails(res.readingId);
             if (updatedBill) {
               setLastPayment({
                 bill: updatedBill,
@@ -294,6 +308,12 @@ export default function PayWithArifpayPage() {
                   phoneNumber: updatedBill.customerPhoneMobile || updatedBill.phoneNumber || "-",
                   customerType: updatedBill.customerTypeName || updatedBill.customerType || "-",
                 },
+                // ArifPay payment details (from checkStatus response + bill record)
+                paymentChannel: paymentChannel || updatedBill.mBankName || null,
+                transactionRef: transactionRef || updatedBill.mBankPaidConfirmationCode || null,
+                payerPhone,
+                bankName: bankName || updatedBill.mBankName || null,
+                paidAt: paidAt || updatedBill.moneyCollectedDate || null,
               });
 
               const acc = updatedBill.customerAccountNumber || updatedBill.accountNumber;
@@ -506,7 +526,11 @@ export default function PayWithArifpayPage() {
       row("የደንበኛ ስም:", customer?.fullName || bill.customerFullName || bill.customerName);
       row("የክፍያ ወር:", bill.kifyaWer || currentKifyaWer);
       row("የክፍያ ዓይነት:", "ArifPay (Production Gateway)");
-      row("ትራንዛክሽን:", bill.mBankPaidConfirmationCode || "ARIFPAY-ELECTRONIC");
+      row("ትራንዛክሽን:", bill.mBankPaidConfirmationCode || bill.bankPaidConfirmationCode || "ARIFPAY-ELECTRONIC");
+      const receiptBankName = bill.mBankName || bill.bankName || bill.mBillingBank?.bankName || bill.billingBank?.bankName;
+      if (receiptBankName) {
+        row("ባንክ/ቻናል:", receiptBankName);
+      }
 
       const paidDate = bill.moneyCollectedDate || new Date();
       try {
@@ -659,6 +683,40 @@ export default function PayWithArifpayPage() {
                 <p className="text-xs text-gray-600 dark:text-gray-300 mt-0.5">
                   {verificationState.message}
                 </p>
+                {verificationState.status === "success" && (
+                  <div className="mt-2.5 flex flex-wrap gap-1.5">
+                    {verificationState.paymentChannel && (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-100 dark:bg-emerald-900/50 text-emerald-800 dark:text-emerald-200 border border-emerald-200 dark:border-emerald-800">
+                        <CreditCard className="w-3 h-3" />
+                        Channel: {verificationState.paymentChannel}
+                      </span>
+                    )}
+                    {verificationState.transactionRef && (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-mono bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 border border-gray-200 dark:border-gray-600">
+                        <FileText className="w-3 h-3" />
+                        Ref: {verificationState.transactionRef}
+                      </span>
+                    )}
+                    {verificationState.bankName && (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-200 border border-blue-200 dark:border-blue-800">
+                        <DollarSign className="w-3 h-3" />
+                        Bank: {verificationState.bankName}
+                      </span>
+                    )}
+                    {verificationState.paidAmount && (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                        <Coins className="w-3 h-3" />
+                        {Number(verificationState.paidAmount).toLocaleString()} ETB
+                      </span>
+                    )}
+                    {verificationState.payerPhone && (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-mono bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 border border-gray-200 dark:border-gray-600">
+                        <Phone className="w-3 h-3" />
+                        {verificationState.payerPhone}
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -705,6 +763,26 @@ export default function PayWithArifpayPage() {
                 Customer: <strong>{lastPayment.customer?.fullName || "-"}</strong> • Amount:{" "}
                 <strong>{(lastPayment.amount || 0).toLocaleString()} ETB</strong>
               </div>
+              {(lastPayment.paymentChannel || lastPayment.transactionRef || lastPayment.bankName) && (
+                <div className="text-xs text-emerald-600 dark:text-emerald-400 mt-0.5 flex flex-wrap items-center gap-1.5">
+                  {lastPayment.paymentChannel && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/50 text-emerald-800 dark:text-emerald-200 font-medium">
+                      <CreditCard className="w-3 h-3" />
+                      {lastPayment.paymentChannel}
+                    </span>
+                  )}
+                  {lastPayment.transactionRef && (
+                    <span className="font-mono">
+                      Ref: {lastPayment.transactionRef}
+                    </span>
+                  )}
+                  {lastPayment.bankName && (
+                    <span>
+                      • Bank: <strong>{lastPayment.bankName}</strong>
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
@@ -1105,6 +1183,8 @@ export default function PayWithArifpayPage() {
                   <th className="px-5 py-3.5 text-right">Amount Paid</th>
                   <th className="px-5 py-3.5 text-left">Payment Date</th>
                   <th className="px-5 py-3.5 text-center">Collector / Method</th>
+                  <th className="px-5 py-3.5 text-left">Confirmation Code</th>
+                  <th className="px-5 py-3.5 text-left">Bank / Channel</th>
                   <th className="px-5 py-3.5 text-right">Actions</th>
                 </tr>
               </thead>
@@ -1150,6 +1230,12 @@ export default function PayWithArifpayPage() {
                           </span>
                         )}
                       </td>
+                      <td className="px-5 py-3.5 text-xs font-mono text-gray-600 dark:text-gray-400 max-w-[160px] truncate" title={b.mBankPaidConfirmationCode || b.bankPaidConfirmationCode || ""}>
+                        {b.mBankPaidConfirmationCode || b.bankPaidConfirmationCode || "—"}
+                      </td>
+                      <td className="px-5 py-3.5 text-xs text-gray-600 dark:text-gray-400">
+                        {b.mBankName || b.bankName || b.billingBank?.bankName || b.mBillingBank?.bankName || "—"}
+                      </td>
                       <td className="px-5 py-3.5 text-right space-x-2">
                         <button
                           onClick={() => generateReceiptPDF({ bill: b, amount: b.tekilalaYetekefele || b.tekilalaTekefay, customer: lastCustomer }, true)}
@@ -1172,7 +1258,7 @@ export default function PayWithArifpayPage() {
 
                 {paidBills.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="px-6 py-12 text-center text-gray-400">
+                    <td colSpan={9} className="px-6 py-12 text-center text-gray-400">
                       No recent paid bills found for this customer.
                     </td>
                   </tr>

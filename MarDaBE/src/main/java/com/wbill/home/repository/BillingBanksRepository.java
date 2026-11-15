@@ -61,4 +61,12 @@ public interface BillingBanksRepository extends JpaRepository<BillingBanks, Inte
     
     @Query("SELECT COUNT(b) FROM BillingBanks b WHERE b.deleted = 'deleted'")
     Long countDeletedBanks();
+
+    // ArifPay specific bank queries
+    @Query("SELECT b FROM BillingBanks b WHERE b.gatewayCode = 'Arifpay' AND " +
+           "(UPPER(b.bankCode) = UPPER(:method) OR UPPER(b.bankName) = UPPER(:method) " +
+           "OR UPPER(:method) LIKE CONCAT('%', UPPER(b.bankCode), '%')) AND b.deleted = 'active'")
+    List<BillingBanks> findArifpayBankByMethod(@Param("method") String method);
+
+    List<BillingBanks> findByGatewayCodeAndDeleted(String gatewayCode, String deleted);
 }

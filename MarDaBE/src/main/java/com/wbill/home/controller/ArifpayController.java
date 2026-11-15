@@ -1,8 +1,10 @@
 package com.wbill.home.controller;
 
 import com.wbill.home.model.ArifPayConfig;
+import com.wbill.home.model.BillingBanks;
 import com.wbill.home.model.BillingCustomerInfo;
 import com.wbill.home.model.BillingReading;
+import com.wbill.home.repository.BillingBanksRepository;
 import com.wbill.home.repository.BillingReadingRepository;
 import com.wbill.home.service.ArifPayConfigService;
 import com.wbill.home.service.BankPaymentImportService;
@@ -30,6 +32,9 @@ public class ArifpayController {
 
     @Autowired
     private BankPaymentImportService bankPaymentImportService;
+
+    @Autowired
+    private BillingBanksRepository billingBanksRepository;
 
     private final RestTemplate restTemplate = new RestTemplate();
 
@@ -215,25 +220,26 @@ public class ArifpayController {
     public ResponseEntity<?> handleCallback(@RequestBody Map<String, Object> payload) {
         logger.info("[ArifpayController] Webhook notification received: {}", payload);
         try {
-            Map<String, Object> data = (Map<String, Object>) payload.get("data");
-            if (data == null) {
-                data = payload;
+            Map<String, Object> data = payload;
+            if (payload.containsKey("data") && payload.get("data") instanceof Map) {
+                data = (Map<String, Object>) payload.get("data");
             }
 
-            String status = getStringField(data, "transactionStatus", "status");
+            String status = getStringField(data, "transactionStatus", "status", "paymentStatus");
             String transactionId = getStringField(data, "transactionId");
             if (transactionId == null && data.get("transaction") instanceof Map) {
                 Map<String, Object> txn = (Map<String, Object>) data.get("transaction");
                 transactionId = getStringField(txn, "transactionId");
             }
             String referenceId = getStringField(data, "nonce", "referenceId");
+            String sessionId = getStringField(data, "sessionId", "uuid");
 
-            logger.info("[ArifpayController] Parsed webhook: status={}, transactionId={}, referenceId={}",
-                    status, transactionId, referenceId);
+            logger.info("[ArifpayController] Parsed webhook: status={}, transactionId={}, referenceId={}, sessionId={}",
+                    status, transactionId, referenceId, sessionId);
 
             if ("SUCCESS".equalsIgnoreCase(status) || "PAID".equalsIgnoreCase(status)
                     || "COMPLETED".equalsIgnoreCase(status)) {
-                processSuccessfulPayment(referenceId, transactionId, data);
+                processSuccessfulPayment(referenceId, transactionId, data, sessionId);
                 return ResponseEntity.ok(Map.of("status", "SUCCESS"));
             } else {
                 return ResponseEntity.ok(Map.of("status", "IGNORED"));
@@ -262,10 +268,17 @@ public class ArifpayController {
                     BillingReading reading = readingOpt.get();
                     if (!reading.isMoneyCollected() || !reading.isMardaArifPaid()) {
                         double amount = reading.getTekilalaTekefay() > 0 ? reading.getTekilalaTekefay() : (reading.getYezihWer() + reading.getKotariKiray());
-                        recordArifpayPayment(reading, amount, "MOCK-TXN-" + System.currentTimeMillis());
+                        recordArifpayPayment(reading, amount, "MOCK-TXN-" + System.currentTimeMillis(), "TELEBIRR", null, sessionId);
                         logger.info("[ArifpayController] Mock payment successfully recorded for reading ID: {}", readingId);
                     }
-                    return ResponseEntity.ok(Map.of("status", "SUCCESS", "readingId", reading.getId()));
+                    return ResponseEntity.ok(Map.of(
+                            "status", "SUCCESS",
+                            "readingId", reading.getId(),
+                            "paymentMethod", "Telebirr",
+                            "paymentChannel", "Telebirr",
+                            "bankName", "Telebirr",
+                            "transactionId", "MOCK-TXN-" + System.currentTimeMillis()
+                    ));
                 }
             } catch (Exception e) {
                 logger.error("[ArifpayController] Failed to parse mock session ID", e);
@@ -283,8 +296,13 @@ public class ArifpayController {
             ResponseEntity<Map> response = restTemplate.exchange(queryUrl, HttpMethod.GET, entity, Map.class);
 
             if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
-                Map<String, Object> sessionData = response.getBody();
-                logger.info("[ArifpayController] Raw status response: {}", sessionData);
+                Map<String, Object> responseBody = response.getBody();
+                logger.info("[ArifpayController] Raw status response: {}", responseBody);
+
+                Map<String, Object> sessionData = responseBody;
+                if (responseBody.containsKey("data") && responseBody.get("data") instanceof Map) {
+                    sessionData = (Map<String, Object>) responseBody.get("data");
+                }
 
                 String paymentStatus = getStringField(sessionData, "transactionStatus", "paymentStatus", "status");
                 String referenceId = getStringField(sessionData, "nonce", "referenceId");
@@ -299,11 +317,27 @@ public class ArifpayController {
 
                 if ("SUCCESS".equalsIgnoreCase(paymentStatus) || "PAID".equalsIgnoreCase(paymentStatus)
                         || "COMPLETED".equalsIgnoreCase(paymentStatus)) {
-                    processSuccessfulPayment(referenceId, transactionId, sessionData);
-                    return ResponseEntity.ok(Map.of("status", "SUCCESS", "details", sessionData));
+                    BillingReading updatedReading = processSuccessfulPayment(referenceId, transactionId, sessionData, sessionId);
+
+                    String rawMethod = extractPaymentMethod(sessionData);
+                    BillingBanks bank = resolveArifpayBank(rawMethod);
+                    String bankDisplayName = (bank != null) ? bank.getBankName() : (rawMethod != null ? rawMethod : "ArifPay");
+
+                    Map<String, Object> successResult = new LinkedHashMap<>();
+                    successResult.put("status", "SUCCESS");
+                    if (updatedReading != null) {
+                        successResult.put("readingId", updatedReading.getId());
+                    }
+                    successResult.put("paymentMethod", bankDisplayName);
+                    successResult.put("paymentChannel", bankDisplayName);
+                    successResult.put("bankName", bankDisplayName);
+                    successResult.put("transactionId", transactionId != null ? transactionId : "");
+                    successResult.put("details", responseBody);
+
+                    return ResponseEntity.ok(successResult);
                 } else {
                     return ResponseEntity.ok(Map.of("status", paymentStatus != null ? paymentStatus : "PENDING",
-                            "details", sessionData));
+                            "details", responseBody));
                 }
             } else {
                 return ResponseEntity.status(response.getStatusCode())
@@ -316,10 +350,10 @@ public class ArifpayController {
         }
     }
 
-    private void processSuccessfulPayment(String referenceId, String transactionId, Map<String, Object> data) {
+    private BillingReading processSuccessfulPayment(String referenceId, String transactionId, Map<String, Object> data, String sessionId) {
         if (referenceId == null) {
             logger.error("[ArifpayController] Cannot record payment: referenceId is null");
-            return;
+            return null;
         }
 
         String[] parts = referenceId.split("_");
@@ -336,27 +370,71 @@ public class ArifpayController {
                     } catch (Exception e) {
                         // ignore and use default
                     }
+                } else if (data.containsKey("totalAmount")) {
+                    try {
+                        amountPaid = ((Number) data.get("totalAmount")).doubleValue();
+                    } catch (Exception e) {
+                        // ignore and use default
+                    }
                 }
-                recordArifpayPayment(reading, amountPaid, transactionId != null ? transactionId : ("ARIFPAY-" + System.currentTimeMillis()));
+
+                String paymentMethod = extractPaymentMethod(data);
+                String payerPhone = extractPayerPhone(data);
+
+                BillingReading saved = recordArifpayPayment(reading, amountPaid,
+                        transactionId != null ? transactionId : ("ARIFPAY-" + System.currentTimeMillis()),
+                        paymentMethod, payerPhone, sessionId);
                 logger.info("[ArifpayController] Arifpay payment successfully recorded for Reading ID: {}", readingId);
+                return saved;
+            } else {
+                return reading;
             }
         } else {
             logger.error("[ArifpayController] Reading ID {} not found", readingId);
+            return null;
         }
     }
 
-    private void recordArifpayPayment(BillingReading reading, Double amountPaid, String transactionId) {
+    private BillingReading recordArifpayPayment(BillingReading reading, Double amountPaid, String transactionId,
+                                                String rawPaymentMethod, String payerPhone, String sessionId) {
         Date now = new Date();
         reading.setMardaArifPaid(true);
         reading.setPaidThroughBank(true);
         reading.setMoneyCollected(true);
         reading.setMoneyCollectedDate(now);
         reading.setmMoneyCollectedDate(now);
-        reading.setTekilalaYetekefele(amountPaid != null ? amountPaid : reading.getTekilalaTekefay());
-        reading.setTekilalaBankYetekefele(amountPaid != null ? amountPaid : reading.getTekilalaTekefay());
-        reading.setmBankPaidConfirmationCode(transactionId);
-        reading.setmBankPaidAgentId("Arifpay");
-        reading.setMoneyCollector("Arifpay");
+        double actualAmount = (amountPaid != null && amountPaid > 0) ? amountPaid : reading.getTekilalaTekefay();
+        reading.setTekilalaYetekefele(actualAmount);
+        reading.setTekilalaBankYetekefele(actualAmount);
+
+        // 1. Transaction confirmation code
+        if (transactionId != null && !transactionId.isBlank()) {
+            reading.setmBankPaidConfirmationCode(transactionId.trim());
+            reading.setBankPaidConfirmationCode(transactionId.trim());
+        }
+
+        // 2. Resolve Payment Method & Link Bank Entity from Arifpay gateway
+        BillingBanks bank = resolveArifpayBank(rawPaymentMethod);
+        String bankName = (bank != null) ? bank.getBankName() : (rawPaymentMethod != null && !rawPaymentMethod.isBlank() ? rawPaymentMethod.trim() : "ArifPay");
+
+        reading.setmBankPaidAgentId(bankName);
+        reading.setBankPaidAgentId(bankName);
+        if (bank != null) {
+            reading.setmBillingBank(bank);
+            reading.setBillingBanks(bank);
+        }
+
+        reading.setMoneyCollector(bankName.equalsIgnoreCase("ArifPay") ? "Arifpay" : "Arifpay (" + bankName + ")");
+
+        // 3. Rich Payment Details in bill_description_bank
+        String auditDetail = String.format("Paid via ArifPay [%s] | Txn: %s | Phone: %s | Session: %s | Date: %s",
+                bankName,
+                transactionId != null ? transactionId : "N/A",
+                payerPhone != null ? payerPhone : "N/A",
+                sessionId != null ? sessionId : "N/A",
+                now.toString());
+        reading.setBillDescriptionBank(auditDetail);
+
         reading.setModifiedDate(now);
 
         BillingCustomerInfo customer = reading.getBillingCustomerInfo();
@@ -370,6 +448,75 @@ public class ArifpayController {
         } catch (Exception e) {
             logger.warn("[ArifpayController] Error running processPaymentRelatedUpdates: {}", e.getMessage());
         }
+        return saved;
+    }
+
+    private BillingBanks resolveArifpayBank(String rawMethod) {
+        if (billingBanksRepository == null) {
+            return null;
+        }
+        try {
+            if (rawMethod != null && !rawMethod.isBlank()) {
+                String clean = rawMethod.trim().toUpperCase();
+                // Direct lookup against gateway_code = 'Arifpay'
+                List<BillingBanks> matches = billingBanksRepository.findArifpayBankByMethod(clean);
+                if (!matches.isEmpty()) {
+                    return matches.get(0);
+                }
+                // Check substring / common abbreviations
+                if (clean.contains("TELEBIRR")) {
+                    matches = billingBanksRepository.findArifpayBankByMethod("TELEBIRR");
+                } else if (clean.contains("CBE")) {
+                    matches = billingBanksRepository.findArifpayBankByMethod("CBE");
+                } else if (clean.contains("ABYSSINIA") || clean.equals("BOA")) {
+                    matches = billingBanksRepository.findArifpayBankByMethod("BOA");
+                } else if (clean.contains("AWASH")) {
+                    matches = billingBanksRepository.findArifpayBankByMethod("AWASH");
+                } else if (clean.contains("MPESA") || clean.contains("M-PESA")) {
+                    matches = billingBanksRepository.findArifpayBankByMethod("MPESA");
+                } else if (clean.contains("DASHEN")) {
+                    matches = billingBanksRepository.findArifpayBankByMethod("DASHEN");
+                } else if (clean.contains("AMHARA")) {
+                    matches = billingBanksRepository.findArifpayBankByMethod("AMHARA");
+                } else if (clean.contains("WEGAGEN")) {
+                    matches = billingBanksRepository.findArifpayBankByMethod("WEGAGEN");
+                } else if (clean.contains("CARD") || clean.contains("VISA") || clean.contains("MASTER")) {
+                    matches = billingBanksRepository.findArifpayBankByMethod("CARD");
+                }
+                if (matches != null && !matches.isEmpty()) {
+                    return matches.get(0);
+                }
+            }
+
+            // Fallback to generic ArifPay row under gateway_code = 'Arifpay'
+            List<BillingBanks> generic = billingBanksRepository.findArifpayBankByMethod("ARIFPAY");
+            if (!generic.isEmpty()) {
+                return generic.get(0);
+            }
+        } catch (Exception e) {
+            logger.warn("[ArifpayController] Exception resolving ArifPay bank for method '{}': {}", rawMethod, e.getMessage());
+        }
+        return null;
+    }
+
+    private String extractPaymentMethod(Map<String, Object> data) {
+        if (data == null) return null;
+        String method = getStringField(data, "paymentMethod", "paymentType", "paymentRail", "channel", "bank");
+        if (method == null && data.get("transaction") instanceof Map) {
+            Map<String, Object> txn = (Map<String, Object>) data.get("transaction");
+            method = getStringField(txn, "paymentMethod", "paymentType", "paymentRail", "bank", "bankName");
+        }
+        return method;
+    }
+
+    private String extractPayerPhone(Map<String, Object> data) {
+        if (data == null) return null;
+        String phone = getStringField(data, "phone", "phoneNumber", "payerPhone");
+        if (phone == null && data.get("transaction") instanceof Map) {
+            Map<String, Object> txn = (Map<String, Object>) data.get("transaction");
+            phone = getStringField(txn, "phone", "phoneNumber");
+        }
+        return phone;
     }
 
     /**

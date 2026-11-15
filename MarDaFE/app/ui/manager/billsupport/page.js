@@ -34,6 +34,7 @@ import {
   Chip,
   Stack,
   Alert,
+  Pagination,
 } from "@mui/material";
 import {
   QueryClient,
@@ -49,6 +50,9 @@ import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import FilterAltOffIcon from "@mui/icons-material/FilterAltOff";
 import CancelPresentationIcon from "@mui/icons-material/CancelPresentation";
 import CloseIcon from "@mui/icons-material/Close";
+import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
+import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
+import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 import ProPeriodPicker, { getPreviousPeriod } from "@/app/ui/components/ProPeriodPicker";
 import { ETH_MONTHS_AM } from "@/app/helpers/constants";
 import { ReadingService } from "../../../lib/ReadingService";
@@ -175,6 +179,20 @@ const BillSupport = () => {
   const [wuzifMonthsVal, setWuzifMonthsVal] = useState("");
   const [isBulkKitatTransferring, setIsBulkKitatTransferring] = useState(false);
   const [isRemovingDuplicates, setIsRemovingDuplicates] = useState(false);
+  const [duplicateModalOpen, setDuplicateModalOpen] = useState(false);
+  const [duplicateGroups, setDuplicateGroups] = useState([]);
+  const [selectedDuplicateIds, setSelectedDuplicateIds] = useState(new Set());
+  const [duplicateProgress, setDuplicateProgress] = useState({
+    isProcessing: false,
+    total: 0,
+    processed: 0,
+    success: 0,
+    fail: 0,
+    percent: 0,
+    isFinished: false,
+  });
+  const [duplicatePage, setDuplicatePage] = useState(1);
+  const DUPLICATES_PER_PAGE = 5;
 
   // Zero Reading Filter State
   const [zeroReadingMonthsOp, setZeroReadingMonthsOp] = useState("eq");
@@ -1426,7 +1444,7 @@ const BillSupport = () => {
     }
   };
 
-  const handleRemoveDuplicateBills = async () => {
+  const handleOpenDuplicateModal = () => {
     const sourceBills = Array.isArray(filteredData) ? filteredData : [];
 
     if (!sourceBills.length) {
@@ -1434,103 +1452,252 @@ const BillSupport = () => {
       return;
     }
 
-    // Group bills by account and invoice, similar to the duplicate finder
-    const groups = new Map();
+    // Filter out voided or null records
+    const validBills = sourceBills.filter(
+      (b) => b && b.id != null && !b.isVoid && !b.void
+    );
 
-    sourceBills.forEach((bill) => {
-      if (!bill || bill.id == null) return;
+    if (validBills.length < 2) {
+      toast.info("No duplicate bills found.");
+      return;
+    }
 
-      const account =
-        bill.customerAccountNumber || bill.accountNumber || null;
-      const invoice =
-        bill.billingInvoiceNumber || bill.invoiceNumber || null;
-
+    // Group bills by Account
+    const byAccount = new Map();
+    validBills.forEach((bill) => {
+      const account = bill.customerAccountNumber || bill.accountNumber || null;
       if (account) {
-        const key = `ACC:${account}`;
-        if (!groups.has(key)) groups.set(key, []);
-        groups.get(key).push(bill);
-      }
-
-      if (invoice) {
-        const key = `INV:${invoice}`;
-        if (!groups.has(key)) groups.set(key, []);
-        groups.get(key).push(bill);
+        const key = String(account).trim();
+        if (!byAccount.has(key)) byAccount.set(key, []);
+        byAccount.get(key).push(bill);
       }
     });
 
-    const candidateMap = new Map();
+    // Group bills by Invoice
+    const byInvoice = new Map();
+    validBills.forEach((bill) => {
+      const invoice = bill.billingInvoiceNumber || bill.invoiceNumber || null;
+      if (invoice) {
+        const key = String(invoice).trim();
+        if (!byInvoice.has(key)) byInvoice.set(key, []);
+        byInvoice.get(key).push(bill);
+      }
+    });
 
-    groups.forEach((bills) => {
-      if (!Array.isArray(bills) || bills.length < 2) return;
+    const isPaid = (b) => Boolean(b.isMoneyCollected || b.moneyCollected);
+    const processedBillIds = new Set();
+    const groupsList = [];
+    const candidateIds = new Set();
 
-      // Filter out voided or null records
-      const validBills = bills.filter(
-        (b) => b && b.id != null && !b.isVoid && !b.void
-      );
-      if (validBills.length < 2) return;
+    const evaluateGroup = (bills, groupType, identifier) => {
+      // Avoid re-grouping bills already assigned to a duplicate group
+      const availableBills = bills.filter((b) => !processedBillIds.has(b.id));
+      if (availableBills.length < 2) return;
 
-      const isPaid = (b) => Boolean(b.isMoneyCollected || b.moneyCollected);
-      const paidBills = validBills.filter(isPaid);
-      const unpaidBills = validBills.filter((b) => !isPaid(b));
+      const paidBills = availableBills.filter(isPaid);
+      const unpaidBills = availableBills.filter((b) => !isPaid(b));
+
+      let keptBills = [];
+      let removalBills = [];
 
       if (paidBills.length > 0) {
-        // Priority Rule: If one or more bills are paid, keep the paid bill(s) and mark all unpaid duplicates for removal
-        unpaidBills.forEach((bill) => {
-          if (!candidateMap.has(bill.id)) {
-            candidateMap.set(bill.id, bill);
-          }
-        });
+        // Priority Rule: Keep paid bill(s), mark all unpaid duplicates for removal
+        keptBills = paidBills.map((b) => ({
+          ...b,
+          reason: "Paid Bill (Protected)",
+          statusType: "paid",
+        }));
+        removalBills = unpaidBills.map((b) => ({
+          ...b,
+          reason: "Unpaid Duplicate",
+          statusType: "unpaid_duplicate",
+        }));
       } else {
-        // Fallback Rule: All are unpaid — keep the earliest (smallest ID) and mark the rest for removal
-        const sorted = unpaidBills.sort((a, b) => Number(a.id) - Number(b.id));
-        const [, ...rest] = sorted;
-        rest.forEach((bill) => {
-          if (!candidateMap.has(bill.id)) {
-            candidateMap.set(bill.id, bill);
-          }
+        // Fallback Rule: All unpaid — keep earliest (lowest ID), mark rest for removal
+        const sorted = [...availableBills].sort((a, b) => Number(a.id) - Number(b.id));
+        const earliest = sorted[0];
+        const rest = sorted.slice(1);
+
+        keptBills = [
+          {
+            ...earliest,
+            reason: "Earliest Reading (Lowest ID)",
+            statusType: "earliest",
+          },
+        ];
+        removalBills = rest.map((b) => ({
+          ...b,
+          reason: "Later Duplicate Record",
+          statusType: "duplicate",
+        }));
+      }
+
+      if (removalBills.length > 0) {
+        removalBills.forEach((b) => {
+          candidateIds.add(b.id);
+          processedBillIds.add(b.id);
         });
+        keptBills.forEach((b) => {
+          processedBillIds.add(b.id);
+        });
+
+        groupsList.push({
+          id: `${groupType}_${identifier}`,
+          groupType,
+          identifier,
+          customerName: availableBills[0]?.customerFullName || "N/A",
+          accountNumber: availableBills[0]?.customerAccountNumber || availableBills[0]?.accountNumber || "N/A",
+          invoiceNumber: availableBills[0]?.billingInvoiceNumber || availableBills[0]?.invoiceNumber || "N/A",
+          keptBills,
+          removalBills,
+        });
+      }
+    };
+
+    // First evaluate by Account
+    byAccount.forEach((bills, acct) => {
+      if (bills.length >= 2) {
+        evaluateGroup(bills, "Account", acct);
       }
     });
 
-    const candidates = Array.from(candidateMap.values());
+    // Then evaluate by Invoice
+    byInvoice.forEach((bills, inv) => {
+      if (bills.length >= 2) {
+        evaluateGroup(bills, "Invoice", inv);
+      }
+    });
 
-    if (!candidates.length) {
+    if (groupsList.length === 0 || candidateIds.size === 0) {
       toast.info("No duplicate bills found that can be deleted.");
       return;
     }
 
-    const confirmed = window.confirm(
-      `Found ${candidates.length} duplicate bill(s) to remove.\n\n` +
-      `Selection rules:\n` +
-      `• If a duplicate bill is paid, the paid bill is kept and unpaid duplicates are marked for deletion.\n` +
-      `• If all duplicate bills are unpaid, the earliest bill (smallest ID) is kept.\n\n` +
-      `Continue?`
-    );
+    setDuplicateGroups(groupsList);
+    setSelectedDuplicateIds(new Set(candidateIds));
+    setDuplicatePage(1);
+    setDuplicateProgress({
+      isProcessing: false,
+      total: candidateIds.size,
+      processed: 0,
+      success: 0,
+      fail: 0,
+      percent: 0,
+      isFinished: false,
+    });
+    setDuplicateModalOpen(true);
+  };
 
-    if (!confirmed) return;
+  const allDuplicateRemovalIds = useMemo(() => {
+    const ids = [];
+    duplicateGroups.forEach((g) => {
+      (g.removalBills || []).forEach((b) => ids.push(b.id));
+    });
+    return ids;
+  }, [duplicateGroups]);
 
+  const totalDuplicatePages = useMemo(() => {
+    return Math.ceil(duplicateGroups.length / DUPLICATES_PER_PAGE) || 1;
+  }, [duplicateGroups]);
+
+  const currentDuplicateGroups = useMemo(() => {
+    const start = (duplicatePage - 1) * DUPLICATES_PER_PAGE;
+    return duplicateGroups.slice(start, start + DUPLICATES_PER_PAGE);
+  }, [duplicateGroups, duplicatePage]);
+
+  const handleToggleDuplicateCandidate = (id) => {
+    setSelectedDuplicateIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const handleSelectAllDuplicates = (selectAll) => {
+    if (selectAll) {
+      setSelectedDuplicateIds(new Set(allDuplicateRemovalIds));
+    } else {
+      setSelectedDuplicateIds(new Set());
+    }
+  };
+
+  const handleCloseDuplicateModal = () => {
+    if (duplicateProgress.isProcessing) return;
+    setDuplicateModalOpen(false);
+    setDuplicateGroups([]);
+    setSelectedDuplicateIds(new Set());
+    setDuplicatePage(1);
+    setDuplicateProgress({
+      isProcessing: false,
+      total: 0,
+      processed: 0,
+      success: 0,
+      fail: 0,
+      percent: 0,
+      isFinished: false,
+    });
+  };
+
+  const handleConfirmRemoveDuplicates = async () => {
+    const idsToDelete = Array.from(selectedDuplicateIds);
+    if (!idsToDelete.length) {
+      toast.warning("No duplicate bills selected for removal.");
+      return;
+    }
+
+    setDuplicateProgress({
+      isProcessing: true,
+      total: idsToDelete.length,
+      processed: 0,
+      success: 0,
+      fail: 0,
+      percent: 0,
+      isFinished: false,
+    });
     setIsRemovingDuplicates(true);
-    let success = 0;
-    let fail = 0;
+
+    let successCount = 0;
+    let failCount = 0;
 
     try {
-      for (const bill of candidates) {
+      for (let i = 0; i < idsToDelete.length; i++) {
+        const id = idsToDelete[i];
         try {
-          await readingService.changeReadingStatus(bill.id, "deleted");
-          success++;
+          await readingService.changeReadingStatus(id, "deleted");
+          successCount++;
         } catch (err) {
-          console.error("Error deleting duplicate bill:", err);
-          fail++;
+          console.error(`Error deleting duplicate bill ${id}:`, err);
+          failCount++;
         }
+
+        const processed = i + 1;
+        const percent = Math.round((processed / idsToDelete.length) * 100);
+
+        setDuplicateProgress((prev) => ({
+          ...prev,
+          processed,
+          success: successCount,
+          fail: failCount,
+          percent,
+        }));
       }
 
-      if (success > 0) {
-        toast.success(`Removed ${success} duplicate bill(s).`);
+      setDuplicateProgress((prev) => ({
+        ...prev,
+        isProcessing: false,
+        isFinished: true,
+      }));
+
+      if (successCount > 0) {
+        toast.success(`Removed ${successCount} duplicate bill(s).`);
         refetch();
       }
-
-      if (fail > 0) {
-        toast.error(`${fail} duplicate bill(s) could not be deleted.`);
+      if (failCount > 0) {
+        toast.error(`${failCount} duplicate bill(s) could not be deleted.`);
       }
     } finally {
       setIsRemovingDuplicates(false);
@@ -2848,7 +3015,7 @@ const BillSupport = () => {
                       color="error"
                       fullWidth
                       disabled={isLoading || isRemovingDuplicates || !filteredData?.length}
-                      onClick={handleRemoveDuplicateBills}
+                      onClick={handleOpenDuplicateModal}
                     >
                       {isRemovingDuplicates ? "Removing..." : "Remove Dups"}
                     </Button>
@@ -3740,6 +3907,559 @@ const BillSupport = () => {
           >
             {smsDispatchStatus.isSending ? "Dispatching..." : "Done / Close Dashboard"}
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Duplicate Removal Review & Progress Modal */}
+      <Dialog
+        open={duplicateModalOpen}
+        onClose={handleCloseDuplicateModal}
+        maxWidth="lg"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 3,
+            overflow: "hidden",
+            boxShadow: "0 25px 50px -12px rgba(15, 23, 42, 0.35)",
+          },
+        }}
+      >
+        {/* Header */}
+        <DialogTitle
+          sx={{
+            m: 0,
+            p: 2.5,
+            background: "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)",
+            color: "#fff",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+          }}
+        >
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <WarningAmberIcon sx={{ color: "#f59e0b", fontSize: 28 }} />
+            <Box>
+              <Typography variant="h6" fontWeight={700} sx={{ color: "#fff", fontSize: "1.1rem" }}>
+                Duplicate Bills Review & Deduplication
+              </Typography>
+              <Typography variant="caption" sx={{ color: "#94a3b8" }}>
+                {duplicateProgress.isFinished
+                  ? `✨ Deduplication sequence completed — ${duplicateProgress.success} removed, ${duplicateProgress.fail} failed.`
+                  : duplicateProgress.isProcessing
+                  ? `⚡ Removing duplicates in progress: ${duplicateProgress.processed} of ${duplicateProgress.total} (${duplicateProgress.percent}%)`
+                  : `Found ${duplicateGroups.length} duplicate group(s) · ${selectedDuplicateIds.size} of ${allDuplicateRemovalIds.length} bills selected for removal`}
+              </Typography>
+            </Box>
+          </Stack>
+          <IconButton
+            onClick={handleCloseDuplicateModal}
+            disabled={duplicateProgress.isProcessing}
+            sx={{ color: "#94a3b8", "&:hover": { color: "#fff" } }}
+          >
+            <CloseIcon />
+          </IconButton>
+        </DialogTitle>
+
+        <DialogContent dividers sx={{ p: 2.5, bgcolor: "#f8fafc" }}>
+          {/* Progress / Completion Section */}
+          {(duplicateProgress.isProcessing || duplicateProgress.isFinished) && (
+            <Paper
+              variant="outlined"
+              sx={{
+                p: 2.5,
+                mb: 2.5,
+                borderRadius: 2,
+                bgcolor: duplicateProgress.isFinished ? "#f0fdf4" : "#ffffff",
+                borderColor: duplicateProgress.isFinished ? "#86efac" : "#cbd5e1",
+                boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
+              }}
+            >
+              <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
+                <Typography variant="subtitle2" fontWeight={800} color={duplicateProgress.isFinished ? "#166534" : "#1e293b"}>
+                  {duplicateProgress.isFinished
+                    ? "✅ Deduplication Finished"
+                    : "⏳ Removing Duplicate Bills..."}
+                </Typography>
+                <Typography variant="body2" fontWeight={800} color="#2563eb">
+                  {duplicateProgress.percent}% ({duplicateProgress.processed} / {duplicateProgress.total})
+                </Typography>
+              </Stack>
+
+              <LinearProgress
+                variant="determinate"
+                value={duplicateProgress.percent}
+                sx={{
+                  height: 12,
+                  borderRadius: 6,
+                  mb: 2,
+                  bgcolor: "#e2e8f0",
+                  "& .MuiLinearProgress-bar": {
+                    borderRadius: 6,
+                    background:
+                      duplicateProgress.fail > 0
+                        ? "linear-gradient(90deg, #3b82f6 0%, #f59e0b 50%, #ef4444 100%)"
+                        : "linear-gradient(90deg, #3b82f6 0%, #10b981 100%)",
+                  },
+                }}
+              />
+
+              <Stack direction="row" spacing={1.5} flexWrap="wrap" alignItems="center">
+                <Chip
+                  size="small"
+                  label={`Total Queued: ${duplicateProgress.total}`}
+                  sx={{ fontWeight: 700 }}
+                />
+                <Chip
+                  size="small"
+                  label={`Processed: ${duplicateProgress.processed}`}
+                  sx={{ fontWeight: 700 }}
+                />
+                <Chip
+                  size="small"
+                  label={`Successfully Removed: ${duplicateProgress.success}`}
+                  color="success"
+                  sx={{ fontWeight: 700 }}
+                />
+                {duplicateProgress.fail > 0 && (
+                  <Chip
+                    size="small"
+                    label={`Failed: ${duplicateProgress.fail}`}
+                    color="error"
+                    sx={{ fontWeight: 700 }}
+                  />
+                )}
+              </Stack>
+
+              {duplicateProgress.isFinished && (
+                <Alert
+                  severity={duplicateProgress.fail > 0 ? "warning" : "success"}
+                  sx={{ mt: 2, borderRadius: 1.5 }}
+                >
+                  {duplicateProgress.fail > 0
+                    ? `Completed with warnings: ${duplicateProgress.success} duplicate bill(s) were soft-deleted, but ${duplicateProgress.fail} could not be updated.`
+                    : `Success! Soft-deleted ${duplicateProgress.success} duplicate bill(s). The bills table has been refreshed automatically.`}
+                </Alert>
+              )}
+            </Paper>
+          )}
+
+          {/* Review & Selection Guidance (Before Starting) */}
+          {!duplicateProgress.isProcessing && !duplicateProgress.isFinished && (
+            <>
+              <Alert severity="warning" variant="outlined" sx={{ mb: 2, borderRadius: 2, bgcolor: "#fffbeb" }}>
+                <Typography variant="body2" fontWeight={600}>
+                  Review Duplicate Comparison:
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Paid bills are prioritized and protected. If all duplicates are unpaid, the earliest created bill (lowest ID) is kept.
+                  All duplicate bills marked for deletion are checked below. Uncheck any bill you want to keep before proceeding.
+                </Typography>
+              </Alert>
+
+              {/* Toolbar */}
+              <Box
+                sx={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  mb: 2,
+                  p: 1.5,
+                  bgcolor: "#ffffff",
+                  borderRadius: 2,
+                  border: "1px solid #e2e8f0",
+                  gap: 1.5,
+                }}
+              >
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={
+                        allDuplicateRemovalIds.length > 0 &&
+                        selectedDuplicateIds.size === allDuplicateRemovalIds.length
+                      }
+                      indeterminate={
+                        selectedDuplicateIds.size > 0 &&
+                        selectedDuplicateIds.size < allDuplicateRemovalIds.length
+                      }
+                      onChange={(e) => handleSelectAllDuplicates(e.target.checked)}
+                      size="small"
+                      color="error"
+                    />
+                  }
+                  label={
+                    <Typography variant="body2" fontWeight={700}>
+                      Select All Candidates ({allDuplicateRemovalIds.length})
+                    </Typography>
+                  }
+                />
+
+                <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap">
+                  <Typography variant="caption" fontWeight={600} color="text.secondary">
+                    Showing {duplicateGroups.length > 0 ? (duplicatePage - 1) * DUPLICATES_PER_PAGE + 1 : 0}–
+                    {Math.min(duplicatePage * DUPLICATES_PER_PAGE, duplicateGroups.length)} of {duplicateGroups.length} groups
+                    {totalDuplicatePages > 1 ? ` (Page ${duplicatePage} of ${totalDuplicatePages})` : ""}
+                  </Typography>
+                  <Chip
+                    color={selectedDuplicateIds.size > 0 ? "error" : "default"}
+                    variant={selectedDuplicateIds.size > 0 ? "filled" : "outlined"}
+                    label={`${selectedDuplicateIds.size} bill(s) marked for removal`}
+                    sx={{ fontWeight: 700 }}
+                  />
+                </Stack>
+              </Box>
+            </>
+          )}
+
+          {/* Grouped Comparison List (Paginated: 5 groups at once, non-shrinking cards) */}
+          <Box
+            sx={{
+              maxHeight: "58vh",
+              overflowY: "auto",
+              overflowX: "hidden",
+              display: "flex",
+              flexDirection: "column",
+              gap: 2.5,
+              pr: 0.5,
+              "& > *": {
+                flexShrink: 0,
+              },
+            }}
+          >
+            {currentDuplicateGroups.map((group, groupIdx) => (
+              <Card
+                key={group.id || groupIdx}
+                variant="outlined"
+                sx={{
+                  flexShrink: 0,
+                  minHeight: "fit-content",
+                  width: "100%",
+                  boxSizing: "border-box",
+                  borderRadius: 2,
+                  border: "1px solid #cbd5e1",
+                  overflow: "hidden",
+                  boxShadow: "0 2px 6px rgba(0,0,0,0.06)",
+                  bgcolor: "#ffffff",
+                }}
+              >
+                {/* Group Card Header */}
+                <Box
+                  sx={{
+                    p: 1.5,
+                    bgcolor: "#f1f5f9",
+                    borderBottom: "1px solid #e2e8f0",
+                    display: "flex",
+                    flexWrap: "wrap",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 1,
+                  }}
+                >
+                  <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+                    <Chip
+                      label={
+                        group.groupType === "Account"
+                          ? `Account: ${group.identifier}`
+                          : `Invoice: ${group.identifier}`
+                      }
+                      size="small"
+                      color="primary"
+                      sx={{ fontWeight: 700 }}
+                    />
+                    <Typography variant="subtitle2" fontWeight={700} color="#1e293b">
+                      {group.customerName}
+                    </Typography>
+                    {/* Explicit Database ID Quick Summary */}
+                    <Chip
+                      label={`Kept: DB ID #${group.keptBills.map((b) => b.id).join(", ")}`}
+                      size="small"
+                      sx={{ bgcolor: "#dcfce7", color: "#15803d", fontWeight: 800, fontFamily: "monospace", fontSize: "0.72rem", height: 22 }}
+                    />
+                    <Chip
+                      label={`Delete: DB ID #${group.removalBills.map((b) => b.id).join(", ")}`}
+                      size="small"
+                      sx={{ bgcolor: "#fee2e2", color: "#b91c1c", fontWeight: 800, fontFamily: "monospace", fontSize: "0.72rem", height: 22 }}
+                    />
+                  </Stack>
+                  <Stack direction="row" spacing={1}>
+                    <Chip
+                      label={`${group.keptBills.length} Kept`}
+                      size="small"
+                      sx={{ bgcolor: "#dcfce7", color: "#15803d", fontWeight: 700, fontSize: "0.75rem" }}
+                    />
+                    <Chip
+                      label={`${group.removalBills.length} Duplicate(s)`}
+                      size="small"
+                      sx={{ bgcolor: "#fee2e2", color: "#b91c1c", fontWeight: 700, fontSize: "0.75rem" }}
+                    />
+                  </Stack>
+                </Box>
+
+                <CardContent sx={{ p: 1.5, "&:last-child": { pb: 1.5 }, display: "flex", flexDirection: "column", gap: 1.5 }}>
+                  {/* Kept Bills Section */}
+                  <Box sx={{ bgcolor: "#f0fdf4", borderRadius: 1.5, border: "1px solid #bbf7d0", p: 1.25 }}>
+                    <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
+                      <CheckCircleOutlineIcon sx={{ color: "#16a34a", fontSize: 18 }} />
+                      <Typography variant="caption" fontWeight={800} sx={{ color: "#166534", letterSpacing: 0.5, textTransform: "uppercase" }}>
+                        Bill To Be Kept (Protected / Retained in Database)
+                      </Typography>
+                    </Stack>
+                    <Box sx={{ overflowX: "auto", pb: 0.5 }}>
+                      <Box sx={{ minWidth: 680, display: "flex", flexDirection: "column", gap: 1 }}>
+                        {group.keptBills.map((bill) => (
+                          <Box
+                            key={bill.id}
+                            sx={{
+                              flexShrink: 0,
+                              minHeight: "fit-content",
+                              display: "grid",
+                              gridTemplateColumns: "1.4fr 1.8fr 1fr 1fr 1.2fr auto",
+                              gap: 1.5,
+                              alignItems: "center",
+                              bgcolor: "#ffffff",
+                              p: 1.25,
+                              borderRadius: 1,
+                              border: "1px solid #dcfce7",
+                            }}
+                          >
+                            <Box>
+                              <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.25 }}>Database Bill ID</Typography>
+                              <Stack direction="row" spacing={0.5} alignItems="center" flexWrap="wrap">
+                                <Chip
+                                  size="small"
+                                  label={`DB ID: #${bill.id}`}
+                                  sx={{ bgcolor: "#15803d", color: "#ffffff", fontWeight: 800, fontFamily: "monospace", fontSize: "0.75rem", height: 22 }}
+                                />
+                              </Stack>
+                              <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.5 }}>
+                                Inv: {bill.billingInvoiceNumber || bill.invoiceNumber || "N/A"}
+                              </Typography>
+                            </Box>
+                            <Box>
+                              <Typography variant="caption" color="text.secondary">Customer</Typography>
+                              <Typography variant="body2" noWrap title={bill.customerFullName} fontWeight={600}>
+                                {bill.customerFullName || "N/A"}
+                              </Typography>
+                            </Box>
+                            <Box>
+                              <Typography variant="caption" color="text.secondary">Kebele</Typography>
+                              <Typography variant="body2">{bill.customerKebele || "N/A"}</Typography>
+                            </Box>
+                            <Box>
+                              <Typography variant="caption" color="text.secondary">Consumption</Typography>
+                              <Typography variant="body2" fontWeight={600}>
+                                {bill.consumption ?? 0} m³
+                              </Typography>
+                            </Box>
+                            <Box>
+                              <Typography variant="caption" color="text.secondary">Total Payable</Typography>
+                              <Typography variant="body2" fontWeight={700} color="#0f766e">
+                                {Number(bill.tekilalaTekefay ?? 0).toLocaleString()} ETB
+                              </Typography>
+                            </Box>
+                            <Box sx={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                              <Chip
+                                size="small"
+                                label="WILL BE KEPT"
+                                sx={{ bgcolor: "#166534", color: "#ffffff", fontWeight: 800, height: 22, fontSize: "0.7rem", mr: 0.5 }}
+                              />
+                              <Chip
+                                size="small"
+                                label={bill.isMoneyCollected || bill.moneyCollected ? "PAID" : "UNPAID"}
+                                color={bill.isMoneyCollected || bill.moneyCollected ? "success" : "default"}
+                                sx={{ fontWeight: 700, height: 22, fontSize: "0.7rem", mr: 0.5 }}
+                              />
+                              <Chip
+                                size="small"
+                                label={bill.reason}
+                                sx={{ bgcolor: "#dcfce7", color: "#166534", fontWeight: 600, height: 22, fontSize: "0.7rem" }}
+                              />
+                            </Box>
+                          </Box>
+                        ))}
+                      </Box>
+                    </Box>
+                  </Box>
+
+                  {/* Duplicate / Removal Bills Section */}
+                  <Box sx={{ bgcolor: "#fff1f2", borderRadius: 1.5, border: "1px solid #fecdd3", p: 1.25 }}>
+                    <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
+                      <DeleteOutlineIcon sx={{ color: "#e11d48", fontSize: 18 }} />
+                      <Typography variant="caption" fontWeight={800} sx={{ color: "#9f1239", letterSpacing: 0.5, textTransform: "uppercase" }}>
+                        Duplicate Bill(s) Slated for Removal (To Be Deleted from Active Database)
+                      </Typography>
+                    </Stack>
+                    <Box sx={{ overflowX: "auto", pb: 0.5 }}>
+                      <Box sx={{ minWidth: 680, display: "flex", flexDirection: "column", gap: 1 }}>
+                        {group.removalBills.map((bill) => {
+                          const isChecked = selectedDuplicateIds.has(bill.id);
+                          return (
+                            <Box
+                              key={bill.id}
+                              sx={{
+                                flexShrink: 0,
+                                minHeight: "fit-content",
+                                display: "grid",
+                                gridTemplateColumns: "auto 1.4fr 1.8fr 1fr 1.2fr auto",
+                                gap: 1.5,
+                                alignItems: "center",
+                                bgcolor: isChecked ? "#ffffff" : "#f8fafc",
+                                opacity: isChecked ? 1 : 0.65,
+                                p: 1.25,
+                                borderRadius: 1,
+                                border: isChecked ? "1.5px solid #f87171" : "1px dashed #cbd5e1",
+                                transition: "all 0.15s ease",
+                              }}
+                            >
+                              <Checkbox
+                                checked={isChecked}
+                                onChange={() => handleToggleDuplicateCandidate(bill.id)}
+                                disabled={duplicateProgress.isProcessing || duplicateProgress.isFinished}
+                                size="small"
+                                color="error"
+                                sx={{ p: 0.5 }}
+                              />
+                              <Box>
+                                <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.25 }}>Database Bill ID</Typography>
+                                <Stack direction="row" spacing={0.5} alignItems="center" flexWrap="wrap">
+                                  <Chip
+                                    size="small"
+                                    label={`DB ID: #${bill.id}`}
+                                    color={isChecked ? "error" : "default"}
+                                    sx={{ fontWeight: 800, fontFamily: "monospace", fontSize: "0.75rem", height: 22 }}
+                                  />
+                                </Stack>
+                                <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.5 }}>
+                                  Inv: {bill.billingInvoiceNumber || bill.invoiceNumber || "N/A"}
+                                </Typography>
+                              </Box>
+                              <Box>
+                                <Typography variant="caption" color="text.secondary">Customer</Typography>
+                                <Typography variant="body2" noWrap title={bill.customerFullName} fontWeight={600}>
+                                  {bill.customerFullName || "N/A"}
+                                </Typography>
+                              </Box>
+                              <Box>
+                                <Typography variant="caption" color="text.secondary">Consumption</Typography>
+                                <Typography variant="body2">{bill.consumption ?? 0} m³</Typography>
+                              </Box>
+                              <Box>
+                                <Typography variant="caption" color="text.secondary">Total Payable</Typography>
+                                <Typography variant="body2" fontWeight={700}>
+                                  {Number(bill.tekilalaTekefay ?? 0).toLocaleString()} ETB
+                                </Typography>
+                              </Box>
+                              <Box sx={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                                <Chip
+                                  size="small"
+                                  label={isChecked ? "TO BE DELETED" : "SPARED (WILL KEEP)"}
+                                  color={isChecked ? "error" : "default"}
+                                  variant={isChecked ? "filled" : "outlined"}
+                                  sx={{ fontWeight: 800, height: 22, fontSize: "0.7rem", mr: 0.5 }}
+                                />
+                                <Chip
+                                  size="small"
+                                  label={bill.reason}
+                                  sx={{ bgcolor: "#fee2e2", color: "#991b1b", fontWeight: 600, height: 22, fontSize: "0.7rem" }}
+                                />
+                              </Box>
+                            </Box>
+                          );
+                        })}
+                      </Box>
+                    </Box>
+                  </Box>
+                </CardContent>
+              </Card>
+            ))}
+          </Box>
+
+          {/* Pagination Controls (5 duplicate groups at once) */}
+          {totalDuplicatePages > 1 && !duplicateProgress.isProcessing && (
+            <Box
+              sx={{
+                display: "flex",
+                flexWrap: "wrap",
+                justifyContent: "space-between",
+                alignItems: "center",
+                mt: 2,
+                pt: 1.5,
+                borderTop: "1px solid #e2e8f0",
+                bgcolor: "#ffffff",
+                p: 1.5,
+                borderRadius: 2,
+                gap: 1.5,
+              }}
+            >
+              <Typography variant="body2" color="text.secondary" fontWeight={600}>
+                Page {duplicatePage} of {totalDuplicatePages} ({duplicateGroups.length} total duplicate groups)
+              </Typography>
+              <Pagination
+                count={totalDuplicatePages}
+                page={duplicatePage}
+                onChange={(e, val) => setDuplicatePage(val)}
+                color="primary"
+                shape="rounded"
+                showFirstButton
+                showLastButton
+                size="medium"
+              />
+            </Box>
+          )}
+        </DialogContent>
+
+        {/* Footer Actions */}
+        <DialogActions
+          sx={{
+            p: 2,
+            bgcolor: "#f1f5f9",
+            borderTop: "1px solid #e2e8f0",
+            justifyContent: "space-between",
+          }}
+        >
+          {!duplicateProgress.isProcessing && !duplicateProgress.isFinished ? (
+            <>
+              <Button
+                variant="outlined"
+                color="inherit"
+                onClick={handleCloseDuplicateModal}
+                sx={{ textTransform: "none", fontWeight: 600 }}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="contained"
+                color="error"
+                disabled={selectedDuplicateIds.size === 0}
+                onClick={handleConfirmRemoveDuplicates}
+                startIcon={<DeleteOutlineIcon />}
+                sx={{ textTransform: "none", fontWeight: 700, px: 3 }}
+              >
+                Remove Selected Duplicates ({selectedDuplicateIds.size})
+              </Button>
+            </>
+          ) : duplicateProgress.isProcessing ? (
+            <Stack direction="row" spacing={1.5} alignItems="center" sx={{ width: "100%", justifyContent: "center", py: 1 }}>
+              <CircularProgress size={20} color="error" />
+              <Typography variant="body2" fontWeight={600} color="text.secondary">
+                Removing duplicate bill {duplicateProgress.processed + 1} of {duplicateProgress.total}... please do not close this window.
+              </Typography>
+            </Stack>
+          ) : (
+            <>
+              <Typography variant="caption" color="text.secondary">
+                Deduplication sequence finished. You may safely close this dialog.
+              </Typography>
+              <Button
+                variant="contained"
+                color="primary"
+                onClick={handleCloseDuplicateModal}
+                sx={{ textTransform: "none", fontWeight: 700, px: 4 }}
+              >
+                Done / Close
+              </Button>
+            </>
+          )}
         </DialogActions>
       </Dialog>
     </>

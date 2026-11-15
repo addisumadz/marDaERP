@@ -71,7 +71,6 @@ export default function PayWithArifpayPage() {
   const [isPhoneModalOpen, setIsPhoneModalOpen] = useState(false);
   const [phoneDigits, setPhoneDigits] = useState("");
   const [originalPhoneDigits, setOriginalPhoneDigits] = useState("");
-  const [saveToCustomerProfile, setSaveToCustomerProfile] = useState(true);
   const [submittingPayment, setSubmittingPayment] = useState(false);
   const [initiatingBillId, setInitiatingBillId] = useState(null);
 
@@ -417,7 +416,6 @@ export default function PayWithArifpayPage() {
 
     setPhoneDigits(digits);
     setOriginalPhoneDigits(digits);
-    setSaveToCustomerProfile(true);
     setSubmittingPayment(false);
     setIsPhoneModalOpen(true);
   };
@@ -442,22 +440,8 @@ export default function PayWithArifpayPage() {
     try {
       toast.info("Connecting to ArifPay secure checkout portal...", { autoClose: 2000 });
 
-      // If cashier opted to update customer profile and phone changed
-      if (saveToCustomerProfile && lastCustomer?.id && trimmed !== originalPhoneDigits) {
-        try {
-          await customerService.updateCustomer(lastCustomer.id, {
-            ...lastCustomer,
-            phoneNumber: fullPhone,
-          });
-          setLastCustomer((prev) => (prev ? { ...prev, phoneNumber: fullPhone } : prev));
-        } catch (updateErr) {
-          console.warn("Could not save phone to customer profile:", updateErr);
-        }
-      }
-
       const res = await arifpayService.initiatePayment(selectedBill.id, {
         phone: fullPhone,
-        saveToCustomer: saveToCustomerProfile ? "true" : "false",
       });
 
       const checkoutUrl =
@@ -1463,24 +1447,6 @@ export default function PayWithArifpayPage() {
                   <span className="font-mono text-gray-400">{phoneDigits.length}/9</span>
                 </div>
               </div>
-
-              {/* Checkbox to update customer profile */}
-              {lastCustomer?.id && phoneDigits.length === 9 && (
-                <div className="pt-2">
-                  <label className="flex items-center gap-2 cursor-pointer text-xs text-gray-700 dark:text-gray-300 p-2.5 rounded-lg bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 hover:bg-gray-100 transition-colors">
-                    <input
-                      type="checkbox"
-                      checked={saveToCustomerProfile}
-                      onChange={(e) => setSaveToCustomerProfile(e.target.checked)}
-                      disabled={submittingPayment}
-                      className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
-                    />
-                    <span>
-                      Save this phone number to the customer&apos;s record ({lastCustomer.accountNumber})
-                    </span>
-                  </label>
-                </div>
-              )}
 
               {/* Payment Methods Notice with visual chips */}
               <div className="p-3.5 rounded-xl bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200/60 dark:border-indigo-800/60 space-y-2">

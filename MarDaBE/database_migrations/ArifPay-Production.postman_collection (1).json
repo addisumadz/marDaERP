@@ -1,0 +1,1867 @@
+{
+  "info": {
+    "name": "ArifPay Gateway — Production (C2B / B2C / External W2B)",
+    "description": "ArifPay **production** merchant APIs (aligned with live checkout paths).\n\n**Do not use sandbox keys or `/api/sandbox/*` here.**\n\n**Auth**\n| Header | Required for |\n|---|---|\n| `x-arifpay-key` | All merchant routes |\n| `x-arifpay-secret-key` | B2C |\n\n**BASE_URL**\nSet `baseUrl` to your production environment (example: `https://gateway.arifpay.net`). Confirm the exact host with ArifPay / Prerequisites.\n\n**Portal taxonomy**\n- **Checkout:** create session → redirect `paymentUrl` / get session\n- **C2B Direct:** Telebirr, M-Pesa, CBE, BOA, Awash, Yaya, Zamzam, Kacha, Ebirr variants (session then `/{slug}/transfer`)\n- **C2B OTP:** Binget (Ahadu not on production master-test controllers)\n- **Card / International:** PayPal, Mastercard, Visa (PSS) — **transfer URLs provided at production go-live with IP whitelist** (paths not published here)\n- **B2C:** session create documented; **transfer URL provided at production go-live with IP whitelist** (paths not published here)\n- **Wallet to Bank:** account inquiry + `/api/wallet-tobank/transfer`\n- **Verify:** by session ID / by transaction ID\n\n**Tips**\n- Generate a fresh `nonce` every create/direct call (pre-request scripts included).\n- Omit `paymentMethods` and `beneficiaries` on CheckoutSessionRequest — the gateway fills them from your merchant account.\n- Request bodies differ by rail: PaymentWalletRequest (sessionId+phoneNumber), ThirdPartyPaymentRequest (sessionId; phone optional), BankPaymentsRequest (Zamzam sessionId+accountNumber), PaypalCaptureRequest (sessionId+orderId).\n- Most C2B success `data` is TransferResponse `{ sessionId, transaction, otp, url, page }`. PayPal create is PaypalResponseData `{ orderId, approvalUrl, SessionId }`. BOA returns raw HTML/string. W2B is WalletToBankResponse `{ nonce, amount, accountNumber }`.\n- B2C and Card / International transfer URLs are issued at production go-live with IP whitelist; W2B production host is issued on request with IP whitelist.\n- If Postman times out, verify `baseUrl` is reachable and you are not using a legacy/cashout host. Increase timeout only after the host responds.\n- Ahadu OTP is not included — confirm enablement with ArifPay before relying on it in production.\n- PayPal create returns `{ orderId, approvalUrl, SessionId }`. Capture uses those values once the production URL is issued.\n",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "apikey",
+    "apikey": [
+      {
+        "key": "key",
+        "value": "x-arifpay-key",
+        "type": "string"
+      },
+      {
+        "key": "value",
+        "value": "{{arifpayKey}}",
+        "type": "string"
+      },
+      {
+        "key": "in",
+        "value": "header",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "https://gateway.arifpay.net"
+    },
+    {
+      "key": "arifpayKey",
+      "value": "YOUR_PRODUCTION_API_KEY"
+    },
+    {
+      "key": "arifpaySecretKey",
+      "value": "YOUR_PRODUCTION_SECRET_KEY"
+    },
+    {
+      "key": "expireDate",
+      "value": "2027-12-31T23:59:00"
+    },
+    {
+      "key": "amount",
+      "value": "10"
+    },
+    {
+      "key": "phone",
+      "value": "251912345678"
+    },
+    {
+      "key": "mpesaPhone",
+      "value": "251712345678"
+    },
+    {
+      "key": "email",
+      "value": "merchant@example.com"
+    },
+    {
+      "key": "sessionId",
+      "value": ""
+    },
+    {
+      "key": "orderId",
+      "value": ""
+    },
+    {
+      "key": "paymentUrl",
+      "value": ""
+    },
+    {
+      "key": "nonce",
+      "value": ""
+    },
+    {
+      "key": "transactionId",
+      "value": ""
+    },
+    {
+      "key": "paymentType",
+      "value": "TELEBIRR_USSD"
+    },
+    {
+      "key": "accountNumber",
+      "value": "1000123456789"
+    },
+    {
+      "key": "shortCodes",
+      "value": "CBE"
+    },
+    {
+      "key": "otp",
+      "value": "123456"
+    },
+    {
+      "key": "notifyUrl",
+      "value": "https://merchant.example/notify"
+    },
+    {
+      "key": "successUrl",
+      "value": "https://merchant.example/success"
+    },
+    {
+      "key": "errorUrl",
+      "value": "https://merchant.example/error"
+    },
+    {
+      "key": "cancelUrl",
+      "value": "https://merchant.example/cancel"
+    }
+  ],
+  "item": [
+    {
+      "name": "0. Checkout session",
+      "item": [
+        {
+          "name": "Create Checkout Session",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('nonce', 'nonce_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "const sid = j?.data?.sessionId || j?.data?.SessionId || j?.data?.uuid || j?.sessionId;",
+                  "if (sid) { pm.collectionVariables.set('sessionId', sid); console.log('sessionId', sid); }",
+                  "const payUrl = j?.data?.paymentUrl || j?.data?.approvalUrl;",
+                  "if (payUrl) { pm.collectionVariables.set('paymentUrl', payUrl); console.log('paymentUrl/approvalUrl', payUrl); }",
+                  "const orderId = j?.data?.orderId;",
+                  "if (orderId) { pm.collectionVariables.set('orderId', orderId); console.log('orderId', orderId); }",
+                  "const txn = j?.data?.transaction?.transactionId || j?.data?.captureId;",
+                  "if (txn) { pm.collectionVariables.set('transactionId', txn); console.log('transactionId', txn); }"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-arifpay-key",
+                "value": "{{arifpayKey}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/checkout/session",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cancelUrl\": \"{{cancelUrl}}\",\n  \"phone\": \"{{phone}}\",\n  \"email\": \"{{email}}\",\n  \"nonce\": \"{{nonce}}\",\n  \"errorUrl\": \"{{errorUrl}}\",\n  \"notifyUrl\": \"{{notifyUrl}}\",\n  \"successUrl\": \"{{successUrl}}\",\n  \"expireDate\": \"{{expireDate}}\",\n  \"items\": [\n    { \"name\": \"Product\", \"quantity\": 1, \"price\": {{amount}}, \"description\": \"Production test item\" }\n  ],\n  \"lang\": \"EN\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Get Checkout Session",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('sessionId')) { throw new Error('Run Create Checkout Session first'); }"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-arifpay-key",
+                "value": "{{arifpayKey}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/checkout/session/{{sessionId}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "1. C2B Direct",
+      "description": "Request DTOs differ by rail (master-test). TransferResponse = { sessionId, transaction, otp, url, page }. BOA returns raw HTML/string. Ebirr production paths are session then /{slug}/transfer (no /direct/transfer).",
+      "item": [
+        {
+          "name": "Telebirr USSD — transfer/direct (creates session)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('nonce', 'nonce_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "const sid = j?.data?.sessionId || j?.data?.SessionId || j?.data?.uuid || j?.sessionId;",
+                  "if (sid) { pm.collectionVariables.set('sessionId', sid); console.log('sessionId', sid); }",
+                  "const payUrl = j?.data?.paymentUrl || j?.data?.approvalUrl;",
+                  "if (payUrl) { pm.collectionVariables.set('paymentUrl', payUrl); console.log('paymentUrl/approvalUrl', payUrl); }",
+                  "const orderId = j?.data?.orderId;",
+                  "if (orderId) { pm.collectionVariables.set('orderId', orderId); console.log('orderId', orderId); }",
+                  "const txn = j?.data?.transaction?.transactionId || j?.data?.captureId;",
+                  "if (txn) { pm.collectionVariables.set('transactionId', txn); console.log('transactionId', txn); }"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-arifpay-key",
+                "value": "{{arifpayKey}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/checkout/telebirr-ussd/transfer/direct",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cancelUrl\": \"{{cancelUrl}}\",\n  \"phone\": \"{{phone}}\",\n  \"email\": \"{{email}}\",\n  \"nonce\": \"{{nonce}}\",\n  \"errorUrl\": \"{{errorUrl}}\",\n  \"notifyUrl\": \"{{notifyUrl}}\",\n  \"successUrl\": \"{{successUrl}}\",\n  \"expireDate\": \"{{expireDate}}\",\n  \"items\": [\n    { \"name\": \"Product\", \"quantity\": 1, \"price\": {{amount}}, \"description\": \"Production test item\" }\n  ],\n  \"lang\": \"EN\"\n}"
+            }
+          }
+        },
+        {
+          "name": "M-Pesa — transfer/direct (MpesaDirectRequest, phone 2517…)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('nonce', 'nonce_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "const sid = j?.data?.sessionId || j?.data?.SessionId || j?.data?.uuid || j?.sessionId;",
+                  "if (sid) { pm.collectionVariables.set('sessionId', sid); console.log('sessionId', sid); }",
+                  "const payUrl = j?.data?.paymentUrl || j?.data?.approvalUrl;",
+                  "if (payUrl) { pm.collectionVariables.set('paymentUrl', payUrl); console.log('paymentUrl/approvalUrl', payUrl); }",
+                  "const orderId = j?.data?.orderId;",
+                  "if (orderId) { pm.collectionVariables.set('orderId', orderId); console.log('orderId', orderId); }",
+                  "const txn = j?.data?.transaction?.transactionId || j?.data?.captureId;",
+                  "if (txn) { pm.collectionVariables.set('transactionId', txn); console.log('transactionId', txn); }"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-arifpay-key",
+                "value": "{{arifpayKey}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/checkout/mpesa/transfer/direct",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cancelUrl\": \"{{cancelUrl}}\",\n  \"phone\": \"{{mpesaPhone}}\",\n  \"email\": \"{{email}}\",\n  \"nonce\": \"{{nonce}}\",\n  \"errorUrl\": \"{{errorUrl}}\",\n  \"notifyUrl\": \"{{notifyUrl}}\",\n  \"successUrl\": \"{{successUrl}}\",\n  \"expireDate\": \"{{expireDate}}\",\n  \"items\": [\n    { \"name\": \"Product\", \"quantity\": 1, \"price\": {{amount}}, \"description\": \"Production test item\" }\n  ],\n  \"lang\": \"EN\"\n}"
+            }
+          }
+        },
+        {
+          "name": "CBE",
+          "item": [
+            {
+              "name": "Create session",
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.collectionVariables.set('nonce', 'nonce_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10));"
+                    ]
+                  }
+                },
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const j = pm.response.json();",
+                      "const sid = j?.data?.sessionId || j?.data?.SessionId || j?.data?.uuid || j?.sessionId;",
+                      "if (sid) { pm.collectionVariables.set('sessionId', sid); console.log('sessionId', sid); }",
+                      "const payUrl = j?.data?.paymentUrl || j?.data?.approvalUrl;",
+                      "if (payUrl) { pm.collectionVariables.set('paymentUrl', payUrl); console.log('paymentUrl/approvalUrl', payUrl); }",
+                      "const orderId = j?.data?.orderId;",
+                      "if (orderId) { pm.collectionVariables.set('orderId', orderId); console.log('orderId', orderId); }",
+                      "const txn = j?.data?.transaction?.transactionId || j?.data?.captureId;",
+                      "if (txn) { pm.collectionVariables.set('transactionId', txn); console.log('transactionId', txn); }"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "x-arifpay-key",
+                    "value": "{{arifpayKey}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/api/checkout/session",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"cancelUrl\": \"{{cancelUrl}}\",\n  \"phone\": \"{{phone}}\",\n  \"email\": \"{{email}}\",\n  \"nonce\": \"{{nonce}}\",\n  \"errorUrl\": \"{{errorUrl}}\",\n  \"notifyUrl\": \"{{notifyUrl}}\",\n  \"successUrl\": \"{{successUrl}}\",\n  \"expireDate\": \"{{expireDate}}\",\n  \"items\": [\n    { \"name\": \"Product\", \"quantity\": 1, \"price\": {{amount}}, \"description\": \"Production test item\" }\n  ],\n  \"lang\": \"EN\"\n}"
+                }
+              }
+            },
+            {
+              "name": "Transfer (ThirdPartyPaymentRequest)",
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (!pm.collectionVariables.get('sessionId')) { throw new Error('Run Create Checkout Session first'); }"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "x-arifpay-key",
+                    "value": "{{arifpayKey}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/api/checkout/cbe/transfer",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"sessionId\": \"{{sessionId}}\",\n  \"phoneNumber\": \"{{phone}}\"\n}"
+                }
+              }
+            },
+            {
+              "name": "Direct transfer (ThirdPartyPaymentRequest — existing session)",
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (!pm.collectionVariables.get('sessionId')) { throw new Error('Run Create Checkout Session first'); }"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "x-arifpay-key",
+                    "value": "{{arifpayKey}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/api/checkout/cbe/direct/transfer",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"sessionId\": \"{{sessionId}}\",\n  \"phoneNumber\": \"{{phone}}\"\n}"
+                }
+              }
+            },
+            {
+              "name": "V2 Direct (CheckoutSessionRequest — create + pay)",
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.collectionVariables.set('nonce', 'nonce_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10));"
+                    ]
+                  }
+                },
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const j = pm.response.json();",
+                      "const sid = j?.data?.sessionId || j?.data?.SessionId || j?.data?.uuid || j?.sessionId;",
+                      "if (sid) { pm.collectionVariables.set('sessionId', sid); console.log('sessionId', sid); }",
+                      "const payUrl = j?.data?.paymentUrl || j?.data?.approvalUrl;",
+                      "if (payUrl) { pm.collectionVariables.set('paymentUrl', payUrl); console.log('paymentUrl/approvalUrl', payUrl); }",
+                      "const orderId = j?.data?.orderId;",
+                      "if (orderId) { pm.collectionVariables.set('orderId', orderId); console.log('orderId', orderId); }",
+                      "const txn = j?.data?.transaction?.transactionId || j?.data?.captureId;",
+                      "if (txn) { pm.collectionVariables.set('transactionId', txn); console.log('transactionId', txn); }"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "x-arifpay-key",
+                    "value": "{{arifpayKey}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/api/checkout/v2/cbe/direct/transfer",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"cancelUrl\": \"{{cancelUrl}}\",\n  \"phone\": \"{{phone}}\",\n  \"email\": \"{{email}}\",\n  \"nonce\": \"{{nonce}}\",\n  \"errorUrl\": \"{{errorUrl}}\",\n  \"notifyUrl\": \"{{notifyUrl}}\",\n  \"successUrl\": \"{{successUrl}}\",\n  \"expireDate\": \"{{expireDate}}\",\n  \"items\": [\n    { \"name\": \"Product\", \"quantity\": 1, \"price\": {{amount}}, \"description\": \"Production test item\" }\n  ],\n  \"lang\": \"EN\"\n}"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "BOA (session then transfer — response is HTML/string, not JSON)",
+          "item": [
+            {
+              "name": "BOA — Create session",
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.collectionVariables.set('nonce', 'nonce_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10));"
+                    ]
+                  }
+                },
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const j = pm.response.json();",
+                      "const sid = j?.data?.sessionId || j?.data?.SessionId || j?.data?.uuid || j?.sessionId;",
+                      "if (sid) { pm.collectionVariables.set('sessionId', sid); console.log('sessionId', sid); }",
+                      "const payUrl = j?.data?.paymentUrl || j?.data?.approvalUrl;",
+                      "if (payUrl) { pm.collectionVariables.set('paymentUrl', payUrl); console.log('paymentUrl/approvalUrl', payUrl); }",
+                      "const orderId = j?.data?.orderId;",
+                      "if (orderId) { pm.collectionVariables.set('orderId', orderId); console.log('orderId', orderId); }",
+                      "const txn = j?.data?.transaction?.transactionId || j?.data?.captureId;",
+                      "if (txn) { pm.collectionVariables.set('transactionId', txn); console.log('transactionId', txn); }"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "x-arifpay-key",
+                    "value": "{{arifpayKey}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/api/checkout/session",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"cancelUrl\": \"{{cancelUrl}}\",\n  \"phone\": \"{{phone}}\",\n  \"email\": \"{{email}}\",\n  \"nonce\": \"{{nonce}}\",\n  \"errorUrl\": \"{{errorUrl}}\",\n  \"notifyUrl\": \"{{notifyUrl}}\",\n  \"successUrl\": \"{{successUrl}}\",\n  \"expireDate\": \"{{expireDate}}\",\n  \"items\": [\n    { \"name\": \"Product\", \"quantity\": 1, \"price\": {{amount}}, \"description\": \"Production test item\" }\n  ],\n  \"lang\": \"EN\"\n}"
+                }
+              }
+            },
+            {
+              "name": "BOA — direct/transfer (ThirdPartyPaymentRequest; phoneNumber optional)",
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (!pm.collectionVariables.get('sessionId')) { throw new Error('Run Create Checkout Session first'); }"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "x-arifpay-key",
+                    "value": "{{arifpayKey}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/api/checkout/boa/direct/transfer",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"sessionId\": \"{{sessionId}}\"\n}"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Awash — direct/transfer (CheckoutSessionRequest)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('nonce', 'nonce_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "const sid = j?.data?.sessionId || j?.data?.SessionId || j?.data?.uuid || j?.sessionId;",
+                  "if (sid) { pm.collectionVariables.set('sessionId', sid); console.log('sessionId', sid); }",
+                  "const payUrl = j?.data?.paymentUrl || j?.data?.approvalUrl;",
+                  "if (payUrl) { pm.collectionVariables.set('paymentUrl', payUrl); console.log('paymentUrl/approvalUrl', payUrl); }",
+                  "const orderId = j?.data?.orderId;",
+                  "if (orderId) { pm.collectionVariables.set('orderId', orderId); console.log('orderId', orderId); }",
+                  "const txn = j?.data?.transaction?.transactionId || j?.data?.captureId;",
+                  "if (txn) { pm.collectionVariables.set('transactionId', txn); console.log('transactionId', txn); }"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-arifpay-key",
+                "value": "{{arifpayKey}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/checkout/awash/direct/transfer",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cancelUrl\": \"{{cancelUrl}}\",\n  \"phone\": \"{{phone}}\",\n  \"email\": \"{{email}}\",\n  \"nonce\": \"{{nonce}}\",\n  \"errorUrl\": \"{{errorUrl}}\",\n  \"notifyUrl\": \"{{notifyUrl}}\",\n  \"successUrl\": \"{{successUrl}}\",\n  \"expireDate\": \"{{expireDate}}\",\n  \"items\": [\n    { \"name\": \"Product\", \"quantity\": 1, \"price\": {{amount}}, \"description\": \"Production test item\" }\n  ],\n  \"lang\": \"EN\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Yaya",
+          "item": [
+            {
+              "name": "Create session",
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.collectionVariables.set('nonce', 'nonce_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10));"
+                    ]
+                  }
+                },
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const j = pm.response.json();",
+                      "const sid = j?.data?.sessionId || j?.data?.SessionId || j?.data?.uuid || j?.sessionId;",
+                      "if (sid) { pm.collectionVariables.set('sessionId', sid); console.log('sessionId', sid); }",
+                      "const payUrl = j?.data?.paymentUrl || j?.data?.approvalUrl;",
+                      "if (payUrl) { pm.collectionVariables.set('paymentUrl', payUrl); console.log('paymentUrl/approvalUrl', payUrl); }",
+                      "const orderId = j?.data?.orderId;",
+                      "if (orderId) { pm.collectionVariables.set('orderId', orderId); console.log('orderId', orderId); }",
+                      "const txn = j?.data?.transaction?.transactionId || j?.data?.captureId;",
+                      "if (txn) { pm.collectionVariables.set('transactionId', txn); console.log('transactionId', txn); }"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "x-arifpay-key",
+                    "value": "{{arifpayKey}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/api/checkout/session",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"cancelUrl\": \"{{cancelUrl}}\",\n  \"phone\": \"{{phone}}\",\n  \"email\": \"{{email}}\",\n  \"nonce\": \"{{nonce}}\",\n  \"errorUrl\": \"{{errorUrl}}\",\n  \"notifyUrl\": \"{{notifyUrl}}\",\n  \"successUrl\": \"{{successUrl}}\",\n  \"expireDate\": \"{{expireDate}}\",\n  \"items\": [\n    { \"name\": \"Product\", \"quantity\": 1, \"price\": {{amount}}, \"description\": \"Production test item\" }\n  ],\n  \"lang\": \"EN\"\n}"
+                }
+              }
+            },
+            {
+              "name": "Transfer (ThirdPartyPaymentRequest — phoneNumber needed)",
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (!pm.collectionVariables.get('sessionId')) { throw new Error('Run Create Checkout Session first'); }"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "x-arifpay-key",
+                    "value": "{{arifpayKey}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/api/checkout/yaya/transfer",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"sessionId\": \"{{sessionId}}\",\n  \"phoneNumber\": \"{{phone}}\"\n}"
+                }
+              }
+            },
+            {
+              "name": "Direct transfer (CheckoutSessionRequest)",
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.collectionVariables.set('nonce', 'nonce_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10));"
+                    ]
+                  }
+                },
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const j = pm.response.json();",
+                      "const sid = j?.data?.sessionId || j?.data?.SessionId || j?.data?.uuid || j?.sessionId;",
+                      "if (sid) { pm.collectionVariables.set('sessionId', sid); console.log('sessionId', sid); }",
+                      "const payUrl = j?.data?.paymentUrl || j?.data?.approvalUrl;",
+                      "if (payUrl) { pm.collectionVariables.set('paymentUrl', payUrl); console.log('paymentUrl/approvalUrl', payUrl); }",
+                      "const orderId = j?.data?.orderId;",
+                      "if (orderId) { pm.collectionVariables.set('orderId', orderId); console.log('orderId', orderId); }",
+                      "const txn = j?.data?.transaction?.transactionId || j?.data?.captureId;",
+                      "if (txn) { pm.collectionVariables.set('transactionId', txn); console.log('transactionId', txn); }"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "x-arifpay-key",
+                    "value": "{{arifpayKey}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/api/checkout/yaya/direct/transfer",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"cancelUrl\": \"{{cancelUrl}}\",\n  \"phone\": \"{{phone}}\",\n  \"email\": \"{{email}}\",\n  \"nonce\": \"{{nonce}}\",\n  \"errorUrl\": \"{{errorUrl}}\",\n  \"notifyUrl\": \"{{notifyUrl}}\",\n  \"successUrl\": \"{{successUrl}}\",\n  \"expireDate\": \"{{expireDate}}\",\n  \"items\": [\n    { \"name\": \"Product\", \"quantity\": 1, \"price\": {{amount}}, \"description\": \"Production test item\" }\n  ],\n  \"lang\": \"EN\"\n}"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Zamzam",
+          "item": [
+            {
+              "name": "Create session",
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.collectionVariables.set('nonce', 'nonce_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10));"
+                    ]
+                  }
+                },
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const j = pm.response.json();",
+                      "const sid = j?.data?.sessionId || j?.data?.SessionId || j?.data?.uuid || j?.sessionId;",
+                      "if (sid) { pm.collectionVariables.set('sessionId', sid); console.log('sessionId', sid); }",
+                      "const payUrl = j?.data?.paymentUrl || j?.data?.approvalUrl;",
+                      "if (payUrl) { pm.collectionVariables.set('paymentUrl', payUrl); console.log('paymentUrl/approvalUrl', payUrl); }",
+                      "const orderId = j?.data?.orderId;",
+                      "if (orderId) { pm.collectionVariables.set('orderId', orderId); console.log('orderId', orderId); }",
+                      "const txn = j?.data?.transaction?.transactionId || j?.data?.captureId;",
+                      "if (txn) { pm.collectionVariables.set('transactionId', txn); console.log('transactionId', txn); }"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "x-arifpay-key",
+                    "value": "{{arifpayKey}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/api/checkout/session",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"cancelUrl\": \"{{cancelUrl}}\",\n  \"phone\": \"{{phone}}\",\n  \"email\": \"{{email}}\",\n  \"nonce\": \"{{nonce}}\",\n  \"errorUrl\": \"{{errorUrl}}\",\n  \"notifyUrl\": \"{{notifyUrl}}\",\n  \"successUrl\": \"{{successUrl}}\",\n  \"expireDate\": \"{{expireDate}}\",\n  \"items\": [\n    { \"name\": \"Product\", \"quantity\": 1, \"price\": {{amount}}, \"description\": \"Production test item\" }\n  ],\n  \"lang\": \"EN\"\n}"
+                }
+              }
+            },
+            {
+              "name": "Transfer (BankPaymentsRequest: sessionId + accountNumber)",
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (!pm.collectionVariables.get('sessionId')) { throw new Error('Run Create Checkout Session first'); }"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "x-arifpay-key",
+                    "value": "{{arifpayKey}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/api/checkout/zamzam/transfer",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"sessionId\": \"{{sessionId}}\",\n  \"accountNumber\": \"{{accountNumber}}\"\n}"
+                }
+              }
+            },
+            {
+              "name": "Verify OTP (OTPAccountVerifyOTP: sessionId + otp + accountNumber)",
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (!pm.collectionVariables.get('sessionId')) { throw new Error('Run Create Checkout Session first'); }"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "x-arifpay-key",
+                    "value": "{{arifpayKey}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/api/checkout/zamzam/verify/otp",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"sessionId\": \"{{sessionId}}\",\n  \"otp\": \"{{otp}}\",\n  \"accountNumber\": \"{{accountNumber}}\"\n}"
+                }
+              }
+            },
+            {
+              "name": "Direct transfer (CheckoutSessionRequest + accountNumber)",
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.collectionVariables.set('nonce', 'nonce_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10));"
+                    ]
+                  }
+                },
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const j = pm.response.json();",
+                      "const sid = j?.data?.sessionId || j?.data?.SessionId || j?.data?.uuid || j?.sessionId;",
+                      "if (sid) { pm.collectionVariables.set('sessionId', sid); console.log('sessionId', sid); }",
+                      "const payUrl = j?.data?.paymentUrl || j?.data?.approvalUrl;",
+                      "if (payUrl) { pm.collectionVariables.set('paymentUrl', payUrl); console.log('paymentUrl/approvalUrl', payUrl); }",
+                      "const orderId = j?.data?.orderId;",
+                      "if (orderId) { pm.collectionVariables.set('orderId', orderId); console.log('orderId', orderId); }",
+                      "const txn = j?.data?.transaction?.transactionId || j?.data?.captureId;",
+                      "if (txn) { pm.collectionVariables.set('transactionId', txn); console.log('transactionId', txn); }"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "x-arifpay-key",
+                    "value": "{{arifpayKey}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/api/checkout/zamzam/direct/transfer",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"cancelUrl\": \"{{cancelUrl}}\",\n  \"phone\": \"{{phone}}\",\n  \"email\": \"{{email}}\",\n  \"nonce\": \"{{nonce}}\",\n  \"errorUrl\": \"{{errorUrl}}\",\n  \"notifyUrl\": \"{{notifyUrl}}\",\n  \"successUrl\": \"{{successUrl}}\",\n  \"expireDate\": \"{{expireDate}}\",\n  \"items\": [\n    { \"name\": \"Product\", \"quantity\": 1, \"price\": {{amount}}, \"description\": \"Production test item\" }\n  ],\n  \"accountNumber\": \"{{accountNumber}}\",\n  \"lang\": \"EN\"\n}"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Kacha",
+          "item": [
+            {
+              "name": "Create session",
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.collectionVariables.set('nonce', 'nonce_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10));"
+                    ]
+                  }
+                },
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const j = pm.response.json();",
+                      "const sid = j?.data?.sessionId || j?.data?.SessionId || j?.data?.uuid || j?.sessionId;",
+                      "if (sid) { pm.collectionVariables.set('sessionId', sid); console.log('sessionId', sid); }",
+                      "const payUrl = j?.data?.paymentUrl || j?.data?.approvalUrl;",
+                      "if (payUrl) { pm.collectionVariables.set('paymentUrl', payUrl); console.log('paymentUrl/approvalUrl', payUrl); }",
+                      "const orderId = j?.data?.orderId;",
+                      "if (orderId) { pm.collectionVariables.set('orderId', orderId); console.log('orderId', orderId); }",
+                      "const txn = j?.data?.transaction?.transactionId || j?.data?.captureId;",
+                      "if (txn) { pm.collectionVariables.set('transactionId', txn); console.log('transactionId', txn); }"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "x-arifpay-key",
+                    "value": "{{arifpayKey}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/api/checkout/session",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"cancelUrl\": \"{{cancelUrl}}\",\n  \"phone\": \"{{phone}}\",\n  \"email\": \"{{email}}\",\n  \"nonce\": \"{{nonce}}\",\n  \"errorUrl\": \"{{errorUrl}}\",\n  \"notifyUrl\": \"{{notifyUrl}}\",\n  \"successUrl\": \"{{successUrl}}\",\n  \"expireDate\": \"{{expireDate}}\",\n  \"items\": [\n    { \"name\": \"Product\", \"quantity\": 1, \"price\": {{amount}}, \"description\": \"Production test item\" }\n  ],\n  \"lang\": \"EN\"\n}"
+                }
+              }
+            },
+            {
+              "name": "Transfer (PaymentWalletRequest)",
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (!pm.collectionVariables.get('sessionId')) { throw new Error('Run Create Checkout Session first'); }"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "x-arifpay-key",
+                    "value": "{{arifpayKey}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/api/checkout/kacha/transfer",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"sessionId\": \"{{sessionId}}\",\n  \"phoneNumber\": \"{{phone}}\"\n}"
+                }
+              }
+            },
+            {
+              "name": "Direct transfer (CheckoutSessionRequest)",
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.collectionVariables.set('nonce', 'nonce_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10));"
+                    ]
+                  }
+                },
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const j = pm.response.json();",
+                      "const sid = j?.data?.sessionId || j?.data?.SessionId || j?.data?.uuid || j?.sessionId;",
+                      "if (sid) { pm.collectionVariables.set('sessionId', sid); console.log('sessionId', sid); }",
+                      "const payUrl = j?.data?.paymentUrl || j?.data?.approvalUrl;",
+                      "if (payUrl) { pm.collectionVariables.set('paymentUrl', payUrl); console.log('paymentUrl/approvalUrl', payUrl); }",
+                      "const orderId = j?.data?.orderId;",
+                      "if (orderId) { pm.collectionVariables.set('orderId', orderId); console.log('orderId', orderId); }",
+                      "const txn = j?.data?.transaction?.transactionId || j?.data?.captureId;",
+                      "if (txn) { pm.collectionVariables.set('transactionId', txn); console.log('transactionId', txn); }"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "x-arifpay-key",
+                    "value": "{{arifpayKey}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/api/checkout/kacha/direct/transfer",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"cancelUrl\": \"{{cancelUrl}}\",\n  \"phone\": \"{{phone}}\",\n  \"email\": \"{{email}}\",\n  \"nonce\": \"{{nonce}}\",\n  \"errorUrl\": \"{{errorUrl}}\",\n  \"notifyUrl\": \"{{notifyUrl}}\",\n  \"successUrl\": \"{{successUrl}}\",\n  \"expireDate\": \"{{expireDate}}\",\n  \"items\": [\n    { \"name\": \"Product\", \"quantity\": 1, \"price\": {{amount}}, \"description\": \"Production test item\" }\n  ],\n  \"lang\": \"EN\"\n}"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Ebirr variants (session then transfer)",
+          "item": [
+            {
+              "name": "Kaafi — Create session",
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.collectionVariables.set('nonce', 'nonce_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10));"
+                    ]
+                  }
+                },
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const j = pm.response.json();",
+                      "const sid = j?.data?.sessionId || j?.data?.SessionId || j?.data?.uuid || j?.sessionId;",
+                      "if (sid) { pm.collectionVariables.set('sessionId', sid); console.log('sessionId', sid); }",
+                      "const payUrl = j?.data?.paymentUrl || j?.data?.approvalUrl;",
+                      "if (payUrl) { pm.collectionVariables.set('paymentUrl', payUrl); console.log('paymentUrl/approvalUrl', payUrl); }",
+                      "const orderId = j?.data?.orderId;",
+                      "if (orderId) { pm.collectionVariables.set('orderId', orderId); console.log('orderId', orderId); }",
+                      "const txn = j?.data?.transaction?.transactionId || j?.data?.captureId;",
+                      "if (txn) { pm.collectionVariables.set('transactionId', txn); console.log('transactionId', txn); }"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "x-arifpay-key",
+                    "value": "{{arifpayKey}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/api/checkout/session",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"cancelUrl\": \"{{cancelUrl}}\",\n  \"phone\": \"{{phone}}\",\n  \"email\": \"{{email}}\",\n  \"nonce\": \"{{nonce}}\",\n  \"errorUrl\": \"{{errorUrl}}\",\n  \"notifyUrl\": \"{{notifyUrl}}\",\n  \"successUrl\": \"{{successUrl}}\",\n  \"expireDate\": \"{{expireDate}}\",\n  \"items\": [\n    { \"name\": \"Product\", \"quantity\": 1, \"price\": {{amount}}, \"description\": \"Production test item\" }\n  ],\n  \"lang\": \"EN\"\n}"
+                }
+              }
+            },
+            {
+              "name": "Kaafi — transfer (PaymentWalletRequest)",
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (!pm.collectionVariables.get('sessionId')) { throw new Error('Run Create Checkout Session first'); }"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "x-arifpay-key",
+                    "value": "{{arifpayKey}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/api/checkout/kaafi-ebirr/transfer",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"sessionId\": \"{{sessionId}}\",\n  \"phoneNumber\": \"{{phone}}\"\n}"
+                }
+              }
+            },
+            {
+              "name": "Coopay — Create session",
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.collectionVariables.set('nonce', 'nonce_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10));"
+                    ]
+                  }
+                },
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const j = pm.response.json();",
+                      "const sid = j?.data?.sessionId || j?.data?.SessionId || j?.data?.uuid || j?.sessionId;",
+                      "if (sid) { pm.collectionVariables.set('sessionId', sid); console.log('sessionId', sid); }",
+                      "const payUrl = j?.data?.paymentUrl || j?.data?.approvalUrl;",
+                      "if (payUrl) { pm.collectionVariables.set('paymentUrl', payUrl); console.log('paymentUrl/approvalUrl', payUrl); }",
+                      "const orderId = j?.data?.orderId;",
+                      "if (orderId) { pm.collectionVariables.set('orderId', orderId); console.log('orderId', orderId); }",
+                      "const txn = j?.data?.transaction?.transactionId || j?.data?.captureId;",
+                      "if (txn) { pm.collectionVariables.set('transactionId', txn); console.log('transactionId', txn); }"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "x-arifpay-key",
+                    "value": "{{arifpayKey}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/api/checkout/session",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"cancelUrl\": \"{{cancelUrl}}\",\n  \"phone\": \"{{phone}}\",\n  \"email\": \"{{email}}\",\n  \"nonce\": \"{{nonce}}\",\n  \"errorUrl\": \"{{errorUrl}}\",\n  \"notifyUrl\": \"{{notifyUrl}}\",\n  \"successUrl\": \"{{successUrl}}\",\n  \"expireDate\": \"{{expireDate}}\",\n  \"items\": [\n    { \"name\": \"Product\", \"quantity\": 1, \"price\": {{amount}}, \"description\": \"Production test item\" }\n  ],\n  \"lang\": \"EN\"\n}"
+                }
+              }
+            },
+            {
+              "name": "Coopay — transfer (PaymentWalletRequest)",
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (!pm.collectionVariables.get('sessionId')) { throw new Error('Run Create Checkout Session first'); }"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "x-arifpay-key",
+                    "value": "{{arifpayKey}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/api/checkout/coopay-ebirr/transfer",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"sessionId\": \"{{sessionId}}\",\n  \"phoneNumber\": \"{{phone}}\"\n}"
+                }
+              }
+            },
+            {
+              "name": "Wegagen — Create session",
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.collectionVariables.set('nonce', 'nonce_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10));"
+                    ]
+                  }
+                },
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const j = pm.response.json();",
+                      "const sid = j?.data?.sessionId || j?.data?.SessionId || j?.data?.uuid || j?.sessionId;",
+                      "if (sid) { pm.collectionVariables.set('sessionId', sid); console.log('sessionId', sid); }",
+                      "const payUrl = j?.data?.paymentUrl || j?.data?.approvalUrl;",
+                      "if (payUrl) { pm.collectionVariables.set('paymentUrl', payUrl); console.log('paymentUrl/approvalUrl', payUrl); }",
+                      "const orderId = j?.data?.orderId;",
+                      "if (orderId) { pm.collectionVariables.set('orderId', orderId); console.log('orderId', orderId); }",
+                      "const txn = j?.data?.transaction?.transactionId || j?.data?.captureId;",
+                      "if (txn) { pm.collectionVariables.set('transactionId', txn); console.log('transactionId', txn); }"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "x-arifpay-key",
+                    "value": "{{arifpayKey}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/api/checkout/session",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"cancelUrl\": \"{{cancelUrl}}\",\n  \"phone\": \"{{phone}}\",\n  \"email\": \"{{email}}\",\n  \"nonce\": \"{{nonce}}\",\n  \"errorUrl\": \"{{errorUrl}}\",\n  \"notifyUrl\": \"{{notifyUrl}}\",\n  \"successUrl\": \"{{successUrl}}\",\n  \"expireDate\": \"{{expireDate}}\",\n  \"items\": [\n    { \"name\": \"Product\", \"quantity\": 1, \"price\": {{amount}}, \"description\": \"Production test item\" }\n  ],\n  \"lang\": \"EN\"\n}"
+                }
+              }
+            },
+            {
+              "name": "Wegagen — transfer (PaymentWalletRequest)",
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (!pm.collectionVariables.get('sessionId')) { throw new Error('Run Create Checkout Session first'); }"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "x-arifpay-key",
+                    "value": "{{arifpayKey}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/api/checkout/wegagen-ebirr/transfer",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"sessionId\": \"{{sessionId}}\",\n  \"phoneNumber\": \"{{phone}}\"\n}"
+                }
+              }
+            },
+            {
+              "name": "Nib — Create session",
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.collectionVariables.set('nonce', 'nonce_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10));"
+                    ]
+                  }
+                },
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const j = pm.response.json();",
+                      "const sid = j?.data?.sessionId || j?.data?.SessionId || j?.data?.uuid || j?.sessionId;",
+                      "if (sid) { pm.collectionVariables.set('sessionId', sid); console.log('sessionId', sid); }",
+                      "const payUrl = j?.data?.paymentUrl || j?.data?.approvalUrl;",
+                      "if (payUrl) { pm.collectionVariables.set('paymentUrl', payUrl); console.log('paymentUrl/approvalUrl', payUrl); }",
+                      "const orderId = j?.data?.orderId;",
+                      "if (orderId) { pm.collectionVariables.set('orderId', orderId); console.log('orderId', orderId); }",
+                      "const txn = j?.data?.transaction?.transactionId || j?.data?.captureId;",
+                      "if (txn) { pm.collectionVariables.set('transactionId', txn); console.log('transactionId', txn); }"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "x-arifpay-key",
+                    "value": "{{arifpayKey}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/api/checkout/session",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"cancelUrl\": \"{{cancelUrl}}\",\n  \"phone\": \"{{phone}}\",\n  \"email\": \"{{email}}\",\n  \"nonce\": \"{{nonce}}\",\n  \"errorUrl\": \"{{errorUrl}}\",\n  \"notifyUrl\": \"{{notifyUrl}}\",\n  \"successUrl\": \"{{successUrl}}\",\n  \"expireDate\": \"{{expireDate}}\",\n  \"items\": [\n    { \"name\": \"Product\", \"quantity\": 1, \"price\": {{amount}}, \"description\": \"Production test item\" }\n  ],\n  \"lang\": \"EN\"\n}"
+                }
+              }
+            },
+            {
+              "name": "Nib — transfer (PaymentWalletRequest)",
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (!pm.collectionVariables.get('sessionId')) { throw new Error('Run Create Checkout Session first'); }"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "x-arifpay-key",
+                    "value": "{{arifpayKey}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/api/checkout/nib-ebirr/transfer",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"sessionId\": \"{{sessionId}}\",\n  \"phoneNumber\": \"{{phone}}\"\n}"
+                }
+              }
+            },
+            {
+              "name": "Ahadu — Create session",
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.collectionVariables.set('nonce', 'nonce_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10));"
+                    ]
+                  }
+                },
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const j = pm.response.json();",
+                      "const sid = j?.data?.sessionId || j?.data?.SessionId || j?.data?.uuid || j?.sessionId;",
+                      "if (sid) { pm.collectionVariables.set('sessionId', sid); console.log('sessionId', sid); }",
+                      "const payUrl = j?.data?.paymentUrl || j?.data?.approvalUrl;",
+                      "if (payUrl) { pm.collectionVariables.set('paymentUrl', payUrl); console.log('paymentUrl/approvalUrl', payUrl); }",
+                      "const orderId = j?.data?.orderId;",
+                      "if (orderId) { pm.collectionVariables.set('orderId', orderId); console.log('orderId', orderId); }",
+                      "const txn = j?.data?.transaction?.transactionId || j?.data?.captureId;",
+                      "if (txn) { pm.collectionVariables.set('transactionId', txn); console.log('transactionId', txn); }"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "x-arifpay-key",
+                    "value": "{{arifpayKey}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/api/checkout/session",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"cancelUrl\": \"{{cancelUrl}}\",\n  \"phone\": \"{{phone}}\",\n  \"email\": \"{{email}}\",\n  \"nonce\": \"{{nonce}}\",\n  \"errorUrl\": \"{{errorUrl}}\",\n  \"notifyUrl\": \"{{notifyUrl}}\",\n  \"successUrl\": \"{{successUrl}}\",\n  \"expireDate\": \"{{expireDate}}\",\n  \"items\": [\n    { \"name\": \"Product\", \"quantity\": 1, \"price\": {{amount}}, \"description\": \"Production test item\" }\n  ],\n  \"lang\": \"EN\"\n}"
+                }
+              }
+            },
+            {
+              "name": "Ahadu — transfer (PaymentWalletRequest)",
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (!pm.collectionVariables.get('sessionId')) { throw new Error('Run Create Checkout Session first'); }"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "x-arifpay-key",
+                    "value": "{{arifpayKey}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/api/checkout/ahadu-ebirr/transfer",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"sessionId\": \"{{sessionId}}\",\n  \"phoneNumber\": \"{{phone}}\"\n}"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. C2B OTP",
+      "description": "Binget OTP on production master-test. Ahadu is omitted (no controller on master-test). Initiate success msg: \"OTP Sent Successfully\".",
+      "item": [
+        {
+          "name": "Binget",
+          "item": [
+            {
+              "name": "Create session",
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.collectionVariables.set('nonce', 'nonce_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10));"
+                    ]
+                  }
+                },
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const j = pm.response.json();",
+                      "const sid = j?.data?.sessionId || j?.data?.SessionId || j?.data?.uuid || j?.sessionId;",
+                      "if (sid) { pm.collectionVariables.set('sessionId', sid); console.log('sessionId', sid); }",
+                      "const payUrl = j?.data?.paymentUrl || j?.data?.approvalUrl;",
+                      "if (payUrl) { pm.collectionVariables.set('paymentUrl', payUrl); console.log('paymentUrl/approvalUrl', payUrl); }",
+                      "const orderId = j?.data?.orderId;",
+                      "if (orderId) { pm.collectionVariables.set('orderId', orderId); console.log('orderId', orderId); }",
+                      "const txn = j?.data?.transaction?.transactionId || j?.data?.captureId;",
+                      "if (txn) { pm.collectionVariables.set('transactionId', txn); console.log('transactionId', txn); }"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "x-arifpay-key",
+                    "value": "{{arifpayKey}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/api/checkout/session",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"cancelUrl\": \"{{cancelUrl}}\",\n  \"phone\": \"{{phone}}\",\n  \"email\": \"{{email}}\",\n  \"nonce\": \"{{nonce}}\",\n  \"errorUrl\": \"{{errorUrl}}\",\n  \"notifyUrl\": \"{{notifyUrl}}\",\n  \"successUrl\": \"{{successUrl}}\",\n  \"expireDate\": \"{{expireDate}}\",\n  \"items\": [\n    { \"name\": \"Product\", \"quantity\": 1, \"price\": {{amount}}, \"description\": \"Production test item\" }\n  ],\n  \"lang\": \"EN\"\n}"
+                }
+              }
+            },
+            {
+              "name": "Initiate (ThirdPartyPaymentRequest — sessionId only)",
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (!pm.collectionVariables.get('sessionId')) { throw new Error('Run Create Checkout Session first'); }"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "x-arifpay-key",
+                    "value": "{{arifpayKey}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/api/checkout/binget/initiate",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"sessionId\": \"{{sessionId}}\"\n}"
+                }
+              }
+            },
+            {
+              "name": "Verify OTP (BingetC2BVerifyOtp)",
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (!pm.collectionVariables.get('sessionId')) { throw new Error('Run Create Checkout Session first'); }"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "x-arifpay-key",
+                    "value": "{{arifpayKey}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/api/checkout/binget/verify-otp",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"sessionId\": \"{{sessionId}}\",\n  \"otp\": \"{{otp}}\"\n}"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Card / International",
+      "description": "Production PayPal / Mastercard / Visa (PSS) transfer paths are not published in this collection. ArifPay provides the exact URLs at production go-live together with your server IP whitelist.\n\nUse sandbox Card / International for testing. PayPal create response shape: { orderId, approvalUrl, SessionId }. Mastercard returns a hosted session id. Visa/PSS returns an HTML form redirect.",
+      "item": [
+        {
+          "name": "Create session (Card)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('nonce', 'nonce_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "const sid = j?.data?.sessionId || j?.data?.SessionId || j?.data?.uuid || j?.sessionId;",
+                  "if (sid) { pm.collectionVariables.set('sessionId', sid); console.log('sessionId', sid); }",
+                  "const payUrl = j?.data?.paymentUrl || j?.data?.approvalUrl;",
+                  "if (payUrl) { pm.collectionVariables.set('paymentUrl', payUrl); console.log('paymentUrl/approvalUrl', payUrl); }",
+                  "const orderId = j?.data?.orderId;",
+                  "if (orderId) { pm.collectionVariables.set('orderId', orderId); console.log('orderId', orderId); }",
+                  "const txn = j?.data?.transaction?.transactionId || j?.data?.captureId;",
+                  "if (txn) { pm.collectionVariables.set('transactionId', txn); console.log('transactionId', txn); }"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-arifpay-key",
+                "value": "{{arifpayKey}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/checkout/session",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cancelUrl\": \"{{cancelUrl}}\",\n  \"phone\": \"{{phone}}\",\n  \"email\": \"{{email}}\",\n  \"nonce\": \"{{nonce}}\",\n  \"errorUrl\": \"{{errorUrl}}\",\n  \"notifyUrl\": \"{{notifyUrl}}\",\n  \"successUrl\": \"{{successUrl}}\",\n  \"expireDate\": \"{{expireDate}}\",\n  \"items\": [\n    { \"name\": \"Product\", \"quantity\": 1, \"price\": {{amount}}, \"description\": \"Production test item\" }\n  ],\n  \"lang\": \"EN\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Card transfer (URL provided at production go-live)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('sessionId')) { throw new Error('Run Create Checkout Session first'); }"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-arifpay-key",
+                "value": "{{arifpayKey}}"
+              }
+            ],
+            "url": "{{baseUrl}}/[provided-at-production-with-ip-whitelist]",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sessionId\": \"{{sessionId}}\",\n  \"phoneNumber\": \"{{phone}}\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. B2C",
+      "description": "Production B2C transfer paths are not published in this collection. ArifPay provides the exact URL at production go-live together with your server IP whitelist.\n\nBody remains PaymentWalletRequest: sessionId + phoneNumber. Requires x-arifpay-key, x-arifpay-secret-key, and whitelisted IP. Response: TransferResponse (sync accept; final SUCCESS/FAILED on notifyUrl).",
+      "item": [
+        {
+          "name": "Create session (B2C)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('nonce', 'nonce_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "const sid = j?.data?.sessionId || j?.data?.SessionId || j?.data?.uuid || j?.sessionId;",
+                  "if (sid) { pm.collectionVariables.set('sessionId', sid); console.log('sessionId', sid); }",
+                  "const payUrl = j?.data?.paymentUrl || j?.data?.approvalUrl;",
+                  "if (payUrl) { pm.collectionVariables.set('paymentUrl', payUrl); console.log('paymentUrl/approvalUrl', payUrl); }",
+                  "const orderId = j?.data?.orderId;",
+                  "if (orderId) { pm.collectionVariables.set('orderId', orderId); console.log('orderId', orderId); }",
+                  "const txn = j?.data?.transaction?.transactionId || j?.data?.captureId;",
+                  "if (txn) { pm.collectionVariables.set('transactionId', txn); console.log('transactionId', txn); }"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-arifpay-key",
+                "value": "{{arifpayKey}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/checkout/session",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cancelUrl\": \"{{cancelUrl}}\",\n  \"phone\": \"{{phone}}\",\n  \"email\": \"{{email}}\",\n  \"nonce\": \"{{nonce}}\",\n  \"errorUrl\": \"{{errorUrl}}\",\n  \"notifyUrl\": \"{{notifyUrl}}\",\n  \"successUrl\": \"{{successUrl}}\",\n  \"expireDate\": \"{{expireDate}}\",\n  \"items\": [\n    { \"name\": \"Product\", \"quantity\": 1, \"price\": {{amount}}, \"description\": \"Production test item\" }\n  ],\n  \"lang\": \"EN\"\n}"
+            }
+          }
+        },
+        {
+          "name": "B2C transfer (URL provided at production go-live)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('sessionId')) { throw new Error('Run Create Checkout Session first'); }"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-arifpay-key",
+                "value": "{{arifpayKey}}"
+              },
+              {
+                "key": "x-arifpay-secret-key",
+                "value": "{{arifpaySecretKey}}"
+              }
+            ],
+            "url": "{{baseUrl}}/[provided-at-production-with-ip-whitelist]",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sessionId\": \"{{sessionId}}\",\n  \"phoneNumber\": \"{{phone}}\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Wallet to Bank",
+      "description": "Inquiry msg \"Account Query Successfull\". Transfer → { nonce, amount, accountNumber }, msg \"Transfer successful\". Production host may be issued with IP whitelist.",
+      "item": [
+        {
+          "name": "Account inquiry (query params — path typo acount)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-arifpay-key",
+                "value": "{{arifpayKey}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/checkout/b2b/acount/query?accountNumber={{accountNumber}}&shortCodes={{shortCodes}}"
+          }
+        },
+        {
+          "name": "Transfer",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('nonce', 'nonce_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-arifpay-key",
+                "value": "{{arifpayKey}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/wallet-tobank/transfer",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cancelUrl\": \"{{cancelUrl}}\",\n  \"phone\": \"{{phone}}\",\n  \"email\": \"{{email}}\",\n  \"nonce\": \"{{nonce}}\",\n  \"errorUrl\": \"{{errorUrl}}\",\n  \"notifyUrl\": \"{{notifyUrl}}\",\n  \"successUrl\": \"{{successUrl}}\",\n  \"items\": [\n    { \"name\": \"Wallet to Bank Transfer\", \"quantity\": 1, \"price\": {{amount}}, \"description\": \"Payout to bank account\" }\n  ],\n  \"accountNumber\": \"{{accountNumber}}\",\n  \"shortCodes\": \"{{shortCodes}}\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. Verify",
+      "item": [
+        {
+          "name": "Verify by Session ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-arifpay-key",
+                "value": "{{arifpayKey}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/verify/transaction?uuid={{sessionId}}"
+          }
+        },
+        {
+          "name": "Verify by Nonce",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-arifpay-key",
+                "value": "{{arifpayKey}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/checkout/getSessionByNonce/{{nonce}}"
+          }
+        },
+        {
+          "name": "Verify by Transaction ID (SessionStatusByTransactionIdDto)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-arifpay-key",
+                "value": "{{arifpayKey}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/checkout/getSessionByTransactionId",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"transactionId\": \"{{transactionId}}\",\n  \"paymentType\": \"{{paymentType}}\"\n}"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

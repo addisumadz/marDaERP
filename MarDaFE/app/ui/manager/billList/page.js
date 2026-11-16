@@ -1189,7 +1189,8 @@ const BillList = () => {
     // return `የተከበሩ ደንበኛችን ${name} በውል ቁጥር ${account} ${monthYearPart}ወር ፍጆታ ${consumption} (ቀድሞ ንባብ ${previous}, አሁን ንባብ ${current}) ውዝፍ ${wuzifHisab} ጠቅላላ ክፍያ ${totalPayable} ብር  እስከ ${dueStr} ድረስ ስለሆነ ወደቅጣት ተላልፎ ለተጨማሪ ወጭ ሳይዳረጉና በጊዜ እንዲከፍሉ እናሳስባለን`;
     // return `የተከበሩ ደንበኛችን ${name} የውል ቁጥር ${account} የ ${monthYearPart}ወር ፍጆታ ${consumption} (ከ ${previous} እስከ ${current}) ውዝፍ ${wuzifHisab}፣ ጠቅላላ ክፍያ ${totalPayable} ብር የክፍያ ጊዘው እስከ ${dueStr} መሆኑን አውቀው  ቀኑ ሳያልፍ ክፍያዎን እንዲከፍሉ እናሳስባለን፡፡`; 
     //return `የተከበሩ ${name} የውል ቁጥር ${account} የ ${monthYearPart}ወር ፍጆታ ${consumption} (ከ ${previous} እስከ ${current}) ውዝፍ ${wuzifHisab}፣ ጠቅላላ ክፍያ ${totalPayable} ብር እስከ ${dueStr} ድረስ ይክፈሉ፡፡`;
-    return `የተከበሩ ${name} የውል ቁጥር ${account} የ${monthYearPart}ወር ፍጆታ ${consumption}m³(ከ${previous}-${current}) ውዝፍ ${wuzifHisab}፣ጠቅላላ ክፍያ ${totalPayable} ብር እስከ ${dueStr} ድረስ ይክፈሉ፡፡`;
+    const companySuffix = companyProfile?.companyName ? ` (${companyProfile.companyName.trim()})` : "";
+    return `የተከበሩ ${name} የውል ቁጥር ${account} የ${monthYearPart}ወር ፍጆታ ${consumption}m³(ከ${previous}-${current}) ውዝፍ ${wuzifHisab}፣ጠቅላላ ክፍያ ${totalPayable} ብር እስከ ${dueStr} ድረስ ይክፈሉ፡፡${companySuffix}`;
   };
 
   const handleSendSmsForFilteredBills = async () => {

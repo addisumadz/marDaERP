@@ -1744,6 +1744,47 @@ public class ReadingService {
         return null;
     }
 
+    private volatile String cachedCompanyName = null;
+    private volatile long cachedCompanyNameTimestamp = 0L;
+    private static final long COMPANY_NAME_CACHE_TTL_MS = 60_000L;
+
+    private String getWaterUtilityCompanyName() {
+        long now = System.currentTimeMillis();
+        if (cachedCompanyName != null && (now - cachedCompanyNameTimestamp) < COMPANY_NAME_CACHE_TTL_MS) {
+            return cachedCompanyName;
+        }
+        try {
+            CompanyProfile companyProfile = null;
+            try {
+                List<CompanyProfile> active = companyProfileRepository.findByStatus("Active");
+                if (active != null && !active.isEmpty()) {
+                    companyProfile = active.get(0);
+                }
+            } catch (Exception ignored) {}
+            if (companyProfile == null) {
+                try {
+                    companyProfile = companyProfileRepository.findFirstByOrderByIdDesc();
+                } catch (Exception ignored) {}
+            }
+            if (companyProfile == null) {
+                companyProfile = companyProfileRepository.findById(9).orElse(null);
+            }
+            if (companyProfile != null) {
+                String cName = companyProfile.getCompanyName();
+                if (cName != null && !cName.trim().isEmpty()) {
+                    cachedCompanyName = cName.trim();
+                    cachedCompanyNameTimestamp = now;
+                    return cachedCompanyName;
+                }
+            }
+        } catch (Exception ex) {
+            logger.warn("Could not retrieve companyName from CompanyProfile: {}", ex.getMessage());
+        }
+        cachedCompanyName = "";
+        cachedCompanyNameTimestamp = now;
+        return "";
+    }
+
     private String buildBillSmsMessage(BillingReading reading, String smsDueDateText, String monthYearPartOverride) {
         BillingCustomerInfo customer = reading.getBillingCustomerInfo();
         String name = customer != null && customer.getFullName() != null ? customer.getFullName() : "";
@@ -1793,9 +1834,12 @@ public class ReadingService {
             }
         }
 
+        String utilityName = getWaterUtilityCompanyName();
+        String utilitySuffix = (!utilityName.isEmpty()) ? (" (" + utilityName + ")") : "";
+
         return "የተከበሩ " + name + " የውል ቁጥር " + account +
                 " የ" + monthYearPart + "ወር ፍጆታ " + consumption + "m³(ከ" + previous + "-" + current + ") ውዝፍ " +
-                wuzifHisab + "፣ጠቅላላ ክፍያ " + totalPayable + " ብር እስከ " + dueStr + " ድረስ ይክፈሉ፡፡";
+                wuzifHisab + "፣ጠቅላላ ክፍያ " + totalPayable + " ብር እስከ " + dueStr + " ድረስ ይክፈሉ፡፡" + utilitySuffix;
     }
 
     // Helper to build user display name safely

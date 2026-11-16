@@ -30,6 +30,101 @@ public class SmsService {
 
     private static final String DEFAULT_SENDER_NAME = "testsender";
 
+    private static final java.util.concurrent.atomic.AtomicInteger CONCAT_REF_COUNTER =
+            new java.util.concurrent.atomic.AtomicInteger(1);
+
+    private static byte getNextConcatRef() {
+        int ref = CONCAT_REF_COUNTER.getAndIncrement();
+        return (byte) ((ref % 255) + 1);
+    }
+
+    public static final int MAX_SMS_SEGMENTS = 3;
+    public static final int MAX_UCS2_CHARS = 201; // 3 segments * 67 chars
+
+    private List<SubmitSm> createSubmitSmList(String phoneNumber, String message, String senderName) throws Exception {
+        List<SubmitSm> submits = new ArrayList<>();
+        if (message == null) {
+            message = "";
+        }
+
+        // Cap at max 3 segments (201 chars) for cost/length protection
+        if (message.length() > MAX_UCS2_CHARS) {
+            logger.warn("SMS text exceeds max {} segments ({} chars), trimming to {} chars",
+                    MAX_SMS_SEGMENTS, message.length(), MAX_UCS2_CHARS);
+            message = message.substring(0, MAX_UCS2_CHARS);
+        }
+
+        Address destAddress = new Address((byte) SmppConstants.TON_INTERNATIONAL, (byte) SmppConstants.NPI_E164, phoneNumber);
+        Address sourceAddress = new Address((byte) SmppConstants.TON_ALPHANUMERIC, (byte) SmppConstants.NPI_UNKNOWN, senderName);
+        byte[] textBytes = CharsetUtil.encode(message, CharsetUtil.CHARSET_UCS_2);
+
+        // If <= 70 chars (<= 140 bytes in UCS-2), single message without UDH
+        if (textBytes.length <= 140) {
+            SubmitSm submit = new SubmitSm();
+            submit.setSourceAddress(sourceAddress);
+            submit.setDestAddress(destAddress);
+            submit.setDataCoding(SmppConstants.DATA_CODING_UCS2);
+            submit.setEsmClass(SmppConstants.ESM_CLASS_MM_DEFAULT);
+            submit.setRegisteredDelivery(SmppConstants.REGISTERED_DELIVERY_SMSC_RECEIPT_REQUESTED);
+            submit.setShortMessage(textBytes);
+            submits.add(submit);
+            return submits;
+        }
+
+        // Multi-part SMS with 6-byte UDH
+        // Max payload per segment with UDH: 140 - 6 = 134 bytes (67 UCS-2 chars)
+        final int maxPayloadBytes = 134;
+        int totalSegments = Math.min(MAX_SMS_SEGMENTS, (int) Math.ceil((double) textBytes.length / maxPayloadBytes));
+        byte refNum = getNextConcatRef();
+
+        for (int i = 0; i < totalSegments; i++) {
+            int offset = i * maxPayloadBytes;
+            int length = Math.min(maxPayloadBytes, textBytes.length - offset);
+
+            // 6-byte UDH: [0x05, 0x00, 0x03, refNum, totalSegments, seq]
+            byte[] udh = new byte[] {
+                0x05, // Length of UDH
+                0x00, // Concatenated SMS, 8-bit reference
+                0x03, // Length of header data
+                refNum,
+                (byte) totalSegments,
+                (byte) (i + 1) // 1-indexed part number
+            };
+
+            byte[] shortMessage = new byte[6 + length];
+            System.arraycopy(udh, 0, shortMessage, 0, 6);
+            System.arraycopy(textBytes, offset, shortMessage, 6, length);
+
+            SubmitSm submit = new SubmitSm();
+            submit.setSourceAddress(sourceAddress);
+            submit.setDestAddress(destAddress);
+            submit.setDataCoding(SmppConstants.DATA_CODING_UCS2);
+            submit.setEsmClass(SmppConstants.ESM_CLASS_UDHI_MASK);
+            submit.setRegisteredDelivery(SmppConstants.REGISTERED_DELIVERY_SMSC_RECEIPT_REQUESTED);
+            submit.setShortMessage(shortMessage);
+
+            submits.add(submit);
+        }
+        return submits;
+    }
+
+    private SubmitSmResp submitWithRetry(SmppSession session, SubmitSm submit, long timeoutMillis) throws Exception {
+        try {
+            SubmitSmResp resp = session.submit(submit, timeoutMillis);
+            if (resp != null && resp.getCommandStatus() == SmppConstants.STATUS_OK) {
+                return resp;
+            }
+        } catch (Exception e) {
+            logger.warn("Initial SMPP submit attempt failed: {}. Retrying once after 500ms...", e.getMessage());
+        }
+        try {
+            Thread.sleep(500);
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+        }
+        return session.submit(submit, timeoutMillis);
+    }
+
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private SmsSettingService smsSettingService;
 
@@ -109,35 +204,20 @@ public class SmsService {
             session = client.bind(config, new DefaultSmppSessionHandler());
             logger.info("SMPP session established, isBound={}", session != null && session.isBound());
 
-            SubmitSm submit = new SubmitSm();
-            submit.setSourceAddress(new Address((byte) SmppConstants.TON_ALPHANUMERIC, (byte) SmppConstants.NPI_UNKNOWN,
-                    creds.senderName));
-            submit.setDestAddress(
-                    new Address((byte) SmppConstants.TON_INTERNATIONAL, (byte) SmppConstants.NPI_E164, phoneNumber));
+            List<SubmitSm> submits = createSubmitSmList(phoneNumber, message, creds.senderName);
+            logger.info("Sending SMPP test SMS from '{}' to {} ({} chars, {} segment(s))",
+                    creds.senderName, phoneNumber, message != null ? message.length() : 0, submits.size());
 
-            // Ensure short_message does not exceed SMPP's 255-byte limit.
-            // For UCS2 (2 bytes/char for Amharic), 120 chars ~= 240 bytes which is safely
-            // under 255.
-            String textToSend = message != null ? message : "";
-            final int maxChars = 120;
-            if (textToSend.length() > maxChars) {
-                logger.warn(
-                        "SMS text too long ({} chars), truncating to {} chars to satisfy 255-byte short_message limit",
-                        textToSend.length(), maxChars);
-                textToSend = textToSend.substring(0, maxChars);
-            }
-
-            submit.setShortMessage(CharsetUtil.encode(textToSend, CharsetUtil.CHARSET_UCS_2));
-            submit.setDataCoding(SmppConstants.DATA_CODING_UCS2);
-            submit.setRegisteredDelivery(SmppConstants.REGISTERED_DELIVERY_SMSC_RECEIPT_REQUESTED);
-
-            logger.info("Sending submit_sm from '{}' to {} with text: {} (UCS2, possibly truncated)", creds.senderName,
-                    phoneNumber, textToSend);
-            SubmitSmResp submitResp = session.submit(submit, 90000);
-            logger.info("submit_sm response: commandStatus={}, messageId={}", submitResp.getCommandStatus(),
-                    submitResp.getMessageId());
-            if (submitResp.getCommandStatus() != SmppConstants.STATUS_OK) {
-                throw new IllegalStateException("SMPP submit failed with status " + submitResp.getCommandStatus());
+            for (int i = 0; i < submits.size(); i++) {
+                SubmitSm submit = submits.get(i);
+                SubmitSmResp submitResp = submitWithRetry(session, submit, 90000);
+                logger.info("submit_sm segment {}/{} response: commandStatus={}, messageId={}",
+                        (i + 1), submits.size(), submitResp != null ? submitResp.getCommandStatus() : "null",
+                        submitResp != null ? submitResp.getMessageId() : "null");
+                if (submitResp == null || submitResp.getCommandStatus() != SmppConstants.STATUS_OK) {
+                    throw new IllegalStateException("SMPP submit segment " + (i + 1) + "/" + submits.size()
+                            + " failed with status " + (submitResp != null ? submitResp.getCommandStatus() : "null"));
+                }
             }
         } catch (Exception e) {
             logger.error("Error while sending SMPP test SMS", e);
@@ -316,34 +396,28 @@ public class SmsService {
                     continue;
                 }
                 try {
-                    String textToSend = message != null ? message : "";
-                    final int maxChars = 120;
-                    if (textToSend.length() > maxChars) {
-                        logger.warn(
-                                "Bulk SMS text too long ({} chars), truncating to {} chars to satisfy 255-byte short_message limit",
-                                textToSend.length(), maxChars);
-                        textToSend = textToSend.substring(0, maxChars);
+                    List<SubmitSm> submits = createSubmitSmList(phoneNumber, message, creds.senderName);
+                    boolean allOk = true;
+                    String lastErr = null;
+
+                    for (int i = 0; i < submits.size(); i++) {
+                        SubmitSm submit = submits.get(i);
+                        SubmitSmResp submitResp = submitWithRetry(session, submit, 90000);
+                        boolean ok = submitResp != null && submitResp.getCommandStatus() == SmppConstants.STATUS_OK;
+                        if (!ok) {
+                            allOk = false;
+                            lastErr = "SMPP submit segment " + (i + 1) + "/" + submits.size()
+                                    + " failed with status " + (submitResp != null ? submitResp.getCommandStatus() : "null");
+                            logger.warn("{} for phone {}", lastErr, phoneNumber);
+                            break;
+                        }
                     }
 
-                    SubmitSm submit = new SubmitSm();
-                    submit.setSourceAddress(new Address((byte) SmppConstants.TON_ALPHANUMERIC,
-                            (byte) SmppConstants.NPI_UNKNOWN, creds.senderName));
-                    submit.setDestAddress(new Address((byte) SmppConstants.TON_INTERNATIONAL,
-                            (byte) SmppConstants.NPI_E164, phoneNumber));
-                    submit.setShortMessage(CharsetUtil.encode(textToSend, CharsetUtil.CHARSET_UCS_2));
-                    submit.setDataCoding(SmppConstants.DATA_CODING_UCS2);
-                    submit.setRegisteredDelivery(SmppConstants.REGISTERED_DELIVERY_SMSC_RECEIPT_REQUESTED);
-
-                    logger.info("Sending bulk submit_sm to {} with text: {} (UCS2, possibly truncated)",
-                            phoneNumber, textToSend);
-                    SubmitSmResp submitResp = session.submit(submit, 90000);
-                    boolean ok = submitResp.getCommandStatus() == SmppConstants.STATUS_OK;
-                    if (!ok) {
-                        String err = "SMPP submit failed with status " + submitResp.getCommandStatus();
-                        logger.warn("{} for phone {}", err, phoneNumber);
-                        results.add(new BulkSmsResult(req.getReadingId(), phoneNumber, false, err));
-                    } else {
+                    if (allOk) {
+                        logger.info("Successfully sent bulk SMS ({} segment(s)) to {}", submits.size(), phoneNumber);
                         results.add(new BulkSmsResult(req.getReadingId(), phoneNumber, true, null));
+                    } else {
+                        results.add(new BulkSmsResult(req.getReadingId(), phoneNumber, false, lastErr));
                     }
                 } catch (Exception ex) {
                     logger.error("Error while sending bulk SMS to {}", phoneNumber, ex);
@@ -448,29 +522,27 @@ public class SmsService {
                     continue;
                 }
                 try {
-                    String textToSend = message != null ? message : "";
-                    final int maxChars = 120;
-                    if (textToSend.length() > maxChars) {
-                        textToSend = textToSend.substring(0, maxChars);
+                    List<SubmitSm> submits = createSubmitSmList(phoneNumber, message, creds.senderName);
+                    boolean allOk = true;
+                    String lastErr = null;
+
+                    for (int i = 0; i < submits.size(); i++) {
+                        SubmitSm submit = submits.get(i);
+                        SubmitSmResp submitResp = submitWithRetry(session, submit, 90000);
+                        boolean ok = submitResp != null && submitResp.getCommandStatus() == SmppConstants.STATUS_OK;
+                        if (!ok) {
+                            allOk = false;
+                            lastErr = "SMPP submit segment " + (i + 1) + "/" + submits.size()
+                                    + " failed with status " + (submitResp != null ? submitResp.getCommandStatus() : "null");
+                            logger.warn("Silent SMS fail: {} for phone {}", lastErr, phoneNumber);
+                            break;
+                        }
                     }
 
-                    SubmitSm submit = new SubmitSm();
-                    submit.setSourceAddress(new Address((byte) SmppConstants.TON_ALPHANUMERIC,
-                            (byte) SmppConstants.NPI_UNKNOWN, creds.senderName));
-                    submit.setDestAddress(new Address((byte) SmppConstants.TON_INTERNATIONAL,
-                            (byte) SmppConstants.NPI_E164, phoneNumber));
-                    submit.setShortMessage(CharsetUtil.encode(textToSend, CharsetUtil.CHARSET_UCS_2));
-                    submit.setDataCoding(SmppConstants.DATA_CODING_UCS2);
-                    submit.setRegisteredDelivery(SmppConstants.REGISTERED_DELIVERY_SMSC_RECEIPT_REQUESTED);
-
-                    SubmitSmResp submitResp = session.submit(submit, 90000);
-                    boolean ok = submitResp.getCommandStatus() == SmppConstants.STATUS_OK;
-                    if (!ok) {
-                        String err = "SMPP submit failed with status " + submitResp.getCommandStatus();
-                        logger.warn("Silent SMS fail: {} for phone {}", err, phoneNumber);
-                        results.add(new BulkSmsResult(req.getReadingId(), phoneNumber, false, err));
-                    } else {
+                    if (allOk) {
                         results.add(new BulkSmsResult(req.getReadingId(), phoneNumber, true, null));
+                    } else {
+                        results.add(new BulkSmsResult(req.getReadingId(), phoneNumber, false, lastErr));
                     }
                     count++;
                 } catch (Exception ex) {

@@ -161,6 +161,14 @@ const modernMenuProps = {
   },
 };
 
+const getSmsSegmentText = (text) => {
+  const len = (text || "").length;
+  if (len === 0) return "0 SMS";
+  if (len <= 70) return "1 SMS";
+  const parts = Math.ceil(len / 67);
+  return `${parts} SMS parts`;
+};
+
 const SendBillSmsInner = () => {
   // Current Ethiopian Date setup
   const currentGregorianDate = new Date();
@@ -2229,7 +2237,7 @@ const SendBillSmsInner = () => {
 
               <Stack direction="row" justifyContent="space-between">
                 <Typography variant="caption" color="text.secondary">
-                  Length: <strong>{previewItem.message?.length || 0}</strong> characters
+                  Length: <strong>{previewItem.message?.length || 0}</strong> characters (<strong>{getSmsSegmentText(previewItem.message)}</strong>)
                 </Typography>
                 <Typography variant="caption" color="text.secondary">
                   Status: <strong>{previewItem.status}</strong>
@@ -2286,7 +2294,7 @@ const SendBillSmsInner = () => {
 
           <Stack direction="row" justifyContent="space-between" sx={{ mt: 1 }}>
             <Typography variant="caption" color="text.secondary">
-              Characters: {customMsgText.length}
+              Characters: <strong>{customMsgText.length}</strong> ({getSmsSegmentText(customMsgText)})
             </Typography>
             <Typography variant="caption" color="text.secondary">
               Recipients: {selectedIds.size} customers

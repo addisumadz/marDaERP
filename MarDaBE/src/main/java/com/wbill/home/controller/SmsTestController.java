@@ -169,12 +169,14 @@ public class SmsTestController {
             if (request == null || request.getReadingIds() == null || request.getReadingIds().isEmpty()) {
                 return ResponseEntity.badRequest().body("readingIds list cannot be empty");
             }
-            logger.info("Received SMS queue preparation request: count={}", request.getReadingIds().size());
+            logger.info("Received SMS queue preparation request: count={}, templateCode={}",
+                    request.getReadingIds().size(), request.getTemplateCode());
 
             java.util.List<BulkSmsExportItemDTO> queueItems = readingService.prepareBillSmsQueueData(
                     request.getReadingIds(),
                     request.getSmsDueDateText(),
-                    request.getMonthYearPart());
+                    request.getMonthYearPart(),
+                    request.getTemplateCode());
             return ResponseEntity.ok(queueItems);
         } catch (Exception e) {
             logger.error("Error preparing SMS queue data", e);
@@ -195,12 +197,13 @@ public class SmsTestController {
                 return ResponseEntity.badRequest().body("readingIds or customItems cannot be empty");
             }
 
-            logger.info("Received gateway bulk SMS request: readingIds={}, customItems={}, gatewayUrl={}, protocol={}, cityId={}",
+            logger.info("Received gateway bulk SMS request: readingIds={}, customItems={}, gatewayUrl={}, protocol={}, cityId={}, templateCode={}",
                     hasReadings ? request.getReadingIds().size() : 0,
                     hasCustom ? request.getCustomItems().size() : 0,
                     request.getGatewayUrl(),
                     request.getProtocol(),
-                    request.getCityId());
+                    request.getCityId(),
+                    request.getTemplateCode());
 
             java.util.Map<String, Object> result = readingService.sendBillSmsViaGateway(
                     request.getReadingIds(),
@@ -210,7 +213,8 @@ public class SmsTestController {
                     request.getMonthYearPart(),
                     request.getCustomItems(),
                     request.getProtocol(),
-                    request.getCityId());
+                    request.getCityId(),
+                    request.getTemplateCode());
             return ResponseEntity.ok(result);
         } catch (Exception e) {
             logger.error("Error sending bulk SMS via gateway", e);
@@ -228,12 +232,9 @@ public class SmsTestController {
             if (request.getPhoneNumber() == null || request.getPhoneNumber().trim().isEmpty()) {
                 return ResponseEntity.badRequest().body("phoneNumber cannot be empty");
             }
-            if (request.getMessage() == null || request.getMessage().trim().isEmpty()) {
-                return ResponseEntity.badRequest().body("message cannot be empty");
-            }
 
-            logger.info("Received gateway single SMS request for readingId={}, phone={}, protocol={}, cityId={}",
-                    request.getReadingId(), request.getPhoneNumber(), request.getProtocol(), request.getCityId());
+            logger.info("Received gateway single SMS request for readingId={}, phone={}, protocol={}, cityId={}, templateCode={}",
+                    request.getReadingId(), request.getPhoneNumber(), request.getProtocol(), request.getCityId(), request.getTemplateCode());
 
             java.util.Map<String, Object> result = readingService.sendSingleBillSmsViaGateway(
                     request.getReadingId(),
@@ -242,7 +243,10 @@ public class SmsTestController {
                     request.getGatewayUrl(),
                     request.getApiKey(),
                     request.getProtocol(),
-                    request.getCityId());
+                    request.getCityId(),
+                    request.getSmsDueDateText(),
+                    request.getMonthYearPart(),
+                    request.getTemplateCode());
             return ResponseEntity.ok(result);
         } catch (Exception e) {
             logger.error("Error sending single SMS via gateway", e);

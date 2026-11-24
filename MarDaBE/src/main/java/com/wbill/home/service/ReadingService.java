@@ -68,6 +68,8 @@ public class ReadingService {
     @Autowired
     private SmsSettingService smsSettingService;
     @Autowired
+    private SmsTemplateService smsTemplateService;
+    @Autowired
     private jakarta.persistence.EntityManager entityManager;
 
     @Transactional(readOnly = true)
@@ -1745,13 +1747,14 @@ public class ReadingService {
     }
 
     private volatile String cachedCompanyName = null;
+    private volatile String cachedCompanyNameAmh = null;
     private volatile long cachedCompanyNameTimestamp = 0L;
     private static final long COMPANY_NAME_CACHE_TTL_MS = 60_000L;
 
-    private String getWaterUtilityCompanyName() {
+    private synchronized void refreshCachedCompanyProfile() {
         long now = System.currentTimeMillis();
-        if (cachedCompanyName != null && (now - cachedCompanyNameTimestamp) < COMPANY_NAME_CACHE_TTL_MS) {
-            return cachedCompanyName;
+        if ((cachedCompanyName != null || cachedCompanyNameAmh != null) && (now - cachedCompanyNameTimestamp) < COMPANY_NAME_CACHE_TTL_MS) {
+            return;
         }
         try {
             CompanyProfile companyProfile = null;
@@ -1771,23 +1774,42 @@ public class ReadingService {
             }
             if (companyProfile != null) {
                 String cName = companyProfile.getCompanyName();
-                if (cName != null && !cName.trim().isEmpty()) {
-                    cachedCompanyName = cName.trim();
-                    cachedCompanyNameTimestamp = now;
-                    return cachedCompanyName;
-                }
+                cachedCompanyName = (cName != null) ? cName.trim() : "";
+
+                String cNameAmh = companyProfile.getCompanyNameAmh();
+                cachedCompanyNameAmh = (cNameAmh != null) ? cNameAmh.trim() : "";
+
+                cachedCompanyNameTimestamp = now;
+                return;
             }
         } catch (Exception ex) {
-            logger.warn("Could not retrieve companyName from CompanyProfile: {}", ex.getMessage());
+            logger.warn("Could not retrieve company profile: {}", ex.getMessage());
         }
         cachedCompanyName = "";
+        cachedCompanyNameAmh = "";
         cachedCompanyNameTimestamp = now;
-        return "";
+    }
+
+    private String getWaterUtilityCompanyName() {
+        refreshCachedCompanyProfile();
+        return cachedCompanyName != null ? cachedCompanyName : "";
+    }
+
+    private String getWaterUtilityCompanyNameAmh() {
+        refreshCachedCompanyProfile();
+        return (cachedCompanyNameAmh != null && !cachedCompanyNameAmh.isEmpty())
+                ? cachedCompanyNameAmh
+                : (cachedCompanyName != null ? cachedCompanyName : "");
     }
 
     private String buildBillSmsMessage(BillingReading reading, String smsDueDateText, String monthYearPartOverride) {
+        return buildBillSmsMessage(reading, smsDueDateText, monthYearPartOverride, null);
+    }
+
+    private String buildBillSmsMessage(BillingReading reading, String smsDueDateText, String monthYearPartOverride, String templateCode) {
         BillingCustomerInfo customer = reading.getBillingCustomerInfo();
         String name = customer != null && customer.getFullName() != null ? customer.getFullName() : "";
+        String nameEng = customer != null && customer.getFullNameEng() != null ? customer.getFullNameEng() : "";
         String account = customer != null && customer.getAccountNumber() != null ? customer.getAccountNumber() : "";
 
         int previous = reading.getPreviousReading();
@@ -1795,9 +1817,13 @@ public class ReadingService {
         int consumption = reading.getConsumption();
         double wuzifHisab = reading.getWuzifHisab();
         double totalPayable = reading.getTekilalaTekefay();
+        double kotariKiray = reading.getKotariKiray();
+        double yezihWer = reading.getYezihWer();
+        String wuzifKezihEske = reading.getWuzifKezihEske() != null ? reading.getWuzifKezihEske() : "";
+        int wuzifWorBzat = reading.getWuzifWorBzat();
+        double kitat = reading.getKitat();
 
-        // Resolve due date string: prefer frontend-provided value to match UI SMS
-        // exactly
+        // Resolve due date string: prefer frontend-provided value to match UI SMS exactly
         String dueStr = smsDueDateText != null ? smsDueDateText.trim() : "";
         if (dueStr.isEmpty()) {
             java.util.Date bankDueDate = reading.getBankDueDate();
@@ -1835,9 +1861,39 @@ public class ReadingService {
         }
 
         String utilityName = getWaterUtilityCompanyName();
-        String utilitySuffix = (!utilityName.isEmpty()) ? (" (" + utilityName + ")") : "";
+        String utilityNameAmh = getWaterUtilityCompanyNameAmh();
 
-        return "የተከበሩ " + name + " የውል ቁጥር " + account +
+        // Resolve dynamic database template for chosen code (or default BILL_SMS)
+        String template = (smsTemplateService != null)
+                ? smsTemplateService.getActiveTemplateContent(templateCode)
+                : null;
+
+        if (template != null && !template.trim().isEmpty()) {
+            String message = template;
+            message = message.replace("{customerName}", name != null ? name : "");
+            message = message.replace("{customerNameEng}", nameEng != null ? nameEng : "");
+            message = message.replace("{accountNumber}", account != null ? account : "");
+            message = message.replace("{billMonth}", monthYearPart != null ? monthYearPart : "");
+            message = message.replace("{consumption}", String.valueOf(consumption));
+            message = message.replace("{previousReading}", String.valueOf(previous));
+            message = message.replace("{currentReading}", String.valueOf(current));
+            message = message.replace("{arrears}", String.valueOf(wuzifHisab));
+            message = message.replace("{wuzifHisab}", String.valueOf(wuzifHisab));
+            message = message.replace("{kotariKiray}", String.valueOf(kotariKiray));
+            message = message.replace("{yezihWer}", String.valueOf(yezihWer));
+            message = message.replace("{wuzifKezihEske}", wuzifKezihEske != null ? wuzifKezihEske : "");
+            message = message.replace("{wuzifWorBzat}", String.valueOf(wuzifWorBzat));
+            message = message.replace("{kitat}", String.valueOf(kitat));
+            message = message.replace("{totalPayable}", String.valueOf(totalPayable));
+            message = message.replace("{dueDate}", dueStr != null ? dueStr : "");
+            message = message.replace("{companyName}", utilityName != null ? utilityName : "");
+            message = message.replace("{companyNameAmharic}", utilityNameAmh != null ? utilityNameAmh : "");
+            return message;
+        }
+
+        // Standard dynamic fallback if no database template is found
+        String utilitySuffix = (!utilityName.isEmpty()) ? (" (" + utilityName + ")") : "";
+        return "ውድ ደንበኛችን " + name + " የውል ቁጥር " + account +
                 " የ" + monthYearPart + "ወር ፍጆታ " + consumption + "m³(ከ" + previous + "-" + current + ") ውዝፍ " +
                 wuzifHisab + "፣ጠቅላላ ክፍያ " + totalPayable + " ብር እስከ " + dueStr + " ድረስ ይክፈሉ፡፡" + utilitySuffix;
     }
@@ -2325,6 +2381,15 @@ public class ReadingService {
             java.util.List<Integer> readingIds,
             String smsDueDateText,
             String monthYearPart) {
+        return prepareBillSmsQueueData(readingIds, smsDueDateText, monthYearPart, null);
+    }
+
+    @Transactional(readOnly = true)
+    public java.util.List<BulkSmsExportItemDTO> prepareBillSmsQueueData(
+            java.util.List<Integer> readingIds,
+            String smsDueDateText,
+            String monthYearPart,
+            String templateCode) {
         if (readingIds == null || readingIds.isEmpty()) {
             throw new IllegalArgumentException("readingIds cannot be empty");
         }
@@ -2360,7 +2425,7 @@ public class ReadingService {
                 phone = phoneRaw.trim();
             }
 
-            String message = buildBillSmsMessage(reading, smsDueDateText, monthYearPart);
+            String message = buildBillSmsMessage(reading, smsDueDateText, monthYearPart, templateCode);
             String billMonth = reading.getKifyaWer() != null ? reading.getKifyaWer() : (monthYearPart != null ? monthYearPart.trim() : "");
             Double totalAmount = reading.getTekilalaTekefay();
             boolean alreadySent = reading.isEnableEditMeneshaReading();
@@ -2390,7 +2455,7 @@ public class ReadingService {
             String smsDueDateText,
             String monthYearPart,
             java.util.List<com.wbill.home.dto.GatewayBulkSmsRequestDTO.CustomSmsItemDTO> customItems) {
-        return sendBillSmsViaGateway(readingIds, gatewayUrl, apiKey, smsDueDateText, monthYearPart, customItems, null, null);
+        return sendBillSmsViaGateway(readingIds, gatewayUrl, apiKey, smsDueDateText, monthYearPart, customItems, null, null, null);
     }
 
     @Transactional
@@ -2403,6 +2468,20 @@ public class ReadingService {
             java.util.List<com.wbill.home.dto.GatewayBulkSmsRequestDTO.CustomSmsItemDTO> customItems,
             String protocol,
             Integer cityId) {
+        return sendBillSmsViaGateway(readingIds, gatewayUrl, apiKey, smsDueDateText, monthYearPart, customItems, protocol, cityId, null);
+    }
+
+    @Transactional
+    public java.util.Map<String, Object> sendBillSmsViaGateway(
+            java.util.List<Integer> readingIds,
+            String gatewayUrl,
+            String apiKey,
+            String smsDueDateText,
+            String monthYearPart,
+            java.util.List<com.wbill.home.dto.GatewayBulkSmsRequestDTO.CustomSmsItemDTO> customItems,
+            String protocol,
+            Integer cityId,
+            String templateCode) {
 
         if ((readingIds == null || readingIds.isEmpty()) && (customItems == null || customItems.isEmpty())) {
             throw new IllegalArgumentException("readingIds or customItems cannot be empty");
@@ -2440,7 +2519,7 @@ public class ReadingService {
                     continue;
                 }
 
-                String message = buildBillSmsMessage(reading, smsDueDateText, monthYearPart);
+                String message = buildBillSmsMessage(reading, smsDueDateText, monthYearPart, templateCode);
                 if (message == null || message.isEmpty()) {
                     continue;
                 }
@@ -2555,6 +2634,21 @@ public class ReadingService {
             String apiKey,
             String protocol,
             Integer cityId) {
+        return sendSingleBillSmsViaGateway(readingId, phoneNumber, message, gatewayUrl, apiKey, protocol, cityId, null, null, null);
+    }
+
+    @Transactional
+    public java.util.Map<String, Object> sendSingleBillSmsViaGateway(
+            Integer readingId,
+            String phoneNumber,
+            String message,
+            String gatewayUrl,
+            String apiKey,
+            String protocol,
+            Integer cityId,
+            String smsDueDateText,
+            String monthYearPart,
+            String templateCode) {
 
         Integer detectedCityId = cityId;
         BillingReading r = null;
@@ -2563,6 +2657,11 @@ public class ReadingService {
             if (detectedCityId == null && r != null && r.getBillingCustomerInfo() != null) {
                 detectedCityId = r.getBillingCustomerInfo().getCityId();
             }
+        }
+
+        String effectiveMessage = message;
+        if ((effectiveMessage == null || effectiveMessage.trim().isEmpty()) && r != null) {
+            effectiveMessage = buildBillSmsMessage(r, smsDueDateText, monthYearPart, templateCode);
         }
 
         String effectiveProtocol = protocol;
@@ -2585,7 +2684,7 @@ public class ReadingService {
         if ("SMPP".equalsIgnoreCase(effectiveProtocol)) {
             logger.info("Dispatching single SMS via SMPP to phone={} (cityId={})", phoneNumber, detectedCityId);
             java.util.List<SmsService.BulkSmsRequest> singleReq = java.util.Collections.singletonList(
-                    new SmsService.BulkSmsRequest(readingId, phoneNumber, message)
+                    new SmsService.BulkSmsRequest(readingId, phoneNumber, effectiveMessage)
             );
             java.util.List<SmsService.BulkSmsResult> smppResults = smsService.sendBulkSms(singleReq, detectedCityId);
             if (smppResults != null && !smppResults.isEmpty()) {
@@ -2595,7 +2694,7 @@ public class ReadingService {
             }
         } else {
             logger.info("Dispatching single SMS via HTTP Gateway to phone={}", phoneNumber);
-            res = smsService.sendSmsViaHttpGateway(gatewayUrl, apiKey, readingId, phoneNumber, message);
+            res = smsService.sendSmsViaHttpGateway(gatewayUrl, apiKey, readingId, phoneNumber, effectiveMessage);
         }
 
         if (res.isSuccess() && readingId != null) {

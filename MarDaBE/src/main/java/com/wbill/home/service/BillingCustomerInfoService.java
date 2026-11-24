@@ -254,8 +254,13 @@ public class BillingCustomerInfoService {
         BillingCustomerInfo existingCustomer = billingCustomerInfoRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("Customer not found with id: " + id));
 
-        // You might need to add uniqueness checks here as well, excluding the current
-        // customer
+        // Enforce Account Number uniqueness, excluding the current customer
+        if (dto.getAccountNumber() != null && !dto.getAccountNumber().trim().isEmpty()) {
+            Optional<BillingCustomerInfo> existingWithAcc = billingCustomerInfoRepository.findByAccountNumber(dto.getAccountNumber().trim());
+            if (existingWithAcc.isPresent() && existingWithAcc.get().getId() != id.intValue()) {
+                throw new IllegalArgumentException("Account Number '" + dto.getAccountNumber() + "' is already registered to customer ID " + existingWithAcc.get().getId() + " (" + existingWithAcc.get().getFullName() + ").");
+            }
+        }
 
         mapDtoToEntity(dto, existingCustomer);
         return billingCustomerInfoRepository.save(existingCustomer);

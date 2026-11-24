@@ -26,6 +26,7 @@ import CleaningServicesIcon from "@mui/icons-material/CleaningServices";
 import AssignmentIndIcon from "@mui/icons-material/AssignmentInd";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import LayersIcon from "@mui/icons-material/Layers";
+import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 
 const CustomerToolbar = ({
   onCreate,
@@ -48,6 +49,9 @@ const CustomerToolbar = ({
   updateFileInputRef,
   handleFileUpload,
   handleUpdateFileUpload,
+  filterDuplicate = "",
+  duplicateCounts = { total: 0 },
+  onToggleDuplicateFilter,
 }) => {
   const [bulkActionsAnchorEl, setBulkActionsAnchorEl] = useState(null);
   const [dataActionsAnchorEl, setDataActionsAnchorEl] = useState(null);
@@ -173,6 +177,32 @@ const CustomerToolbar = ({
             <ListItemText primary="Export to Excel" secondary="Export current filtered list" />
           </MenuItem>
         </Menu>
+
+        {/* Quick Duplicate Toggle Button */}
+        <Tooltip
+          title={
+            filterDuplicate
+              ? "Click to reset duplicate filter and show all"
+              : "Click to filter and view duplicate customer registrations"
+          }
+        >
+          <Button
+            variant={filterDuplicate ? "contained" : "outlined"}
+            color={filterDuplicate ? "warning" : "inherit"}
+            size="small"
+            startIcon={<WarningAmberIcon />}
+            onClick={onToggleDuplicateFilter}
+            sx={{
+              textTransform: "none",
+              fontWeight: 600,
+              ...(filterDuplicate && {
+                boxShadow: 2,
+              }),
+            }}
+          >
+            {filterDuplicate ? "Showing Duplicates" : `Duplicates (${duplicateCounts?.total || 0})`}
+          </Button>
+        </Tooltip>
 
         {/* Bulk Operations Menu */}
         <Button

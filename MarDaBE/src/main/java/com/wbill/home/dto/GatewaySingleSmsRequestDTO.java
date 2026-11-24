@@ -9,6 +9,9 @@ public class GatewaySingleSmsRequestDTO {
     private String apiKey;
     private String protocol;
     private Integer cityId;
+    private String templateCode;
+    private String smsDueDateText;
+    private String monthYearPart;
 
     public GatewaySingleSmsRequestDTO() {
     }
@@ -75,5 +78,29 @@ public class GatewaySingleSmsRequestDTO {
 
     public void setCityId(Integer cityId) {
         this.cityId = cityId;
+    }
+
+    public String getTemplateCode() {
+        return templateCode;
+    }
+
+    public void setTemplateCode(String templateCode) {
+        this.templateCode = templateCode;
+    }
+
+    public String getSmsDueDateText() {
+        return smsDueDateText;
+    }
+
+    public void setSmsDueDateText(String smsDueDateText) {
+        this.smsDueDateText = smsDueDateText;
+    }
+
+    public String getMonthYearPart() {
+        return monthYearPart;
+    }
+
+    public void setMonthYearPart(String monthYearPart) {
+        this.monthYearPart = monthYearPart;
     }
 }

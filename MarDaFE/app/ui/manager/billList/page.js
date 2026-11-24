@@ -77,12 +77,14 @@ import "./nyala-normal"; // register Nyala font for Amharic
 import * as XLSX from "xlsx";
 import { BillingBanksService } from "../../../lib/billingBanksService";
 import { SmsService } from "../../../lib/smsService";
+import { SmsTemplateService } from "../../../lib/smsTemplateService";
 
 const readingService = new ReadingService();
 const dropdownService = new DropdownService();
 const campanyProfileService = new CampanyProfileService();
 const billingBanksService = new BillingBanksService();
 const smsService = new SmsService();
+const smsTemplateService = new SmsTemplateService();
 
 const ethiopianMonths = [
   "መስከረም",
@@ -173,6 +175,21 @@ const BillList = () => {
     queryKey: ["distinctKifyaWer"],
     queryFn: () => readingService.getDistinctKifyaWerList(),
     staleTime: 15 * 60 * 1000,
+  });
+
+  // Active SMS templates from database
+  const { data: billSmsTemplates = [] } = useQuery({
+    queryKey: ["bill_sms_templates"],
+    queryFn: async () => {
+      try {
+        const list = await smsTemplateService.getAllTemplates();
+        return Array.isArray(list) ? list.filter((t) => t.active !== false) : [];
+      } catch (err) {
+        console.error("Error loading SMS templates in BillList:", err);
+        return [];
+      }
+    },
+    staleTime: 60 * 1000,
   });
 
   const handlePeriodChange = useCallback((newMonth, newYear) => {
@@ -1145,9 +1162,10 @@ const BillList = () => {
     return normalized;
   };
 
-  const buildSmsMessageForBill = (bill) => {
-    const name = bill.customerFullName || "";
-    const account = bill.customerAccountNumber || "";
+  const buildSmsMessageForBill = (bill, templateCodeOverride) => {
+    const name = bill.customerFullName || bill.fullName || "";
+    const nameEng = bill.customerFullNameEng || bill.fullNameEng || bill.customerNameEng || "";
+    const account = bill.customerAccountNumber || bill.accountNumber || "";
     const previous =
       bill.previousReading !== undefined && bill.previousReading !== null
         ? bill.previousReading
@@ -1168,6 +1186,11 @@ const BillList = () => {
       bill.tekilalaTekefay !== undefined && bill.tekilalaTekefay !== null
         ? bill.tekilalaTekefay
         : 0;
+    const kotariKiray = bill.kotariKiray !== undefined && bill.kotariKiray !== null ? bill.kotariKiray : "";
+    const yezihWer = bill.yezihWer !== undefined && bill.yezihWer !== null ? bill.yezihWer : "";
+    const wuzifKezihEske = bill.wuzifKezihEske || "";
+    const wuzifWorBzat = bill.wuzifWorBzat !== undefined && bill.wuzifWorBzat !== null ? bill.wuzifWorBzat : "";
+    const kitat = bill.kitat !== undefined && bill.kitat !== null ? bill.kitat : "";
     let dueStr = "";
     if (bankDueDateEC instanceof Date && !isNaN(bankDueDateEC)) {
       const [ey, em, ed] = ethiopianDate.toEthiopian(
@@ -1186,11 +1209,46 @@ const BillList = () => {
         ? `${selectedKifyaWerMonth}-${selectedKifyaWerYear} `
         : "";
 
-    // return `የተከበሩ ደንበኛችን ${name} በውል ቁጥር ${account} ${monthYearPart}ወር ፍጆታ ${consumption} (ቀድሞ ንባብ ${previous}, አሁን ንባብ ${current}) ውዝፍ ${wuzifHisab} ጠቅላላ ክፍያ ${totalPayable} ብር  እስከ ${dueStr} ድረስ ስለሆነ ወደቅጣት ተላልፎ ለተጨማሪ ወጭ ሳይዳረጉና በጊዜ እንዲከፍሉ እናሳስባለን`;
-    // return `የተከበሩ ደንበኛችን ${name} የውል ቁጥር ${account} የ ${monthYearPart}ወር ፍጆታ ${consumption} (ከ ${previous} እስከ ${current}) ውዝፍ ${wuzifHisab}፣ ጠቅላላ ክፍያ ${totalPayable} ብር የክፍያ ጊዘው እስከ ${dueStr} መሆኑን አውቀው  ቀኑ ሳያልፍ ክፍያዎን እንዲከፍሉ እናሳስባለን፡፡`; 
-    //return `የተከበሩ ${name} የውል ቁጥር ${account} የ ${monthYearPart}ወር ፍጆታ ${consumption} (ከ ${previous} እስከ ${current}) ውዝፍ ${wuzifHisab}፣ ጠቅላላ ክፍያ ${totalPayable} ብር እስከ ${dueStr} ድረስ ይክፈሉ፡፡`;
-    const companySuffix = companyProfile?.companyName ? ` (${companyProfile.companyName.trim()})` : "";
-    return `የተከበሩ ${name} የውል ቁጥር ${account} የ${monthYearPart}ወር ፍጆታ ${consumption}m³(ከ${previous}-${current}) ውዝፍ ${wuzifHisab}፣ጠቅላላ ክፍያ ${totalPayable} ብር እስከ ${dueStr} ድረስ ይክፈሉ፡፡${companySuffix}`;
+    const utilityName = companyProfile?.companyName ? companyProfile.companyName.trim() : "";
+    const utilityNameAmh = companyProfile?.companyNameAmh ? companyProfile.companyNameAmh.trim() : utilityName;
+
+    // Resolve target template from database templates: prefer override, then BILL_SMS, then first active
+    let targetTemplate = null;
+    if (Array.isArray(billSmsTemplates) && billSmsTemplates.length > 0) {
+      if (templateCodeOverride) {
+        targetTemplate = billSmsTemplates.find((t) => t.templateCode === templateCodeOverride);
+      }
+      if (!targetTemplate) {
+        targetTemplate = billSmsTemplates.find((t) => t.templateCode === "BILL_SMS") || billSmsTemplates[0];
+      }
+    }
+
+    if (targetTemplate && targetTemplate.templateContent) {
+      let msg = targetTemplate.templateContent;
+      msg = msg.split("{customerName}").join(name);
+      msg = msg.split("{customerNameEng}").join(nameEng);
+      msg = msg.split("{accountNumber}").join(account);
+      msg = msg.split("{billMonth}").join(monthYearPart);
+      msg = msg.split("{consumption}").join(String(consumption));
+      msg = msg.split("{previousReading}").join(String(previous));
+      msg = msg.split("{currentReading}").join(String(current));
+      msg = msg.split("{arrears}").join(String(wuzifHisab));
+      msg = msg.split("{wuzifHisab}").join(String(wuzifHisab));
+      msg = msg.split("{kotariKiray}").join(String(kotariKiray));
+      msg = msg.split("{yezihWer}").join(String(yezihWer));
+      msg = msg.split("{wuzifKezihEske}").join(String(wuzifKezihEske));
+      msg = msg.split("{wuzifWorBzat}").join(String(wuzifWorBzat));
+      msg = msg.split("{kitat}").join(String(kitat));
+      msg = msg.split("{totalPayable}").join(String(totalPayable));
+      msg = msg.split("{dueDate}").join(dueStr);
+      msg = msg.split("{companyName}").join(utilityName);
+      msg = msg.split("{companyNameAmharic}").join(utilityNameAmh);
+      return msg;
+    }
+
+    // Dynamic fallback when database template is not yet loaded
+    const companySuffix = utilityName ? ` (${utilityName})` : "";
+    return `ውድ ደንበኛችን ${name} የውል ቁጥር ${account} የ${monthYearPart}ወር ፍጆታ ${consumption}m³(ከ${previous}-${current}) ውዝፍ ${wuzifHisab}፣ጠቅላላ ክፍያ ${totalPayable} ብር እስከ ${dueStr} ድረስ ይክፈሉ፡፡${companySuffix}`;
   };
 
   const handleSendSmsForFilteredBills = async () => {

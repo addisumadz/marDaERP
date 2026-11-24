@@ -14,6 +14,7 @@ import {
   MenuItem,
   FormControlLabel,
   Switch,
+  Checkbox,
   Box,
   CircularProgress,
   Radio,
@@ -62,6 +63,7 @@ const CustomerFormModal = ({
   const initialBranchRef = useRef(null);
   const [amharicInputMode, setAmharicInputMode] = useState("powerGeez");
   const [submitError, setSubmitError] = useState("");
+  const [allowDuplicateName, setAllowDuplicateName] = useState(false);
 
   const {
     control,
@@ -110,6 +112,7 @@ const CustomerFormModal = ({
   const watchedFullName = useWatch({ control, name: "fullName" });
   const watchedFullNameEng = useWatch({ control, name: "fullNameEng" });
   const watchedMeterNumber = useWatch({ control, name: "meterNumber" });
+  const watchedAccountNumber = useWatch({ control, name: "accountNumber" });
 
   const { data: settings, isLoading: isLoadingSettings } = useQuery({
     queryKey: ["company-settings"],
@@ -141,6 +144,7 @@ const CustomerFormModal = ({
     if (open) {
       setActiveTab(0);
       setSubmitError("");
+      setAllowDuplicateName(false);
       if (customer && !isLoading) {
         reset({
           ...customer,
@@ -265,7 +269,7 @@ const CustomerFormModal = ({
   }, [watchedBranchId, open, customer, setValue, readerFetcher]);
 
   // =========================================================================
-  // DUPLICATE CHECKS: EXACT MATCH ON AMHARIC NAME, ENGLISH NAME, METER NUMBER
+  // DUPLICATE CHECKS: EXACT MATCH ON ACCOUNT NUMBER, AMHARIC NAME, ENGLISH NAME, METER NUMBER
   // =========================================================================
   const duplicateStatus = useMemo(() => {
     const currentId = customer?.id;
@@ -273,13 +277,21 @@ const CustomerFormModal = ({
       (c) => !currentId || String(c.id) !== String(currentId)
     );
 
+    const normAccount = (watchedAccountNumber || "").trim().toLowerCase();
     const normAmharic = (watchedFullName || "").trim().replace(/\s+/g, " ");
     const normEnglish = (watchedFullNameEng || "").trim().replace(/\s+/g, " ").toLowerCase();
     const normMeter = (watchedMeterNumber || "").trim().toLowerCase();
 
+    let dupAccount = null;
     let dupAmharic = null;
     let dupEnglish = null;
     let dupMeter = null;
+
+    if (normAccount && normAccount !== "-" && normAccount !== "null" && normAccount !== "0") {
+      dupAccount = otherCustomers.find(
+        (c) => (c.accountNumber || "").trim().toLowerCase() === normAccount
+      );
+    }
 
     if (normAmharic && normAmharic.length >= 2) {
       dupAmharic = otherCustomers.find(
@@ -300,13 +312,14 @@ const CustomerFormModal = ({
       );
     }
 
-    return { dupAmharic, dupEnglish, dupMeter };
-  }, [watchedFullName, watchedFullNameEng, watchedMeterNumber, customer?.id, existingCustomers]);
+    return { dupAccount, dupAmharic, dupEnglish, dupMeter };
+  }, [watchedAccountNumber, watchedFullName, watchedFullNameEng, watchedMeterNumber, customer?.id, existingCustomers]);
 
   const handleClose = () => {
     setKetenaList([]);
     setReaderOptions([]);
     setSubmitError("");
+    setAllowDuplicateName(false);
     reset();
     onClose();
   };
@@ -314,31 +327,20 @@ const CustomerFormModal = ({
   const handleFormSubmit = async (data) => {
     setSubmitError("");
 
-    // Enforce Exact Duplicate Checks
-    if (duplicateStatus.dupAmharic) {
-      setActiveTab(0);
+    // 1. Strict Duplicate Account Check (Hard Block)
+    if (duplicateStatus.dupAccount) {
+      setActiveTab(1);
       setSubmitError(
-        `Duplicate Amharic Name: A customer with the exact name "${duplicateStatus.dupAmharic.fullName}" already exists (Account: ${duplicateStatus.dupAmharic.accountNumber}). Exact duplicate names are not allowed.`
+        `Duplicate Account Number: Customer "${duplicateStatus.dupAccount.fullName || duplicateStatus.dupAccount.fullNameEng || "Existing"}" is already registered with Account Number "${duplicateStatus.dupAccount.accountNumber}". Duplicate account numbers are strictly not allowed.`
       );
-      setError("fullName", {
+      setError("accountNumber", {
         type: "manual",
-        message: `Exact match with Account ${duplicateStatus.dupAmharic.accountNumber}`,
+        message: `Account already in use by ${duplicateStatus.dupAccount.fullName || "another customer"}`,
       });
       return;
     }
 
-    if (duplicateStatus.dupEnglish) {
-      setActiveTab(0);
-      setSubmitError(
-        `Duplicate English Name: A customer with the exact name "${duplicateStatus.dupEnglish.fullNameEng}" already exists (Account: ${duplicateStatus.dupEnglish.accountNumber}). Exact duplicate names are not allowed.`
-      );
-      setError("fullNameEng", {
-        type: "manual",
-        message: `Exact match with Account ${duplicateStatus.dupEnglish.accountNumber}`,
-      });
-      return;
-    }
-
+    // 2. Strict Duplicate Meter Check (Hard Block)
     if (!isEditMode && duplicateStatus.dupMeter) {
       setActiveTab(2);
       setSubmitError(
@@ -347,6 +349,31 @@ const CustomerFormModal = ({
       setError("meterNumber", {
         type: "manual",
         message: `Meter already in use by Account ${duplicateStatus.dupMeter.accountNumber}`,
+      });
+      return;
+    }
+
+    // 3. Duplicate Name Checks (Allowed ONLY if explicit confirmation checkbox is checked)
+    if (duplicateStatus.dupAmharic && !allowDuplicateName) {
+      setActiveTab(0);
+      setSubmitError(
+        `Duplicate Amharic Name: A customer with the exact name "${duplicateStatus.dupAmharic.fullName}" already exists (Account: ${duplicateStatus.dupAmharic.accountNumber}). If this is a different customer who shares the same name, check the confirmation box below to proceed.`
+      );
+      setError("fullName", {
+        type: "manual",
+        message: `Matches Account ${duplicateStatus.dupAmharic.accountNumber}. Check confirmation box to proceed.`,
+      });
+      return;
+    }
+
+    if (duplicateStatus.dupEnglish && !allowDuplicateName) {
+      setActiveTab(0);
+      setSubmitError(
+        `Duplicate English Name: A customer with the exact name "${duplicateStatus.dupEnglish.fullNameEng}" already exists (Account: ${duplicateStatus.dupEnglish.accountNumber}). If this is a different customer who shares the same name, check the confirmation box below to proceed.`
+      );
+      setError("fullNameEng", {
+        type: "manual",
+        message: `Matches Account ${duplicateStatus.dupEnglish.accountNumber}. Check confirmation box to proceed.`,
       });
       return;
     }
@@ -480,15 +507,52 @@ const CustomerFormModal = ({
           )}
 
           {/* Live Duplicate Warning Alerts */}
-          {duplicateStatus.dupAmharic && (
+          {duplicateStatus.dupAccount && (
             <Alert severity="error" sx={{ mb: 2 }} icon={<WarningAmberIcon />}>
-              <strong>Duplicate Amharic Name:</strong> Customer <strong>{duplicateStatus.dupAmharic.fullName}</strong> already exists with Account <strong>{duplicateStatus.dupAmharic.accountNumber}</strong>. Exact duplicate Amharic names are not allowed!
+              <strong>Duplicate Account Number:</strong> Account <strong>{duplicateStatus.dupAccount.accountNumber}</strong> is already registered to <strong>{duplicateStatus.dupAccount.fullName || duplicateStatus.dupAccount.fullNameEng}</strong>. Duplicate account numbers are strictly not allowed!
             </Alert>
           )}
 
-          {duplicateStatus.dupEnglish && (
-            <Alert severity="error" sx={{ mb: 2 }} icon={<WarningAmberIcon />}>
-              <strong>Duplicate English Name:</strong> Customer <strong>{duplicateStatus.dupEnglish.fullNameEng}</strong> already exists with Account <strong>{duplicateStatus.dupEnglish.accountNumber}</strong>. Exact duplicate English names are not allowed!
+          {(duplicateStatus.dupAmharic || duplicateStatus.dupEnglish) && (
+            <Alert
+              severity={allowDuplicateName ? "info" : "warning"}
+              sx={{ mb: 2 }}
+              icon={<WarningAmberIcon />}
+            >
+              <Box>
+                {duplicateStatus.dupAmharic && (
+                  <Typography variant="body2" sx={{ mb: 0.5 }}>
+                    <strong>Duplicate Amharic Name:</strong> A customer with the name <strong>"{duplicateStatus.dupAmharic.fullName}"</strong> already exists with Account <strong>{duplicateStatus.dupAmharic.accountNumber}</strong>.
+                  </Typography>
+                )}
+                {duplicateStatus.dupEnglish && (
+                  <Typography variant="body2" sx={{ mb: 0.5 }}>
+                    <strong>Duplicate English Name:</strong> A customer with the name <strong>"{duplicateStatus.dupEnglish.fullNameEng}"</strong> already exists with Account <strong>{duplicateStatus.dupEnglish.accountNumber}</strong>.
+                  </Typography>
+                )}
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={allowDuplicateName}
+                      onChange={(e) => {
+                        setAllowDuplicateName(e.target.checked);
+                        if (e.target.checked) {
+                          clearErrors(["fullName", "fullNameEng"]);
+                          setSubmitError("");
+                        }
+                      }}
+                      color="warning"
+                      size="small"
+                    />
+                  }
+                  label={
+                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                      I confirm this is a different customer who shares the same name
+                    </Typography>
+                  }
+                  sx={{ mt: 0.5 }}
+                />
+              </Box>
             </Alert>
           )}
 
@@ -549,10 +613,12 @@ const CustomerFormModal = ({
                           label="ሙሉ ስም (Full Name Amharic) *"
                           variant="outlined"
                           fullWidth
-                          error={Boolean(error || duplicateStatus.dupAmharic)}
+                          error={Boolean(error || (duplicateStatus.dupAmharic && !allowDuplicateName))}
                           helperText={
                             duplicateStatus.dupAmharic
-                              ? `Exact duplicate of Account ${duplicateStatus.dupAmharic.accountNumber}`
+                              ? allowDuplicateName
+                                ? `Confirmed: Shares name with Account ${duplicateStatus.dupAmharic.accountNumber}`
+                                : `Matches existing Account ${duplicateStatus.dupAmharic.accountNumber} (Check confirmation box above to allow)`
                               : error
                               ? error.message
                               : "Auto-transliterates to Ge'ez on blur"
@@ -579,10 +645,12 @@ const CustomerFormModal = ({
                           label="Full Name (English) *"
                           variant="outlined"
                           fullWidth
-                          error={Boolean(error || duplicateStatus.dupEnglish)}
+                          error={Boolean(error || (duplicateStatus.dupEnglish && !allowDuplicateName))}
                           helperText={
                             duplicateStatus.dupEnglish
-                              ? `Exact duplicate of Account ${duplicateStatus.dupEnglish.accountNumber}`
+                              ? allowDuplicateName
+                                ? `Confirmed: Shares name with Account ${duplicateStatus.dupEnglish.accountNumber}`
+                                : `Matches existing Account ${duplicateStatus.dupEnglish.accountNumber} (Check confirmation box above to allow)`
                               : "Used for bilingual search and receipts"
                           }
                           placeholder="e.g. Abebe Kebede Tadesse"
@@ -734,9 +802,11 @@ const CustomerFormModal = ({
                           label="የሂሳብ ቁጥር (Account Number) *"
                           variant="outlined"
                           fullWidth
-                          error={!!error}
+                          error={Boolean(error || duplicateStatus.dupAccount)}
                           helperText={
-                            error
+                            duplicateStatus.dupAccount
+                              ? `Already in use by Account ${duplicateStatus.dupAccount.accountNumber} (${duplicateStatus.dupAccount.fullName || "Existing"})`
+                              : error
                               ? error.message
                               : autoGenerateEnabled
                               ? "Automatically generated based on Kebele code"

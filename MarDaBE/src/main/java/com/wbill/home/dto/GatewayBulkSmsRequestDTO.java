@@ -12,6 +12,7 @@ public class GatewayBulkSmsRequestDTO {
     private List<CustomSmsItemDTO> customItems;
     private String protocol;
     private Integer cityId;
+    private String templateCode;
 
     public GatewayBulkSmsRequestDTO() {
     }
@@ -78,6 +79,14 @@ public class GatewayBulkSmsRequestDTO {
 
     public void setCityId(Integer cityId) {
         this.cityId = cityId;
+    }
+
+    public String getTemplateCode() {
+        return templateCode;
+    }
+
+    public void setTemplateCode(String templateCode) {
+        this.templateCode = templateCode;
     }
 
     public static class CustomSmsItemDTO {

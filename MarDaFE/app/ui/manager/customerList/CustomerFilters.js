@@ -12,6 +12,8 @@ import {
   Typography,
   IconButton,
   Tooltip,
+  FormControlLabel,
+  Switch,
 } from "@mui/material";
 import FilterListIcon from "@mui/icons-material/FilterList";
 import FilterAltOffIcon from "@mui/icons-material/FilterAltOff";
@@ -39,6 +41,12 @@ const CustomerFilters = ({
   filterHasAdditionalPayment,
   filterUnassignedReader,
   assignScope,
+  // Duplicate filter props
+  filterDuplicate = "",
+  onFilterDuplicateChange,
+  duplicateScope = "active",
+  onDuplicateScopeChange,
+  duplicateCounts = { total: 0, account: 0, fullName: 0, fullNameEng: 0 },
   // Callbacks
   onFilterChange,
   onClearAll,
@@ -89,6 +97,7 @@ const CustomerFilters = ({
     filterMeterChangeDateTo,
     filterHasDryWaste,
     filterHasAdditionalPayment,
+    filterDuplicate,
   ].filter(Boolean).length;
 
   return (
@@ -243,6 +252,57 @@ const CustomerFilters = ({
             <MenuItem value="all">Select All Filtered</MenuItem>
           </Select>
         </FormControl>
+
+        {/* Duplicate Customer Filter */}
+        <FormControl size="small" sx={{ minWidth: 210, flex: "1 1 200px" }}>
+          <InputLabel>Duplicate Status</InputLabel>
+          <Select
+            value={filterDuplicate}
+            label="Duplicate Status"
+            onChange={(e) => onFilterDuplicateChange(e.target.value)}
+          >
+            <MenuItem value="">
+              <em>All Customers (No Duplicate Filter)</em>
+            </MenuItem>
+            <MenuItem value="any">
+              ⚠️ All Duplicates ({duplicateCounts.total})
+            </MenuItem>
+            <MenuItem value="account">
+              Duplicate Accounts ({duplicateCounts.account})
+            </MenuItem>
+            <MenuItem value="fullName">
+              Duplicate Amharic Names ({duplicateCounts.fullName})
+            </MenuItem>
+            <MenuItem value="fullNameEng">
+              Duplicate English Names ({duplicateCounts.fullNameEng})
+            </MenuItem>
+          </Select>
+        </FormControl>
+
+        {/* Duplicate Scope switch: Active Only vs Entire DB */}
+        <FormControlLabel
+          control={
+            <Switch
+              size="small"
+              checked={duplicateScope === "all"}
+              onChange={(e) => onDuplicateScopeChange(e.target.checked ? "all" : "active")}
+              color="warning"
+            />
+          }
+          label={
+            <Typography
+              variant="caption"
+              sx={{
+                fontWeight: 600,
+                color: duplicateScope === "all" ? "warning.dark" : "text.secondary",
+                userSelect: "none",
+              }}
+            >
+              {duplicateScope === "all" ? "Scan Entire DB (Incl. Terminated)" : "Scan Active Only"}
+            </Typography>
+          }
+          sx={{ ml: 0.5 }}
+        />
 
         {/* Toggle Advanced Filters Button */}
         <Button

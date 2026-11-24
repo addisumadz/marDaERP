@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState, useEffect, useCallback } from "react";
 import {
   Box,
@@ -77,14 +78,17 @@ import RefreshIcon from "@mui/icons-material/Refresh";
 import { ReadingService } from "@/app/lib/ReadingService";
 import { DropdownService } from "@/app/lib/dropdownService";
 import { SmsService } from "@/app/lib/smsService";
+import { SmsTemplateService } from "@/app/lib/smsTemplateService";
 import { CampanyProfileService } from "@/app/lib/campanyProfileService";
 import addressCityService from "@/app/lib/addressCityService";
+import addressStreetsService from "@/app/lib/addressStreetsService";
 
 var ethiopianDate = require("ethiopian-date");
 
 const readingService = new ReadingService();
 const dropdownService = new DropdownService();
 const smsService = new SmsService();
+const smsTemplateService = new SmsTemplateService();
 const companyProfileService = new CampanyProfileService();
 
 const modernSelectSx = {
@@ -194,6 +198,8 @@ const SendBillSmsInner = () => {
   const [selectedReaderId, setSelectedReaderId] = useState("");
   const [selectedCustomerTypeId, setSelectedCustomerTypeId] = useState("");
   const [filterSmsSent, setFilterSmsSent] = useState("all"); // "all", "not_sent", "sent"
+  const [filterMoneyCollected, setFilterMoneyCollected] = useState("all"); // "all", "true", "false"
+  const [filterBankSent, setFilterBankSent] = useState("all"); // "all", "sent", "not_sent"
 
   // Gateway Configuration Modal State
   const [showConfigModal, setShowConfigModal] = useState(false);
@@ -227,6 +233,25 @@ const SendBillSmsInner = () => {
   // Queue State
   const [smsQueue, setSmsQueue] = useState([]);
   const [isPreparingQueue, setIsPreparingQueue] = useState(false);
+  const [selectedTemplateCode, setSelectedTemplateCode] = useState("BILL_SMS");
+
+  // Query all active templates from database
+  const { data: dbTemplates = [] } = useQuery({
+    queryKey: ["sms_templates_all"],
+    queryFn: async () => {
+      try {
+        const list = await smsTemplateService.getAllTemplates();
+        return Array.isArray(list) ? list.filter((t) => t.active !== false) : [];
+      } catch (err) {
+        console.error("Error fetching templates in SendBillSms:", err);
+        return [];
+      }
+    },
+  });
+
+  // On-Demand Bill Loading State
+  const [hasLoadedBills, setHasLoadedBills] = useState(false);
+  const [isFetchingBills, setIsFetchingBills] = useState(false);
 
   // Selection & Table State
   const [selectedIds, setSelectedIds] = useState(new Set());
@@ -256,8 +281,8 @@ const SendBillSmsInner = () => {
   });
 
   // Address Cities Query
-  const { data: addressCities = [] } = useQuery({
-    queryKey: ["sms_addressCities"],
+  const { data: addressCities = [], isLoading: isCitiesLoading } = useQuery({
+    queryKey: ["addressCities"],
     queryFn: async () => {
       try {
         const res = await addressCityService.getAllAddressCities();
@@ -268,6 +293,8 @@ const SendBillSmsInner = () => {
       }
     },
     staleTime: 10 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 
   // Database SMS Settings Query (Table: sms_setting)
@@ -368,6 +395,22 @@ const SendBillSmsInner = () => {
   const handlePeriodChange = useCallback((newMonth, newYear) => {
     setSelectedKifyaWerMonth(newMonth);
     setSelectedKifyaWerYear(String(newYear));
+    setHasLoadedBills(false);
+    setSmsQueue([]);
+  }, []);
+
+  // Reset all optional dropdown filters
+  const handleResetFilters = useCallback(() => {
+    setSelectedCityId("");
+    setSelectedKebeleId("");
+    setSelectedKetenaId("");
+    setSelectedBranchId("");
+    setSelectedReaderId("");
+    setSelectedCustomerTypeId("");
+    setFilterSmsSent("all");
+    setFilterMoneyCollected("all");
+    setFilterBankSent("all");
+    toast.info("ማጣሪያዎች ጸድተዋል (Filters reset)");
   }, []);
 
   // Modal Setting Handlers
@@ -540,35 +583,120 @@ const SendBillSmsInner = () => {
     }
   };
 
-  // Dropdown Queries
-  const { data: kebeles = [] } = useQuery({
-    queryKey: ["sms_kebeles"],
-    queryFn: () => dropdownService.getKebeles(),
+  // Dropdown Queries (Standardized to match other MarDa ERP pages)
+  const dropdownQueryOpts = {
+    staleTime: 10 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  };
+
+  const { data: kebeles = [], isLoading: isKebelesLoading } = useQuery({
+    queryKey: ["kebeles"],
+    queryFn: async () => {
+      try {
+        const res = await dropdownService.getKebeles();
+        return Array.isArray(res) ? res : (res?.data || []);
+      } catch (err) {
+        console.error("Error fetching kebeles:", err);
+        return [];
+      }
+    },
+    ...dropdownQueryOpts,
   });
 
-  const { data: branches = [] } = useQuery({
-    queryKey: ["sms_branches"],
-    queryFn: () => dropdownService.getBranches(),
+  const { data: branches = [], isLoading: isBranchesLoading } = useQuery({
+    queryKey: ["branches"],
+    queryFn: async () => {
+      try {
+        const res = await dropdownService.getBranches();
+        return Array.isArray(res) ? res : (res?.data || []);
+      } catch (err) {
+        console.error("Error fetching branches:", err);
+        return [];
+      }
+    },
+    ...dropdownQueryOpts,
   });
 
-  const { data: customerTypes = [] } = useQuery({
-    queryKey: ["sms_customerTypes"],
-    queryFn: () => dropdownService.getCustomerTypes(),
+  const { data: customerTypes = [], isLoading: isCustomerTypesLoading } = useQuery({
+    queryKey: ["customerTypes"],
+    queryFn: async () => {
+      try {
+        const res = await dropdownService.getCustomerTypes();
+        return Array.isArray(res) ? res : (res?.data || []);
+      } catch (err) {
+        console.error("Error fetching customer types:", err);
+        return [];
+      }
+    },
+    ...dropdownQueryOpts,
   });
 
-  const { data: ketenas = [] } = useQuery({
-    queryKey: ["sms_ketenas", selectedKebeleId],
-    queryFn: () => (selectedKebeleId ? dropdownService.getKetenasByKebele(selectedKebeleId) : []),
-    enabled: !!selectedKebeleId,
+  const { data: ketenas = [], isLoading: isKetenasLoading } = useQuery({
+    queryKey: ["ketenas", selectedKebeleId],
+    queryFn: async () => {
+      try {
+        if (!selectedKebeleId) {
+          const res = await dropdownService.getAllKetenas();
+          return Array.isArray(res) ? res : (res?.data || []);
+        }
+        const res = await dropdownService.getKetenasByKebele(selectedKebeleId);
+        return Array.isArray(res) ? res : (res?.data || []);
+      } catch (err) {
+        console.error("Error fetching ketenas:", err);
+        return [];
+      }
+    },
+    ...dropdownQueryOpts,
   });
 
-  const { data: readers = [] } = useQuery({
-    queryKey: ["sms_readers", selectedBranchId],
-    queryFn: () => (selectedBranchId ? dropdownService.getReadersByBranch(selectedBranchId) : []),
-    enabled: !!selectedBranchId,
+  const { data: readers = [], isLoading: isReadersLoading } = useQuery({
+    queryKey: ["readers", selectedBranchId],
+    queryFn: async () => {
+      try {
+        if (!selectedBranchId) {
+          const res = await dropdownService.getActiveMeterReaders();
+          return Array.isArray(res) ? res : (res?.data || []);
+        }
+        const res = await dropdownService.getReadersByBranch(selectedBranchId);
+        return Array.isArray(res) ? res : (res?.data || []);
+      } catch (err) {
+        console.error("Error fetching readers:", err);
+        return [];
+      }
+    },
+    ...dropdownQueryOpts,
   });
 
-  // Query Bills for the selected Ethiopian Month & Year
+  // Query all address streets for geographic city-to-kebele mapping
+  const { data: allAddressStreets = [] } = useQuery({
+    queryKey: ["allAddressStreets"],
+    queryFn: async () => {
+      try {
+        const res = await addressStreetsService.getAllAddressStreets();
+        return Array.isArray(res) ? res : (res?.data || []);
+      } catch (err) {
+        return [];
+      }
+    },
+    ...dropdownQueryOpts,
+  });
+
+  // Set of kebele IDs belonging to selectedCityId
+  const cityKebeleIdSet = useMemo(() => {
+    if (!selectedCityId || !Array.isArray(allAddressStreets) || allAddressStreets.length === 0) {
+      return null;
+    }
+    const ids = new Set();
+    allAddressStreets.forEach((st) => {
+      if (st && st.cityId != null && String(st.cityId) === String(selectedCityId)) {
+        ids.add(Number(st.id));
+      }
+    });
+    return ids;
+  }, [selectedCityId, allAddressStreets]);
+
+  // Query Bills for the selected Ethiopian Month & Year (on-demand only, disabled on load)
   const {
     data: readings = [],
     isLoading: isReadingsLoading,
@@ -583,42 +711,184 @@ const SendBillSmsInner = () => {
       }
       return [];
     },
-    enabled: !!selectedKifyaWerMonth && !!selectedKifyaWerYear,
+    enabled: false,
     staleTime: 3 * 60 * 1000,
   });
 
+  // Helper to filter raw bills according to active dropdown criteria
+  const applyBillFilters = useCallback(
+    (rawList) => {
+      if (!Array.isArray(rawList)) return [];
+      let list = rawList.filter(
+        (b) => !b?.isVoid && !b?.void && String(b?.status).toLowerCase() !== "deleted"
+      );
+
+      // 1. City Filter (matches kebele belonging to the selected city, or direct cityId if present)
+      if (selectedCityId) {
+        list = list.filter((r) => {
+          if (r.cityId != null && String(r.cityId) === String(selectedCityId)) return true;
+          if (r.customerCityId != null && String(r.customerCityId) === String(selectedCityId)) return true;
+          const kId = r.customerKebeleId ?? r.addressStreetsId ?? r.kebeleId;
+          if (cityKebeleIdSet && cityKebeleIdSet.size > 0 && kId != null) {
+            return cityKebeleIdSet.has(Number(kId));
+          }
+          return false;
+        });
+      }
+
+      // 2. Kebele Filter
+      if (selectedKebeleId) {
+        list = list.filter((r) => {
+          const v = r.customerKebeleId ?? r.addressStreetsId ?? r.kebeleId;
+          return v != null && String(v) === String(selectedKebeleId);
+        });
+      }
+
+      // 3. Ketena Filter
+      if (selectedKetenaId) {
+        list = list.filter((r) => {
+          const v = r.addressKetenaId ?? r.ketenaId;
+          return v != null && String(v) === String(selectedKetenaId);
+        });
+      }
+
+      // 4. Branch Filter
+      if (selectedBranchId) {
+        list = list.filter((r) => {
+          const v = r.branchsId ?? r.branchId;
+          return v != null && String(v) === String(selectedBranchId);
+        });
+      }
+
+      // 5. Reader Filter
+      if (selectedReaderId) {
+        list = list.filter((r) => {
+          const v = r.assignedReaderId ?? r.readerId;
+          return v != null && String(v) === String(selectedReaderId);
+        });
+      }
+
+      // 6. Customer Type Filter
+      if (selectedCustomerTypeId) {
+        list = list.filter((r) => {
+          const v = r.customerTypeId;
+          return v != null && String(v) === String(selectedCustomerTypeId);
+        });
+      }
+
+      // 7. SMS Sent Status Filter
+      if (filterSmsSent !== "all") {
+        const sentBool = filterSmsSent === "sent";
+        list = list.filter((b) =>
+          sentBool ? !!b.enableEditMeneshaReading : !b.enableEditMeneshaReading
+        );
+      }
+
+      // 8. Money Collected / Payment Status Filter
+      if (filterMoneyCollected !== "all") {
+        const moneyCollectedBool = filterMoneyCollected === "true";
+        list = list.filter(
+          (b) => Boolean(b.isMoneyCollected || b.moneyCollected) === moneyCollectedBool
+        );
+      }
+
+      // 9. Bank Sent Filter
+      if (filterBankSent !== "all") {
+        if (filterBankSent === "sent") {
+          list = list.filter((r) => r.isSendToBank === true || r.sendToBank === true);
+        } else if (filterBankSent === "not_sent") {
+          list = list.filter((r) => !r.isSendToBank && !r.sendToBank);
+        }
+      }
+
+      return list;
+    },
+    [
+      selectedCityId,
+      cityKebeleIdSet,
+      selectedKebeleId,
+      selectedKetenaId,
+      selectedBranchId,
+      selectedReaderId,
+      selectedCustomerTypeId,
+      filterSmsSent,
+      filterMoneyCollected,
+      filterBankSent,
+    ]
+  );
+
+  // Explicit handler to load bills on demand based on chosen criteria
+  const handleLoadBills = async () => {
+    if (!selectedKifyaWerMonth || !selectedKifyaWerYear) {
+      toast.warning("እባክዎ መጀመሪያ የክፍያ ወር እና ዓመት ይምረጡ (Please select billing month & year first)");
+      return;
+    }
+    setIsFetchingBills(true);
+    try {
+      const res = await refetchReadings();
+      setHasLoadedBills(true);
+      const raw = res?.data || [];
+      const filtered = applyBillFilters(raw);
+
+      // Build active filter summary labels for the notification
+      const activeFilterLabels = [];
+      if (selectedCityId) {
+        const cObj = addressCities.find((c) => String(c.id) === String(selectedCityId));
+        activeFilterLabels.push(`ከተማ: ${cObj?.name || cObj?.cityName || selectedCityId}`);
+      }
+      if (selectedKebeleId) {
+        const kObj = kebeles.find((k) => String(k.id) === String(selectedKebeleId));
+        activeFilterLabels.push(`ቀበሌ: ${kObj?.name || kObj?.streetName || selectedKebeleId}`);
+      }
+      if (selectedKetenaId) {
+        const ktObj = ketenas.find((k) => String(k.id) === String(selectedKetenaId));
+        activeFilterLabels.push(`ቀጠና: ${ktObj?.name || ktObj?.ketenaName || selectedKetenaId}`);
+      }
+      if (selectedBranchId) {
+        const bObj = branches.find((b) => String(b.id) === String(selectedBranchId));
+        activeFilterLabels.push(`ቅርንጫፍ: ${bObj?.name || bObj?.branchName || selectedBranchId}`);
+      }
+      if (selectedReaderId) {
+        const rObj = readers.find((r) => String(r.id) === String(selectedReaderId));
+        activeFilterLabels.push(`አንባቢ: ${rObj?.name || rObj?.fullName || rObj?.userName || selectedReaderId}`);
+      }
+      if (selectedCustomerTypeId) {
+        const cTypeObj = customerTypes.find((c) => String(c.id) === String(selectedCustomerTypeId));
+        activeFilterLabels.push(`ዓይነት: ${cTypeObj?.name || cTypeObj?.customerType || selectedCustomerTypeId}`);
+      }
+      if (filterSmsSent !== "all") {
+        activeFilterLabels.push(`SMS: ${filterSmsSent === "sent" ? "የተላከ" : "ያልተላከ"}`);
+      }
+      if (filterMoneyCollected !== "all") {
+        activeFilterLabels.push(`ክፍያ: ${filterMoneyCollected === "true" ? "የከፈለ (Paid)" : "ያልከፈለ (Unpaid)"}`);
+      }
+      if (filterBankSent !== "all") {
+        activeFilterLabels.push(`ባንክ: ${filterBankSent === "sent" ? "የተላከ (Sent)" : "ያልተላከ (Not Sent)"}`);
+      }
+
+      if (filtered.length > 0) {
+        const filterNote = activeFilterLabels.length > 0 ? ` (ማጣሪያ: ${activeFilterLabels.join(", ")})` : "";
+        toast.success(`ተገኝተዋል: ${filtered.length} ሂሳቦች ተጭነዋል!${filterNote}`);
+      } else {
+        if (raw.length > 0 && activeFilterLabels.length > 0) {
+          toast.warning(`በተመረጡት ማጣሪያዎች (${activeFilterLabels.join(", ")}) የተገኘ ሂሳብ የለም (በወሩ ውስጥ ${raw.length} ሂሳቦች አሉ)`);
+        } else {
+          toast.info("በተመረጠው ወር የተገኘ ሂሳብ የለም (No bills found for the selected period)");
+        }
+      }
+    } catch (err) {
+      console.error("Error loading bills:", err);
+      toast.error("ሂሳቦችን መጫን አልተቻለም: " + (err?.message || "Network Error"));
+    } finally {
+      setIsFetchingBills(false);
+    }
+  };
+
   // Filter bills using dropdown options
   const filteredReadings = useMemo(() => {
-    let list = [...readings];
-
-    const matchesAnyKey = (obj, keys, value) =>
-      keys.some((k) => obj?.[k] !== undefined && String(obj[k]) === String(value));
-
-    if (selectedCityId) {
-      list = list.filter((r) => matchesAnyKey(r, ["customerCityId", "cityId", "addressCityId", "city_id"], selectedCityId));
-    }
-    if (selectedKebeleId) {
-      list = list.filter((r) => matchesAnyKey(r, ["addressStreetsId", "kebeleId", "customerKebeleId"], selectedKebeleId));
-    }
-    if (selectedKetenaId) {
-      list = list.filter((r) => matchesAnyKey(r, ["addressKetenaId", "ketenaId"], selectedKetenaId));
-    }
-    if (selectedBranchId) {
-      list = list.filter((r) => matchesAnyKey(r, ["branchsId", "branchId"], selectedBranchId));
-    }
-    if (selectedReaderId) {
-      list = list.filter((r) => matchesAnyKey(r, ["assignedReaderId", "readerId"], selectedReaderId));
-    }
-    if (selectedCustomerTypeId) {
-      list = list.filter((r) => r?.customerTypeId !== undefined && String(r.customerTypeId) === String(selectedCustomerTypeId));
-    }
-    if (filterSmsSent !== "all") {
-      const sentBool = filterSmsSent === "sent";
-      list = list.filter((b) => (sentBool ? !!b.enableEditMeneshaReading : !b.enableEditMeneshaReading));
-    }
-
-    return list;
-  }, [readings, selectedCityId, selectedKebeleId, selectedKetenaId, selectedBranchId, selectedReaderId, selectedCustomerTypeId, filterSmsSent]);
+    if (!hasLoadedBills) return [];
+    return applyBillFilters(readings);
+  }, [hasLoadedBills, readings, applyBillFilters]);
 
   // Format Due Date Text
   const getFormattedDueDateText = useCallback(() => {
@@ -637,8 +907,80 @@ const SendBillSmsInner = () => {
     return "";
   }, [smsDueDateEC, selectedKifyaWerMonth, selectedKifyaWerYear]);
 
+  // Dynamic template formatter for local queue updating
+  const formatSmsFromTemplate = (reading, templateContent) => {
+    if (!templateContent) return "";
+    const name = reading.customerName || reading.billingCustomerInfo?.fullName || "";
+    const nameEng = reading.customerNameEng || reading.billingCustomerInfo?.fullNameEng || "";
+    const account = reading.customerAccountNumber || reading.accountNumber || reading.billingCustomerInfo?.accountNumber || "";
+    const previous = reading.previousReading !== undefined && reading.previousReading !== null ? reading.previousReading : "";
+    const current = reading.lastReading !== undefined && reading.lastReading !== null ? reading.lastReading : "";
+    const consumption = reading.consumption !== undefined && reading.consumption !== null ? reading.consumption : "";
+    const wuzifHisab = reading.wuzifHisab !== undefined && reading.wuzifHisab !== null ? reading.wuzifHisab : 0;
+    const totalPayable = reading.tekilalaTekefay !== undefined && reading.tekilalaTekefay !== null ? reading.tekilalaTekefay : (reading.totalAmount || 0);
+    const kotariKiray = reading.kotariKiray !== undefined && reading.kotariKiray !== null ? reading.kotariKiray : "";
+    const yezihWer = reading.yezihWer !== undefined && reading.yezihWer !== null ? reading.yezihWer : "";
+    const wuzifKezihEske = reading.wuzifKezihEske || "";
+    const wuzifWorBzat = reading.wuzifWorBzat !== undefined && reading.wuzifWorBzat !== null ? reading.wuzifWorBzat : "";
+    const kitat = reading.kitat !== undefined && reading.kitat !== null ? reading.kitat : "";
+    const dueStr = getFormattedDueDateText();
+    const monthYearPart = selectedKifyaWerMonth && selectedKifyaWerYear ? `${selectedKifyaWerMonth}-${selectedKifyaWerYear} ` : "";
+    const utilityName = companyProfile?.companyName || "";
+    const utilityNameAmh = companyProfile?.companyNameAmh || utilityName;
+
+    let msg = templateContent;
+    msg = msg.split("{customerName}").join(name);
+    msg = msg.split("{customerNameEng}").join(nameEng);
+    msg = msg.split("{accountNumber}").join(account);
+    msg = msg.split("{billMonth}").join(monthYearPart);
+    msg = msg.split("{consumption}").join(String(consumption));
+    msg = msg.split("{previousReading}").join(String(previous));
+    msg = msg.split("{currentReading}").join(String(current));
+    msg = msg.split("{arrears}").join(String(wuzifHisab));
+    msg = msg.split("{wuzifHisab}").join(String(wuzifHisab));
+    msg = msg.split("{kotariKiray}").join(String(kotariKiray));
+    msg = msg.split("{yezihWer}").join(String(yezihWer));
+    msg = msg.split("{wuzifKezihEske}").join(String(wuzifKezihEske));
+    msg = msg.split("{wuzifWorBzat}").join(String(wuzifWorBzat));
+    msg = msg.split("{kitat}").join(String(kitat));
+    msg = msg.split("{totalPayable}").join(String(totalPayable));
+    msg = msg.split("{dueDate}").join(dueStr);
+    msg = msg.split("{companyName}").join(utilityName);
+    msg = msg.split("{companyNameAmharic}").join(utilityNameAmh);
+    return msg;
+  };
+
+  // Instant re-application when user switches template in dropdown
+  const handleTemplateChange = (newCode) => {
+    setSelectedTemplateCode(newCode);
+    const target = dbTemplates.find((t) => t.templateCode === newCode);
+    if (target && target.templateContent && smsQueue.length > 0) {
+      const readingMap = new Map();
+      (readings || []).forEach((r) => {
+        if (r && r.id) readingMap.set(r.id, r);
+      });
+
+      setSmsQueue((prev) =>
+        prev.map((item) => {
+          const r = readingMap.get(item.readingId) || item;
+          const newMsg = formatSmsFromTemplate(r, target.templateContent);
+          return {
+            ...item,
+            message: newMsg || item.message,
+          };
+        })
+      );
+      toast.info(`የSMS ፎርማት ወደ "${target.templateName || newCode}" ተቀይሯል!`);
+    }
+  };
+
   // Prepare SMS Queue
   const handleLoadAndPrepareQueue = async () => {
+    if (!hasLoadedBills) {
+      toast.info("እባክዎ መጀመሪያ ማጣሪያዎችን መርጠው 'ሂሳቦችን ጫን' የሚለውን ይጫኑ (Please click 'Load Bills' first).");
+      return;
+    }
+
     if (!filteredReadings.length) {
       toast.info("No bills found matching current filters.");
       return;
@@ -674,6 +1016,7 @@ const SendBillSmsInner = () => {
         const items = await smsService.prepareSmsQueue(chunk, {
           smsDueDateText,
           monthYearPart,
+          templateCode: selectedTemplateCode,
         });
         if (Array.isArray(items)) {
           allItems = allItems.concat(items);
@@ -686,7 +1029,17 @@ const SendBillSmsInner = () => {
         return;
       }
 
-      setSmsQueue(allItems);
+      // Enrich queue items with bill payment status from loaded readings
+      const readingMap = new Map((readings || []).map((r) => [r.id, r]));
+      const enrichedItems = allItems.map((item) => {
+        const r = readingMap.get(item.readingId);
+        return {
+          ...item,
+          isPaid: r ? Boolean(r.isMoneyCollected || r.moneyCollected) : Boolean(item.isPaid || item.moneyCollected),
+        };
+      });
+
+      setSmsQueue(enrichedItems);
       setSelectedIds(new Set());
       setPage(0);
       toast.success(`Prepared ${allItems.length} SMS messages in queue!`);
@@ -825,6 +1178,9 @@ const SendBillSmsInner = () => {
         apiKey: effApiKey,
         protocol: activeGatewayConfig?.protocol || (isSmpp ? "SMPP" : "HTTP_REST"),
         cityId: activeGatewayConfig?.cityId ? Number(activeGatewayConfig.cityId) : null,
+        smsDueDateText: getFormattedDueDateText(),
+        monthYearPart: selectedKifyaWerMonth && selectedKifyaWerYear ? `${selectedKifyaWerMonth}-${selectedKifyaWerYear} ` : "",
+        templateCode: selectedTemplateCode,
       });
 
       if (res?.success) {
@@ -914,6 +1270,7 @@ const SendBillSmsInner = () => {
             cityId: activeGatewayConfig?.cityId ? Number(activeGatewayConfig.cityId) : null,
             smsDueDateText,
             monthYearPart,
+            templateCode: selectedTemplateCode,
           });
 
           const sentCount = res?.sent || 0;
@@ -1114,6 +1471,16 @@ const SendBillSmsInner = () => {
               Gateway Settings (DB)
             </Button>
             <Button
+              component={Link}
+              href="/ui/manager/smsTemplateSetting"
+              variant="outlined"
+              color="primary"
+              startIcon={<MessageIcon />}
+              sx={{ borderRadius: 2, textTransform: "none", fontWeight: 600 }}
+            >
+              SMS Template Format
+            </Button>
+            <Button
               variant="outlined"
               color="inherit"
               startIcon={<FileDownloadIcon />}
@@ -1137,10 +1504,24 @@ const SendBillSmsInner = () => {
             border: "1px solid #e2e8f0",
           }}
         >
-          {/* Row 1: Executive Ethiopian Period Picker & Due Date & Load Button */}
-          <Typography variant="subtitle1" fontWeight={700} color="#1e293b" mb={1.5} sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-            <CalendarMonthIcon fontSize="small" color="primary" /> የክፍያ ወር እና የመክፈያ ቀን (Billing Period & Due Date)
-          </Typography>
+          {/* Step 1: Filter & Load Bills */}
+          <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 1, mb: 1.5 }}>
+            <Typography variant="subtitle1" fontWeight={700} color="#1e293b" sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+              <FilterListIcon fontSize="small" color="primary" /> ደረጃ 1፡ የክፍያ ወር እና ማጣሪያዎች መርጦ ሂሳቦችን መጫን (Step 1: Filter & Load Bills)
+            </Typography>
+            {hasLoadedBills && (
+              <Chip
+                color={filteredReadings.length > 0 ? "success" : "default"}
+                variant="outlined"
+                label={
+                  filteredReadings.length > 0
+                    ? `✓ ተገኝተዋል: ${filteredReadings.length} ሂሳቦች ተጭነዋል`
+                    : "በተመረጠው ማጣሪያ የተገኘ ሂሳብ የለም (0 Bills)"
+                }
+                sx={{ fontWeight: 700, height: 30, fontSize: "0.825rem" }}
+              />
+            )}
+          </Box>
 
           <Box sx={{ display: "flex", gap: 2, alignItems: "center", flexWrap: "wrap", mb: 2.5 }}>
             <ProPeriodPicker
@@ -1150,40 +1531,47 @@ const SendBillSmsInner = () => {
               currentCycleMonth={currentCycleMonth}
               currentCycleYear={currentCycleYear}
               dbPeriods={dbPeriods}
-              disabled={isReadingsLoading}
+              disabled={isFetchingBills || isReadingsLoading}
             />
-
-            <Box sx={{ minWidth: 200 }}>
-              <EtDatePicker
-                label="የመክፈያ ቀን (Due Date EC)"
-                value={smsDueDateEC}
-                onChange={(date) => setSmsDueDateEC(date)}
-              />
-            </Box>
 
             <Button
               variant="contained"
-              color="primary"
-              size="medium"
-              startIcon={isPreparingQueue ? <CircularProgress size={20} color="inherit" /> : <PlayArrowIcon />}
-              onClick={handleLoadAndPrepareQueue}
-              disabled={isPreparingQueue || isReadingsLoading || !selectedKifyaWerMonth || !selectedKifyaWerYear}
+              onClick={handleLoadBills}
+              disabled={isFetchingBills || isReadingsLoading || !selectedKifyaWerMonth || !selectedKifyaWerYear}
+              startIcon={isFetchingBills ? <CircularProgress size={20} color="inherit" /> : <FilterListIcon />}
               sx={{
                 height: 44,
                 px: 3,
                 borderRadius: 2.5,
                 fontWeight: 700,
                 textTransform: "none",
-                boxShadow: "0 4px 14px rgba(37,99,235,0.3)",
+                bgcolor: "#0f766e",
+                "&:hover": { bgcolor: "#115e59" },
+                boxShadow: "0 4px 14px rgba(15,118,110,0.25)",
               }}
             >
-              {isPreparingQueue
-                ? "Preparing SMS Queue..."
-                : `Load & Prepare SMS Queue (${filteredReadings.length} Bills)`}
+              {isFetchingBills ? "ሂሳቦች እየተጫኑ ነው..." : "ሂሳቦችን ጫን (Load Bills)"}
+            </Button>
+
+            <Button
+              variant="outlined"
+              onClick={handleResetFilters}
+              disabled={isFetchingBills}
+              startIcon={<RefreshIcon />}
+              sx={{
+                height: 44,
+                px: 2,
+                borderRadius: 2.5,
+                fontWeight: 600,
+                textTransform: "none",
+                color: "#64748b",
+                borderColor: "#cbd5e1",
+                "&:hover": { borderColor: "#94a3b8", bgcolor: "#f8fafc" },
+              }}
+            >
+              ማጣሪያዎችን አጽዳ (Reset Filters)
             </Button>
           </Box>
-
-          <Divider sx={{ mb: 2 }} />
 
           {/* Row 2: Additional Geographic & Customer Filters */}
           <Typography variant="subtitle2" fontWeight={700} color="#475569" mb={1.5} sx={{ display: "flex", alignItems: "center", gap: 1 }}>
@@ -1199,6 +1587,7 @@ const SendBillSmsInner = () => {
                   labelId="city-label"
                   value={selectedCityId}
                   label="ከተማ (City)"
+                  disabled={isCitiesLoading}
                   onChange={(e) => setSelectedCityId(e.target.value)}
                   MenuProps={modernMenuProps}
                 >
@@ -1222,6 +1611,7 @@ const SendBillSmsInner = () => {
                   labelId="kebele-label"
                   value={selectedKebeleId}
                   label="ቀበሌ (Kebele)"
+                  disabled={isKebelesLoading}
                   onChange={(e) => {
                     setSelectedKebeleId(e.target.value);
                     setSelectedKetenaId("");
@@ -1248,8 +1638,8 @@ const SendBillSmsInner = () => {
                   labelId="ketena-label"
                   value={selectedKetenaId}
                   label="ቀጠና (Ketena)"
+                  disabled={isKetenasLoading}
                   onChange={(e) => setSelectedKetenaId(e.target.value)}
-                  disabled={!selectedKebeleId}
                   MenuProps={modernMenuProps}
                 >
                   <MenuItem value="" sx={{ color: "#64748b !important" }}>
@@ -1272,6 +1662,7 @@ const SendBillSmsInner = () => {
                   labelId="branch-label"
                   value={selectedBranchId}
                   label="ቅርንጫፍ (Branch)"
+                  disabled={isBranchesLoading}
                   onChange={(e) => {
                     setSelectedBranchId(e.target.value);
                     setSelectedReaderId("");
@@ -1291,18 +1682,19 @@ const SendBillSmsInner = () => {
             </Grid>
 
             {/* Reader */}
-            <Grid item xs={12} sm={6} md={4}>
+            <Grid item xs={12} sm={6} md={2.4}>
               <FormControl size="small" fullWidth sx={modernSelectSx}>
                 <InputLabel id="reader-label">አንባቢ (Reader)</InputLabel>
                 <Select
                   labelId="reader-label"
                   value={selectedReaderId}
                   label="አንባቢ (Reader)"
+                  disabled={isReadersLoading}
                   onChange={(e) => setSelectedReaderId(e.target.value)}
                   MenuProps={modernMenuProps}
                 >
                   <MenuItem value="" sx={{ color: "#64748b !important" }}>
-                    <em>ሁሉም አንባቢ (All Readers)</em>
+                    <em>ሁሉም አንባቢ (All)</em>
                   </MenuItem>
                   {readers?.map((r) => (
                     <MenuItem key={r.id} value={r.id} sx={{ color: "#1e293b !important", fontWeight: 500 }}>
@@ -1314,18 +1706,19 @@ const SendBillSmsInner = () => {
             </Grid>
 
             {/* Customer Type */}
-            <Grid item xs={12} sm={6} md={4}>
+            <Grid item xs={12} sm={6} md={2.4}>
               <FormControl size="small" fullWidth sx={modernSelectSx}>
                 <InputLabel id="customer-type-label">የደንበኛ ዓይነት</InputLabel>
                 <Select
                   labelId="customer-type-label"
                   value={selectedCustomerTypeId}
                   label="የደንበኛ ዓይነት"
+                  disabled={isCustomerTypesLoading}
                   onChange={(e) => setSelectedCustomerTypeId(e.target.value)}
                   MenuProps={modernMenuProps}
                 >
                   <MenuItem value="" sx={{ color: "#64748b !important" }}>
-                    <em>ሁሉም ደንበኛ (All Types)</em>
+                    <em>ሁሉም ደንበኛ (All)</em>
                   </MenuItem>
                   {customerTypes?.map((c) => (
                     <MenuItem key={c.id} value={c.id} sx={{ color: "#1e293b !important", fontWeight: 500 }}>
@@ -1336,8 +1729,56 @@ const SendBillSmsInner = () => {
               </FormControl>
             </Grid>
 
+            {/* Money Collected / Payment Status */}
+            <Grid item xs={12} sm={6} md={2.4}>
+              <FormControl size="small" fullWidth sx={modernSelectSx}>
+                <InputLabel id="money-collected-label">የክፍያ ሁኔታ (Payment)</InputLabel>
+                <Select
+                  labelId="money-collected-label"
+                  value={filterMoneyCollected}
+                  label="የክፍያ ሁኔታ (Payment)"
+                  onChange={(e) => setFilterMoneyCollected(e.target.value)}
+                  MenuProps={modernMenuProps}
+                >
+                  <MenuItem value="all" sx={{ color: "#1e293b !important", fontWeight: 500 }}>
+                    ሁሉም (All Bills)
+                  </MenuItem>
+                  <MenuItem value="true" sx={{ color: "success.main", fontWeight: 600 }}>
+                    ● የከፈለ (Paid)
+                  </MenuItem>
+                  <MenuItem value="false" sx={{ color: "warning.main", fontWeight: 600 }}>
+                    ○ ያልከፈለ (Unpaid)
+                  </MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
+
+            {/* Bank Sent Status */}
+            <Grid item xs={12} sm={6} md={2.4}>
+              <FormControl size="small" fullWidth sx={modernSelectSx}>
+                <InputLabel id="bank-sent-label">ባንክ የተላከ (Bank Sent)</InputLabel>
+                <Select
+                  labelId="bank-sent-label"
+                  value={filterBankSent}
+                  label="ባንክ የተላከ (Bank Sent)"
+                  onChange={(e) => setFilterBankSent(e.target.value)}
+                  MenuProps={modernMenuProps}
+                >
+                  <MenuItem value="all" sx={{ color: "#1e293b !important", fontWeight: 500 }}>
+                    ሁሉም (All)
+                  </MenuItem>
+                  <MenuItem value="sent" sx={{ color: "primary.main", fontWeight: 600 }}>
+                    ● የተላከ (Sent)
+                  </MenuItem>
+                  <MenuItem value="not_sent" sx={{ color: "text.secondary", fontWeight: 600 }}>
+                    ○ ያልተላከ (Not Sent)
+                  </MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
+
             {/* SMS Sent Status */}
-            <Grid item xs={12} sm={6} md={4}>
+            <Grid item xs={12} sm={6} md={2.4}>
               <FormControl size="small" fullWidth sx={modernSelectSx}>
                 <InputLabel id="sms-status-label">የSMS ሁኔታ</InputLabel>
                 <Select
@@ -1348,18 +1789,84 @@ const SendBillSmsInner = () => {
                   MenuProps={modernMenuProps}
                 >
                   <MenuItem value="all" sx={{ color: "#1e293b !important", fontWeight: 500 }}>
-                    ሁሉም (All Bills)
+                    ሁሉም (All)
                   </MenuItem>
                   <MenuItem value="not_sent" sx={{ color: "#1e293b !important", fontWeight: 500 }}>
-                    ያልተላከላቸው (Not Sent)
+                    ያልተላከ (Not Sent)
                   </MenuItem>
                   <MenuItem value="sent" sx={{ color: "#1e293b !important", fontWeight: 500 }}>
-                    የተላከላቸው (Already Sent)
+                    የተላከ (Already Sent)
                   </MenuItem>
                 </Select>
               </FormControl>
             </Grid>
           </Grid>
+
+          <Divider sx={{ my: 2.5 }} />
+
+          {/* Step 2: Executive Ethiopian Due Date, SMS Template & Prepare Queue */}
+          <Typography variant="subtitle1" fontWeight={700} color="#1e293b" mb={1.5} sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+            <CalendarMonthIcon fontSize="small" color="primary" /> ደረጃ 2፡ የመክፈያ ቀን፣ የSMS ፎርማት እና ረቂቅ ዝግጅት (Step 2: Due Date, Template & Queue)
+          </Typography>
+
+          <Box sx={{ display: "flex", gap: 2, alignItems: "center", flexWrap: "wrap" }}>
+            <Box sx={{ minWidth: 200 }}>
+              <EtDatePicker
+                label="የመክፈያ ቀን (Due Date EC)"
+                value={smsDueDateEC}
+                onChange={(date) => setSmsDueDateEC(date)}
+              />
+            </Box>
+
+            {/* Template Selection Dropdown */}
+            <Box sx={{ minWidth: 260 }}>
+              <FormControl fullWidth size="small">
+                <InputLabel id="template-select-picker-label">የSMS ፎርማት (Template)</InputLabel>
+                <Select
+                  labelId="template-select-picker-label"
+                  value={selectedTemplateCode}
+                  label="የSMS ፎርማት (Template)"
+                  onChange={(e) => handleTemplateChange(e.target.value)}
+                  sx={{ borderRadius: 2, height: 44, bgcolor: "#f8fafc" }}
+                >
+                  {dbTemplates.map((t) => (
+                    <MenuItem key={t.templateCode} value={t.templateCode}>
+                      {t.templateName || t.templateCode}
+                      {t.templateCode === "BILL_SMS" ? " (Default)" : ""}
+                    </MenuItem>
+                  ))}
+                  {dbTemplates.length === 0 && (
+                    <MenuItem value="BILL_SMS">Standard Bill SMS (Default)</MenuItem>
+                  )}
+                </Select>
+              </FormControl>
+            </Box>
+
+            <Button
+              variant="contained"
+              color="primary"
+              size="medium"
+              startIcon={isPreparingQueue ? <CircularProgress size={20} color="inherit" /> : <PlayArrowIcon />}
+              onClick={handleLoadAndPrepareQueue}
+              disabled={isPreparingQueue || isFetchingBills || !hasLoadedBills || filteredReadings.length === 0}
+              sx={{
+                height: 44,
+                px: 3,
+                borderRadius: 2.5,
+                fontWeight: 700,
+                textTransform: "none",
+                boxShadow: "0 4px 14px rgba(37,99,235,0.3)",
+              }}
+            >
+              {isPreparingQueue
+                ? "Preparing SMS Queue..."
+                : !hasLoadedBills
+                ? "Load & Prepare SMS Queue (Please load bills first)"
+                : filteredReadings.length === 0
+                ? "Load & Prepare SMS Queue (0 Bills matched)"
+                : `Load & Prepare SMS Queue (${filteredReadings.length} Bills)`}
+            </Button>
+          </Box>
         </Paper>
 
         {/* Dynamic Statistics Cards */}
@@ -1588,6 +2095,7 @@ const SendBillSmsInner = () => {
                   <TableCell sx={{ fontWeight: 700, bgcolor: "#f8fafc" }}>ስልክ ቁጥር (Phone)</TableCell>
                   <TableCell sx={{ fontWeight: 700, bgcolor: "#f8fafc" }}>ወር (Month)</TableCell>
                   <TableCell sx={{ fontWeight: 700, bgcolor: "#f8fafc" }}>ጠቅላላ ክፍያ (ETB)</TableCell>
+                  <TableCell sx={{ fontWeight: 700, bgcolor: "#f8fafc" }}>ክፍያ (Payment)</TableCell>
                   <TableCell sx={{ fontWeight: 700, bgcolor: "#f8fafc", maxWidth: 300 }}>የመልዕክት ቅድመ-ዕይታ (Message Preview)</TableCell>
                   <TableCell sx={{ fontWeight: 700, bgcolor: "#f8fafc" }}>ሁኔታ (Status)</TableCell>
                   <TableCell align="center" sx={{ fontWeight: 700, bgcolor: "#f8fafc" }}>እርምጃ (Action)</TableCell>
@@ -1596,13 +2104,21 @@ const SendBillSmsInner = () => {
               <TableBody>
                 {filteredQueue.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={10} align="center" sx={{ py: 6 }}>
+                    <TableCell colSpan={11} align="center" sx={{ py: 6 }}>
                       <Box sx={{ color: "text.secondary" }}>
                         <HourglassEmptyIcon sx={{ fontSize: 44, color: "#94a3b8", mb: 1 }} />
                         <Typography variant="body1" fontWeight={600}>
-                          {smsQueue.length === 0
-                            ? "No SMS messages prepared yet. Select your billing period and click 'Load & Prepare SMS Queue'."
-                            : "No records match the current filter or search criteria."}
+                          {smsQueue.length === 0 ? (
+                            !hasLoadedBills ? (
+                              "እባክዎ መጀመሪያ ማጣሪያዎችን (ወር፣ ቀበሌ...) መርጠው 'ሂሳቦችን ጫን (Load Bills)' የሚለውን ይጫኑ (Select filters and click 'Load Bills' to begin)."
+                            ) : filteredReadings.length === 0 ? (
+                              "በተመረጠው ማጣሪያ የተገኘ ሂሳብ የለም (No bills match the current filters)."
+                            ) : (
+                              `ተገኝተዋል: ${filteredReadings.length} ሂሳቦች ተጭነዋል! የመክፈያ ቀን መርጠው 'Load & Prepare SMS Queue' የሚለውን ይጫኑ።`
+                            )
+                          ) : (
+                            "No records match the current filter or search criteria."
+                          )}
                         </Typography>
                       </Box>
                     </TableCell>
@@ -1650,6 +2166,15 @@ const SendBillSmsInner = () => {
                           <TableCell>{row.billMonth}</TableCell>
                           <TableCell sx={{ fontWeight: 600, color: "#0f766e" }}>
                             {Number(row.totalAmount || 0).toFixed(2)}
+                          </TableCell>
+                          <TableCell>
+                            <Chip
+                              size="small"
+                              label={row.isPaid ? "PAID" : "UNPAID"}
+                              color={row.isPaid ? "success" : "default"}
+                              variant={row.isPaid ? "filled" : "outlined"}
+                              sx={{ fontWeight: 700, fontSize: "0.7rem", height: 22 }}
+                            />
                           </TableCell>
                           <TableCell
                             sx={{

@@ -205,6 +205,10 @@ const CustomerList = () => {
   const [filterHasDryWaste, setFilterHasDryWaste] = useState("");
   const [filterHasAdditionalPayment, setFilterHasAdditionalPayment] = useState("");
 
+  // Duplicate filtering states
+  const [filterDuplicate, setFilterDuplicate] = useState(""); // "" | "any" | "account" | "fullName" | "fullNameEng"
+  const [duplicateScope, setDuplicateScope] = useState("active"); // "active" | "all"
+
   // Import/Update Dialogs
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [importResult, setImportResult] = useState(null);
@@ -345,6 +349,8 @@ const CustomerList = () => {
     setFilterMeterChangeDateTo("");
     setFilterHasDryWaste("");
     setFilterHasAdditionalPayment("");
+    setFilterDuplicate("");
+    setDuplicateScope("active");
     setAssignScope("");
     setRowSelection({});
   }, []);
@@ -540,6 +546,75 @@ const CustomerList = () => {
     [allCustomers]
   );
 
+  // Compute Fast O(N) Lookup Maps for Duplicate Detection
+  const duplicateMaps = useMemo(() => {
+    const pool = duplicateScope === "all" ? (allCustomers || []) : activeCustomers;
+    const accountMap = new Map();
+    const fullNameMap = new Map();
+    const fullNameEngMap = new Map();
+
+    pool.forEach((c) => {
+      const acc = (c.accountNumber || "").trim().toLowerCase();
+      if (acc && acc !== "-" && acc !== "0" && acc !== "null") {
+        if (!accountMap.has(acc)) accountMap.set(acc, []);
+        accountMap.get(acc).push(c);
+      }
+
+      const fn = (c.fullName || "").trim().replace(/\s+/g, " ");
+      if (fn && fn.length >= 2) {
+        if (!fullNameMap.has(fn)) fullNameMap.set(fn, []);
+        fullNameMap.get(fn).push(c);
+      }
+
+      const fnEng = (c.fullNameEng || "").trim().replace(/\s+/g, " ").toLowerCase();
+      if (fnEng && fnEng.length >= 2) {
+        if (!fullNameEngMap.has(fnEng)) fullNameEngMap.set(fnEng, []);
+        fullNameEngMap.get(fnEng).push(c);
+      }
+    });
+
+    return { accountMap, fullNameMap, fullNameEngMap };
+  }, [allCustomers, activeCustomers, duplicateScope]);
+
+  const duplicateCounts = useMemo(() => {
+    const accDupIds = new Set();
+    const fnDupIds = new Set();
+    const fnEngDupIds = new Set();
+    const anyDupIds = new Set();
+
+    duplicateMaps.accountMap.forEach((list) => {
+      if (list.length > 1) {
+        list.forEach((c) => {
+          accDupIds.add(c.id);
+          anyDupIds.add(c.id);
+        });
+      }
+    });
+    duplicateMaps.fullNameMap.forEach((list) => {
+      if (list.length > 1) {
+        list.forEach((c) => {
+          fnDupIds.add(c.id);
+          anyDupIds.add(c.id);
+        });
+      }
+    });
+    duplicateMaps.fullNameEngMap.forEach((list) => {
+      if (list.length > 1) {
+        list.forEach((c) => {
+          fnEngDupIds.add(c.id);
+          anyDupIds.add(c.id);
+        });
+      }
+    });
+
+    return {
+      total: anyDupIds.size,
+      account: accDupIds.size,
+      fullName: fnDupIds.size,
+      fullNameEng: fnEngDupIds.size,
+    };
+  }, [duplicateMaps]);
+
   const filteredCustomers = useMemo(() => {
     let result = activeCustomerTab === 0 ? [...activeCustomers] : [...deletedCustomers];
 
@@ -659,6 +734,64 @@ const CustomerList = () => {
     } else if (filterHasAdditionalPayment === "false") {
       result = result.filter((c) => c.techemariKfya <= 0);
     }
+
+    // Duplicate filtering & Auto-sorting
+    if (filterDuplicate) {
+      if (filterDuplicate === "any") {
+        result = result.filter((c) => {
+          const accKey = (c.accountNumber || "").trim().toLowerCase();
+          const fnKey = (c.fullName || "").trim().replace(/\s+/g, " ");
+          const fnEngKey = (c.fullNameEng || "").trim().replace(/\s+/g, " ").toLowerCase();
+
+          const isDupAcc = accKey && (duplicateMaps.accountMap.get(accKey) || []).length > 1;
+          const isDupFn = fnKey && (duplicateMaps.fullNameMap.get(fnKey) || []).length > 1;
+          const isDupFnEng = fnEngKey && (duplicateMaps.fullNameEngMap.get(fnEngKey) || []).length > 1;
+
+          return isDupAcc || isDupFn || isDupFnEng;
+        });
+
+        // Auto-sort so conflicting duplicates appear together
+        result.sort((a, b) => {
+          const accA = (a.accountNumber || "").trim().toLowerCase();
+          const accB = (b.accountNumber || "").trim().toLowerCase();
+          if (accA !== accB) return accA.localeCompare(accB);
+          const fnA = (a.fullName || "").trim();
+          const fnB = (b.fullName || "").trim();
+          return fnA.localeCompare(fnB);
+        });
+      } else if (filterDuplicate === "account") {
+        result = result.filter((c) => {
+          const accKey = (c.accountNumber || "").trim().toLowerCase();
+          return accKey && (duplicateMaps.accountMap.get(accKey) || []).length > 1;
+        });
+        result.sort((a, b) => {
+          const accA = (a.accountNumber || "").trim().toLowerCase();
+          const accB = (b.accountNumber || "").trim().toLowerCase();
+          return accA.localeCompare(accB);
+        });
+      } else if (filterDuplicate === "fullName") {
+        result = result.filter((c) => {
+          const fnKey = (c.fullName || "").trim().replace(/\s+/g, " ");
+          return fnKey && (duplicateMaps.fullNameMap.get(fnKey) || []).length > 1;
+        });
+        result.sort((a, b) => {
+          const fnA = (a.fullName || "").trim();
+          const fnB = (b.fullName || "").trim();
+          return fnA.localeCompare(fnB);
+        });
+      } else if (filterDuplicate === "fullNameEng") {
+        result = result.filter((c) => {
+          const fnEngKey = (c.fullNameEng || "").trim().replace(/\s+/g, " ").toLowerCase();
+          return fnEngKey && (duplicateMaps.fullNameEngMap.get(fnEngKey) || []).length > 1;
+        });
+        result.sort((a, b) => {
+          const fnEngA = (a.fullNameEng || "").trim().toLowerCase();
+          const fnEngB = (b.fullNameEng || "").trim().toLowerCase();
+          return fnEngA.localeCompare(fnEngB);
+        });
+      }
+    }
+
     return result;
   }, [
     activeCustomers,
@@ -681,6 +814,8 @@ const CustomerList = () => {
     filterMeterChangeDateTo,
     filterHasDryWaste,
     filterHasAdditionalPayment,
+    filterDuplicate,
+    duplicateMaps,
   ]);
 
   const selectedIdsList = useMemo(() => Object.keys(rowSelection || {}), [rowSelection]);
@@ -1192,6 +1327,17 @@ const CustomerList = () => {
         const meterSizeObj = (meterSizes || []).find((s) => String(s.id) === String(c.meterSizeId));
         const meterSizeStr = meterSizeObj ? (meterSizeObj.sizeName || meterSizeObj.name || "") : "";
 
+        const accKey = (c.accountNumber || "").trim().toLowerCase();
+        const fnKey = (c.fullName || "").trim().replace(/\s+/g, " ");
+        const fnEngKey = (c.fullNameEng || "").trim().replace(/\s+/g, " ").toLowerCase();
+        const isDupAcc = accKey && (duplicateMaps.accountMap.get(accKey) || []).length > 1;
+        const isDupFn = fnKey && (duplicateMaps.fullNameMap.get(fnKey) || []).length > 1;
+        const isDupFnEng = fnEngKey && (duplicateMaps.fullNameEngMap.get(fnEngKey) || []).length > 1;
+        const dupFlags = [];
+        if (isDupAcc) dupFlags.push("Duplicate Account");
+        if (isDupFn) dupFlags.push("Duplicate Amharic Name");
+        if (isDupFnEng) dupFlags.push("Duplicate English Name");
+
         return {
           "#": idx + 1,
           "Account Number": c.accountNumber || "",
@@ -1211,6 +1357,7 @@ const CustomerList = () => {
           "Has Old Penalty": c.oldHasPenalty ? "Yes" : "No",
           "Old Arrears Total": c.oldKfyaAndPenaltyTotal || 0,
           "Registered Date (EC)": c.registeredDateEthiopianAmharic || c.registeredDateEthiopian || "",
+          "Duplicate Status": dupFlags.join("; ") || "Unique",
           Status: c.status || "",
         };
       });
@@ -1218,14 +1365,15 @@ const CustomerList = () => {
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Customers");
       const tabName = activeCustomerTab === 0 ? "Active" : "Deleted";
-      XLSX.writeFile(wb, `Customers_${tabName}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+      const dupSuffix = filterDuplicate ? `_Duplicates_${filterDuplicate}` : "";
+      XLSX.writeFile(wb, `Customers_${tabName}${dupSuffix}_${new Date().toISOString().slice(0, 10)}.xlsx`);
       setSnackbar({
         open: true,
         message: `Exported ${exportData.length} customers to Excel.`,
         severity: "success",
       });
     },
-    [filteredCustomers, rowSelection, selectedCount, activeCustomerTab, meterSizes, kebeles, allKetenas, customerTypes]
+    [filteredCustomers, rowSelection, selectedCount, activeCustomerTab, meterSizes, kebeles, allKetenas, customerTypes, filterDuplicate, duplicateMaps]
   );
 
   // =====================================================================
@@ -1238,28 +1386,98 @@ const CustomerList = () => {
         accessorKey: "accountNumber",
         header: "Account Number",
         filterFn: "contains",
-        Cell: ({ cell }) => (
-          <Typography variant="body2" sx={{ fontWeight: 800, color: "primary.main" }}>
-            {cell.getValue() || "—"}
-          </Typography>
-        ),
+        Cell: ({ cell, row }) => {
+          const val = cell.getValue();
+          const accKey = (val || "").trim().toLowerCase();
+          const duplicates = accKey ? (duplicateMaps.accountMap.get(accKey) || []) : [];
+          const isDuplicate = duplicates.length > 1;
+          const otherDups = duplicates.filter((c) => String(c.id) !== String(row.original.id));
+
+          return (
+            <Box sx={{ display: "flex", flexDirection: "column", gap: 0.25 }}>
+              <Typography variant="body2" sx={{ fontWeight: 800, color: "primary.main" }}>
+                {val || "—"}
+              </Typography>
+              {isDuplicate && (
+                <Tooltip
+                  title={`Duplicate Account! Shared with ${otherDups.length} other record(s): ${otherDups
+                    .map((d) => `#${d.id} - ${d.fullName || d.fullNameEng || "Customer"}`)
+                    .join(", ")}`}
+                >
+                  <Chip
+                    label={`Dup Account (${duplicates.length})`}
+                    size="small"
+                    color="error"
+                    sx={{ height: 18, fontSize: "0.65rem", fontWeight: 700, width: "fit-content" }}
+                  />
+                </Tooltip>
+              )}
+            </Box>
+          );
+        },
       },
       {
         accessorKey: "fullName",
         header: "Full Name (ሙሉ ስም)",
         filterFn: "bilingualName", // Searches BOTH Amharic & English
-        Cell: ({ row }) => (
-          <Box>
-            <Typography variant="body2" sx={{ fontWeight: 700 }}>
-              {row.original.fullName || "—"}
-            </Typography>
-            {row.original.fullNameEng && (
-              <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
-                {row.original.fullNameEng}
-              </Typography>
-            )}
-          </Box>
-        ),
+        Cell: ({ row }) => {
+          const fnKey = (row.original.fullName || "").trim().replace(/\s+/g, " ");
+          const fnEngKey = (row.original.fullNameEng || "").trim().replace(/\s+/g, " ").toLowerCase();
+
+          const dupsAmharic = fnKey && fnKey.length >= 2 ? (duplicateMaps.fullNameMap.get(fnKey) || []) : [];
+          const isDupAmharic = dupsAmharic.length > 1;
+          const otherDupsAmharic = dupsAmharic.filter((c) => String(c.id) !== String(row.original.id));
+
+          const dupsEng = fnEngKey && fnEngKey.length >= 2 ? (duplicateMaps.fullNameEngMap.get(fnEngKey) || []) : [];
+          const isDupEng = dupsEng.length > 1;
+          const otherDupsEng = dupsEng.filter((c) => String(c.id) !== String(row.original.id));
+
+          return (
+            <Box>
+              <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, flexWrap: "wrap" }}>
+                <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                  {row.original.fullName || "—"}
+                </Typography>
+                {isDupAmharic && (
+                  <Tooltip
+                    title={`Duplicate Amharic Name! Shared with: ${otherDupsAmharic
+                      .map((d) => `Acc: ${d.accountNumber || "N/A"} (${d.fullName})`)
+                      .join(", ")}`}
+                  >
+                    <Chip
+                      label="Dup Name"
+                      size="small"
+                      color="warning"
+                      sx={{ height: 18, fontSize: "0.65rem", fontWeight: 700 }}
+                    />
+                  </Tooltip>
+                )}
+              </Box>
+              {row.original.fullNameEng && (
+                <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, mt: 0.25, flexWrap: "wrap" }}>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+                    {row.original.fullNameEng}
+                  </Typography>
+                  {isDupEng && (
+                    <Tooltip
+                      title={`Duplicate English Name! Shared with: ${otherDupsEng
+                        .map((d) => `Acc: ${d.accountNumber || "N/A"} (${d.fullNameEng})`)
+                        .join(", ")}`}
+                    >
+                      <Chip
+                        label="Dup Eng"
+                        size="small"
+                        color="warning"
+                        variant="outlined"
+                        sx={{ height: 16, fontSize: "0.6rem", fontWeight: 700 }}
+                      />
+                    </Tooltip>
+                  )}
+                </Box>
+              )}
+            </Box>
+          );
+        },
       },
       {
         accessorKey: "phoneNumber",
@@ -1352,7 +1570,7 @@ const CustomerList = () => {
         },
       },
     ],
-    [kebeles]
+    [kebeles, duplicateMaps]
   );
 
   const table = useMaterialReactTable({
@@ -1497,6 +1715,11 @@ const CustomerList = () => {
         updateFileInputRef={updateFileInputRef}
         handleFileUpload={handleFileUpload}
         handleUpdateFileUpload={handleUpdateFileUpload}
+        filterDuplicate={filterDuplicate}
+        duplicateCounts={duplicateCounts}
+        onToggleDuplicateFilter={() => {
+          setFilterDuplicate((prev) => (prev ? "" : "any"));
+        }}
       />
     ),
     muiToolbarAlertBannerProps: isCustomersError
@@ -1693,6 +1916,11 @@ const CustomerList = () => {
           filterHasAdditionalPayment={filterHasAdditionalPayment}
           filterUnassignedReader={filterUnassignedReader}
           assignScope={assignScope}
+          filterDuplicate={filterDuplicate}
+          onFilterDuplicateChange={setFilterDuplicate}
+          duplicateScope={duplicateScope}
+          onDuplicateScopeChange={setDuplicateScope}
+          duplicateCounts={duplicateCounts}
           onFilterChange={handleFilterChange}
           onClearAll={handleClearAllFilters}
           onAssignScopeChange={(value) => {

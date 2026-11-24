@@ -7,6 +7,7 @@ public class BulkBillSmsRequestDTO {
     private List<Integer> readingIds;
     private String smsDueDateText;
     private String monthYearPart;
+    private String templateCode;
 
     public BulkBillSmsRequestDTO() {
     }
@@ -33,5 +34,13 @@ public class BulkBillSmsRequestDTO {
 
     public void setMonthYearPart(String monthYearPart) {
         this.monthYearPart = monthYearPart;
+    }
+
+    public String getTemplateCode() {
+        return templateCode;
+    }
+
+    public void setTemplateCode(String templateCode) {
+        this.templateCode = templateCode;
     }
 }
